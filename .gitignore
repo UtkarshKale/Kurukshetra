@@ -112,3 +112,13 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Large downloaded packs kept on the local machine only (too big for the free Git LFS quota, not used by the project yet)
+/Assets/these assets/Sonniss.com-GDC2026-GameAudioBundle1of5/
+/Assets/these assets/Sonniss.com-GDC2026-GameAudioBundle1of5.meta
+/Assets/these assets/*.exr
+/Assets/these assets/*.exr.meta
+/Assets/these assets/Ultimate Nature Pack by Quaternius/Blends/
+/Assets/these assets/Ultimate Nature Pack by Quaternius/Blends.meta
+desktop.ini
+desktop.ini.meta

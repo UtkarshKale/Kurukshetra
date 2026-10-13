@@ -180,6 +180,7 @@ namespace Chaukanna.Sensors
 
         void OnGUI()
         {
+            if (PlayerView.HideOverlays) return;
             GUI.BeginGroup(PlayerView.Rect);
             DrawGui();
             GUI.EndGroup();

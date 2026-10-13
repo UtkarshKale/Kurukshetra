@@ -14,7 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Scenario.ContactDefinition
   contactClass: 0
   displayName: Hostile quadcopter
-  prefab: {fileID: 628474434036801151, guid: 416e06cc8673e0e4389ff12b14200f69, type: 3}
+  prefab: {fileID: 2180876624825154459, guid: 0068de3191e1b514abba21264e0b40e2, type: 3}
+  variants: []
   silhouette: 0
   cue: 1
   size: 2.2

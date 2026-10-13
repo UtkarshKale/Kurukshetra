@@ -14,7 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Scenario.ContactDefinition
   contactClass: 3
   displayName: Civilian quadcopter
-  prefab: {fileID: 540382828869113807, guid: 160e2640d0bf51143ac6d79bcff884f2, type: 3}
+  prefab: {fileID: 5134589621472641000, guid: ee6c21f1d2c727d4e9d353dc5c6d58b0, type: 3}
+  variants: []
   silhouette: 0
   cue: 2
   size: 2.2

@@ -61,6 +61,7 @@ namespace Chaukanna.Scoring
         public string visibility = "Clear";
         public float nightVisionPercent;            // share of the run with night vision on
         public string difficulty = "";              // empty = no difficulty level applied
+        public bool allowMovement;                  // the soldier could walk
 
         public int totalPoints;
         public int maxPoints;                       // best case for the scored contacts: 8 each (3 detect + 3 classify + 2 action)

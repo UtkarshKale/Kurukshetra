@@ -34,6 +34,38 @@ namespace Chaukanna.Trainer
         List<TrendPoint> trend = new List<TrendPoint>();
         int trendRealCount = -1;
 
+        // Charts tab: drawn by the optional XCharts panel (Assets/Chaukanna/Charts), found by name so this script never
+        // depends on it. Without it the tab says so and the built-in drawing on the Overview tab is still there.
+        public bool ChartsActive { get; private set; }
+        Component chartsPanel;
+        bool chartsLookedFor;
+        float nextChartSend;
+        string lastChartJson = "";
+
+        // Switch between the built-in Overview and the XCharts tab (also what the header button does).
+        public void ShowCharts(bool on)
+        {
+            ChartsActive = on;
+            nextChartSend = 0f;
+            if (!on) SetChartsVisible(false);
+        }
+
+        Component ChartsPanel()
+        {
+            if (chartsPanel != null || chartsLookedFor) return chartsPanel;
+            chartsLookedFor = true;
+            var type = System.Type.GetType("Chaukanna.Charts.XChartsPanel, Chaukanna.Charts");
+            if (type != null) chartsPanel = new GameObject("ScoreCharts").AddComponent(type);
+            return chartsPanel;
+        }
+
+        void SetChartsVisible(bool visible)
+        {
+            if (chartsPanel != null) chartsPanel.SendMessage("SetVisible", visible, SendMessageOptions.DontRequireReceiver);
+            // The charts are a canvas; immediate-mode overlays would draw on top of it, so the player's are hidden while it fills the window.
+            PlayerView.HideOverlays = visible && Expanded;
+        }
+
         void Start()
         {
             spawner = FindAnyObjectByType<ScenarioSpawner>();
@@ -52,6 +84,7 @@ namespace Chaukanna.Trainer
         {
             SetExpanded(false);
             IsOpen = false;
+            SetChartsVisible(false);
         }
 
         // Expanded = fills the whole window and hides the player view, so player input is ignored while it is up.
@@ -59,18 +92,21 @@ namespace Chaukanna.Trainer
         {
             Expanded = on;
             ContactRegistry.InputBlocked = on;
+            PlayerView.HideOverlays = on && ChartsActive && IsOpen;
             if (on) Cursor.lockState = CursorLockMode.None;
         }
 
         void OnDisable()
         {
             if (Expanded) ContactRegistry.InputBlocked = false;
+            PlayerView.HideOverlays = false;
         }
 
         void Update()
         {
             if (!IsOpen) return;
             if (!PlayerView.Split && !Expanded) { Close(); return; }   // the trainer panel was hidden
+            PlayerView.HideOverlays = Expanded && ChartsActive;
             var kb = Keyboard.current;
             if (kb == null) return;
             if (kb.pageDownKey.wasPressedThisFrame) scroll += viewHeight * 0.8f;
@@ -92,14 +128,49 @@ namespace Chaukanna.Trainer
                 : new Rect(0f, TrainerHeaderHeight, Screen.width * PlayerView.TrainerFraction / ui, 720f - TrainerHeaderHeight);
 
             GUI.BeginGroup(region);
-            C.Fill(new Rect(0f, 0f, region.width, region.height), C.Background);
             const float pad = 12f, headH = 40f;
+            // On the Charts tab only the header is painted here; the charts canvas shows through below it.
+            C.Fill(new Rect(0f, 0f, region.width, ChartsActive ? headH + 2f : region.height), C.Background);
 
             // Header: title and window buttons.
             GUI.Label(new Rect(pad, 4f, region.width - 260f, headH - 8f), "SCORE DASHBOARD", C.Header);
             if (GUI.Button(new Rect(region.width - 236f, 6f, 120f, headH - 12f), Expanded ? "Collapse" : "Expand")) SetExpanded(!Expanded);
             if (GUI.Button(new Rect(region.width - 108f, 6f, 96f, headH - 12f), "Close")) Close();
+            if (GUI.Button(new Rect(region.width - 364f, 6f, 120f, headH - 12f), ChartsActive ? "Overview" : "Charts"))
+            {
+                ChartsActive = !ChartsActive;
+                nextChartSend = 0f;
+                if (!ChartsActive) SetChartsVisible(false);
+            }
             C.Fill(new Rect(0f, headH, region.width, 1f), new Color(1f, 1f, 1f, 0.15f));
+
+            if (ChartsActive)
+            {
+                var panel = ChartsPanel();
+                if (panel == null)
+                {
+                    C.Fill(new Rect(0f, headH + 2f, region.width, region.height - headH - 2f), C.Background);
+                    GUI.Label(new Rect(pad, headH + 12f, region.width - pad * 2f, 60f), "The XCharts panel is not available (Assets/Chaukanna/Charts or XCharts is missing). The Overview tab has the built-in charts.", C.Label);
+                }
+                else if (Event.current.type == EventType.Repaint)
+                {
+                    panel.SendMessage("SetRectPixels", new Vector4(region.x * ui, (region.y + headH + 2f) * ui, region.width * ui, (region.height - headH - 2f) * ui));
+                    SetChartsVisible(true);
+                    if (Time.unscaledTime >= nextChartSend)
+                    {
+                        // Refresh every two seconds, and only when something changed.
+                        nextChartSend = Time.unscaledTime + 2f;
+                        selected = Mathf.Clamp(selected, 0, Mathf.Max(0, Players.Count - 1));
+                        var who = Players.Count > 0 ? Players.Get(selected) : null;
+                        var history = TrendData.PadWithSamples(who != null ? who.history : new List<TrendPoint>(), TrendData.ChartSessions);
+                        string json = JsonUtility.ToJson(ChartPayload.Build(who != null ? who.name : "", who != null ? who.current : null, history));
+                        if (json != lastChartJson) { lastChartJson = json; panel.SendMessage("SetJson", json); }
+                    }
+                }
+                GUI.EndGroup();
+                GUI.matrix = saved;
+                return;
+            }
 
             // Scrolling page.
             var view = new Rect(0f, headH + 2f, region.width, region.height - headH - 2f);

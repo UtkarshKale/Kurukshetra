@@ -14,7 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Scenario.ContactDefinition
   contactClass: 2
   displayName: Friendly ISR drone
-  prefab: {fileID: 8827316887103651406, guid: b9617b897b5c9594c8e6d7194a051e15, type: 3}
+  prefab: {fileID: 7815962139742475149, guid: b2e51fe189ee2294fb2fa6463bcd06c3, type: 3}
+  variants: []
   silhouette: 1
   cue: 3
   size: 4

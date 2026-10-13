@@ -541,13 +541,21 @@ namespace Chaukanna.TerrainGen.EditorTools
         {
             string folder = GeneratedFolder + "/" + config.name;
             Directory.CreateDirectory(folder);
+            // Optional ground picture. It and its per-tile layers are saved beside the tile data so they survive a reload.
+            Imagery imagery = string.IsNullOrWhiteSpace(config.imageryPath) ? null : ImageryReader.Load(config.imageryPath);
             var result = TerrainBuilder.Build(config, dem, existing, (name, data) =>
             {
                 string path = folder + "/" + name + ".asset";
                 AssetDatabase.DeleteAsset(path);        // only files this tool wrote, inside its own folder
                 AssetDatabase.CreateAsset(data, path);
                 return data;
+            }, imagery, (name, asset) =>
+            {
+                string path = folder + "/" + name + (asset is TerrainLayer ? ".terrainlayer" : ".asset");
+                AssetDatabase.DeleteAsset(path);
+                AssetDatabase.CreateAsset(asset, path);
             });
+            if (imagery != null) result.report += "Imagery: " + imagery.Describe() + "\n";
             AssetDatabase.SaveAssets();
             result.root.name = "GeneratedTerrain (" + config.name + ")";
             EditorSceneManager.MarkSceneDirty(result.root.scene);

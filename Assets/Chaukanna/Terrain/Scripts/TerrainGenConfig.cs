@@ -139,6 +139,9 @@ namespace Chaukanna.TerrainGen
         public bool flattenPostPad = true;
         public float postPadRadius = 40f;
         public float postPadFalloff = 160f;
+        // Set at runtime by the trainer's setup: pad centres in metres east/north of the area centre, one per player post.
+        // Empty = one pad at the centre.
+        [System.NonSerialized] public List<Vector2> padCentres = new List<Vector2>();
 
         [Header("Layer B: procedural (base in Pure Procedural; displacement in the other modes)")]
         [Tooltip("Pure Procedural only: height before any noise, metres.")]
@@ -159,6 +162,10 @@ namespace Chaukanna.TerrainGen
 
         [Header("Layer C: surface")]
         public List<SurfaceRule> surfaceRules = new List<SurfaceRule>();
+        [Tooltip("Optional true-colour picture of the ground (PNG or JPG, north up) with a .json giving its bounds in degrees. It only colours the terrain; it never changes heights.")]
+        public string imageryPath = "";
+        [Tooltip("0 = surface rules only, 1 = the picture only (where it covers the terrain).")]
+        [Range(0f, 1f)] public float imageryBlend = 1f;
 
         public bool UsesDem => mode != TerrainMode.PureProcedural;
         public float TileSize => sizeMetres / Mathf.Max(1, tilesPerSide);

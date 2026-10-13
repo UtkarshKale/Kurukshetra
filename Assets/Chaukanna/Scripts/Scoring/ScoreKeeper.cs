@@ -93,6 +93,7 @@ namespace Chaukanna.Scoring
             s.timeOfDay = RunConditions.Time.ToString();
             s.visibility = RunConditions.Visibility.ToString();
             s.difficulty = RunConditions.Difficulty ?? "";
+            s.allowMovement = RunConditions.AllowMovement;
             s.nightVisionPercent = spawner.ScenarioTime > 0f ? Mathf.Clamp(100f * RunConditions.NightVisionSeconds / spawner.ScenarioTime, 0f, 100f) : 0f;
         }
 
@@ -105,7 +106,7 @@ namespace Chaukanna.Scoring
         // Player view at the end of a run: neutral, no score.
         void OnGUI()
         {
-            if (Event.current.type != EventType.Repaint || spawner == null || !spawner.Finished) return;
+            if (Event.current.type != EventType.Repaint || spawner == null || !spawner.Finished || PlayerView.HideOverlays) return;
             GUI.BeginGroup(PlayerView.Rect);
             float ui = PlayerView.Height / 720f;
             if (titleStyle == null) titleStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft, wordWrap = false, fontStyle = FontStyle.Bold };

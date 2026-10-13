@@ -39,6 +39,7 @@ namespace Chaukanna.Player
 
         // 0 = normal, 1 = fully zoomed.
         float Blend => Mathf.InverseLerp(normalFov, zoomedFov, cam.fieldOfView);
+        public float ZoomBlend => cam != null ? Blend : 0f;
 
         void Awake()
         {
@@ -58,6 +59,7 @@ namespace Chaukanna.Player
 
         void OnGUI()
         {
+            if (PlayerView.HideOverlays) return;
             GUI.BeginGroup(PlayerView.Rect);
             DrawGui();
             GUI.EndGroup();

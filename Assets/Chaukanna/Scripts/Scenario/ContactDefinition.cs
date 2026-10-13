@@ -10,6 +10,8 @@ namespace Chaukanna.Scenario
 
         [Tooltip("Optional. If empty, a placeholder is built from primitives using the silhouette below.")]
         public GameObject prefab;
+        [Tooltip("Other looks for this class (different drone or bird types). Each contact picks one from the scenario seed, so the same seed shows the same mix. Empty = always the prefab above.")]
+        public System.Collections.Generic.List<GameObject> variants = new System.Collections.Generic.List<GameObject>();
         public Silhouette silhouette;
         [Tooltip("Placeholder identification cue. A design decision: this is what makes look-alike classes separable through binoculars.")]
         public Cue cue;

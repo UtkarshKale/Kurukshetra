@@ -30,6 +30,7 @@ namespace Chaukanna.Player
 
         void OnGUI()
         {
+            if (PlayerView.HideOverlays) return;
             GUI.BeginGroup(PlayerView.Rect);
             DrawGui();
             GUI.EndGroup();

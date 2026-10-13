@@ -24,6 +24,7 @@ namespace Chaukanna.Scenario
         public static Visibility Visibility;
         public static string Difficulty = "";
         public static float NightVisionSeconds;
+        public static bool AllowMovement;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         public static void Reset()
@@ -32,6 +33,7 @@ namespace Chaukanna.Scenario
             Visibility = Visibility.Clear;
             Difficulty = "";
             NightVisionSeconds = 0f;
+            AllowMovement = false;
         }
     }
 
@@ -75,6 +77,14 @@ namespace Chaukanna.Scenario
         [Tooltip("Name of the difficulty level applied to this config; empty = none.")]
         public string difficulty = "";
 
+        [Header("Soldier")]
+        [Tooltip("On: the soldier can walk (W A S D, Shift to run). Off: fixed at the post, look only.")]
+        public bool allowMovement;
+        [Tooltip("How far from the post the soldier may walk, metres.")]
+        public float moveRadius = 50f;
+        public float walkSpeed = 4f;
+        public float runSpeed = 7f;
+
         [Header("Sensors")]
         public bool sensorsDegraded;
         [Tooltip("Negative = use the sensor profile's own error rate.")]
@@ -101,6 +111,9 @@ namespace Chaukanna.Scenario
             roeFlipTime = Mathf.Clamp(roeFlipTime, 0f, duration);
             if (aiErrorOverride > 1f) aiErrorOverride = 1f;
             detectionSizeMultiplier = Mathf.Clamp(detectionSizeMultiplier, 0.25f, 4f);
+            moveRadius = Mathf.Clamp(moveRadius, 0f, 2000f);
+            walkSpeed = Mathf.Clamp(walkSpeed, 0.5f, 15f);
+            runSpeed = Mathf.Clamp(runSpeed, walkSpeed, 20f);
             return this;
         }
 
@@ -128,6 +141,8 @@ namespace Chaukanna.Scenario
     public static class PlayerView
     {
         public static bool Split;
+        // True while a trainer view covers the whole window with something the player overlays must not draw over.
+        public static bool HideOverlays;
         public static float TrainerFraction = 0.42f;   // of the window width, left side
 
         public static Rect Rect => Split
@@ -149,6 +164,7 @@ namespace Chaukanna.Scenario
         static void Reset()
         {
             Split = false;
+            HideOverlays = false;
         }
     }
 }

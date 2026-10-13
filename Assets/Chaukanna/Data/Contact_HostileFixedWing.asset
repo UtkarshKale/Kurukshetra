@@ -14,7 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Scenario.ContactDefinition
   contactClass: 1
   displayName: Hostile fixed-wing
-  prefab: {fileID: 8718732527694989702, guid: c70166bd0289c534eabeb818390e30cc, type: 3}
+  prefab: {fileID: 1644308165963238993, guid: 91471c7148cc2fe4f904936785c69d73, type: 3}
+  variants: []
   silhouette: 1
   cue: 0
   size: 4

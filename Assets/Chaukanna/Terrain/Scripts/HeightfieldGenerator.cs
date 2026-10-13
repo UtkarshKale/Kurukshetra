@@ -172,25 +172,32 @@ namespace Chaukanna.TerrainGen
             int unused = 0;
             field.centreElevation = Elevation(cfg, dem, centreLat, centreLon, 0.0, 0.0, sourceMean, 1f, ref unused);
 
-            // Optional flat pad for the post. It alters the terrain, so Real World Accurate never gets it.
+            // Optional flat pads for the observation posts. They alter the terrain, so Real World Accurate never gets them.
             if (applyPostPad && cfg.flattenPostPad && cfg.mode != TerrainMode.RealWorldAccurate && cfg.postPadRadius > 0f)
             {
                 float inner = cfg.postPadRadius, outer = cfg.postPadRadius + Mathf.Max(1f, cfg.postPadFalloff);
-                for (int z = 0; z < resolution; z++)
+                int pads = cfg.padCentres != null && cfg.padCentres.Count > 0 ? cfg.padCentres.Count : 1;
+                for (int p = 0; p < pads; p++)
                 {
-                    double north = southEdge + z * step;
-                    for (int x = 0; x < resolution; x++)
+                    Vector2 c = cfg.padCentres != null && cfg.padCentres.Count > 0 ? cfg.padCentres[p] : Vector2.zero;
+                    int none = 0;
+                    float level = Elevation(cfg, dem, centreLat, centreLon, c.x, c.y, sourceMean, 1f, ref none);
+                    for (int z = 0; z < resolution; z++)
                     {
-                        double east = westEdge + x * step;
-                        float d = (float)Math.Sqrt(east * east + north * north);
-                        if (d >= outer) continue;
-                        float keep = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(inner, outer, d));
-                        int i = z * resolution + x;
-                        field.metres[i] = Mathf.Lerp(field.centreElevation, field.metres[i], keep);
+                        double north = southEdge + z * step;
+                        for (int x = 0; x < resolution; x++)
+                        {
+                            double east = westEdge + x * step;
+                            double dx = east - c.x, dz = north - c.y;
+                            float d = (float)Math.Sqrt(dx * dx + dz * dz);
+                            if (d >= outer) continue;
+                            float keep = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(inner, outer, d));
+                            int i = z * resolution + x;
+                            field.metres[i] = Mathf.Lerp(level, field.metres[i], keep);
+                        }
                     }
                 }
             }
-
             field.min = float.MaxValue;
             field.max = float.MinValue;
             foreach (float v in field.metres)
@@ -199,6 +206,30 @@ namespace Chaukanna.TerrainGen
                 if (v > field.max) field.max = v;
             }
             return field;
+        }
+
+        // Shaded-relief picture of a heightfield, north up, lighter = higher. Reuses `into` when it is the right size.
+        public static Texture2D PreviewTexture(Heightfield f, Texture2D into = null)
+        {
+            int res = f.resolution;
+            if (into == null || into.width != res || into.height != res) into = new Texture2D(res, res, TextureFormat.RGB24, false) { wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[res * res];
+            float range = Mathf.Max(1f, f.max - f.min);
+            for (int z = 0; z < res; z++)
+            for (int x = 0; x < res; x++)
+            {
+                float h = (f.At(x, z) - f.min) / range;
+                float sx = f.At(Math.Min(res - 1, x + 1), z) - f.At(Math.Max(0, x - 1), z), sz = f.At(x, Math.Min(res - 1, z + 1)) - f.At(x, Math.Max(0, z - 1));
+                float shade = Mathf.Clamp01(0.75f + (sz - sx) / (4f * f.Spacing));      // lit from the north-west
+                float v = Mathf.Clamp01((0.25f + 0.75f * h) * shade);
+                // A green-to-brown-to-white tint by height, so it reads as terrain on the trainer's map.
+                Color low = new Color(0.35f, 0.5f, 0.3f), mid = new Color(0.55f, 0.45f, 0.32f);
+                Color c = Color.Lerp(Color.Lerp(low, mid, Mathf.Clamp01(h * 2f)), Color.white, Mathf.Clamp01(h * 2f - 1f)) * (0.35f + 0.9f * v);
+                px[z * res + x] = new Color32((byte)(Mathf.Clamp01(c.r) * 255f), (byte)(Mathf.Clamp01(c.g) * 255f), (byte)(Mathf.Clamp01(c.b) * 255f), 255);
+            }
+            into.SetPixels32(px);
+            into.Apply();
+            return into;
         }
 
         // Slope in degrees by central differences over the physical sample spacing (one-sided at the edges).

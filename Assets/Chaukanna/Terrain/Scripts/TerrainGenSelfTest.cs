@@ -34,6 +34,7 @@ namespace Chaukanna.TerrainGen
                 ProceduralChecks();
                 DemChecks(dir);
                 InvalidInputChecks(dir);
+                ImageryChecks(dir);
                 UnityTerrainChecks();
             }
             catch (Exception e)
@@ -350,6 +351,65 @@ namespace Chaukanna.TerrainGen
             Check("heightmap resolution 500 is rejected; 513 and 1025 are accepted",
                 cfg.Validate().Count > 0 && TerrainGenConfig.IsValidResolution(513) && TerrainGenConfig.IsValidResolution(1025) && !TerrainGenConfig.IsValidResolution(512));
             Free(cfg);
+        }
+
+        // --- Ground imagery (synthetic picture: west half red, east half blue) ---
+        static void ImageryChecks(string dir)
+        {
+            var pic = new Texture2D(64, 32, TextureFormat.RGB24, false);
+            for (int y = 0; y < 32; y++) for (int x = 0; x < 64; x++) pic.SetPixel(x, y, x < 32 ? Color.red : Color.blue);
+            string png = Path.Combine(dir, "synthetic_image.png");
+            File.WriteAllBytes(png, pic.EncodeToPNG());
+            Free(pic);
+
+            // No metadata: loads, not georeferenced, stretched over the whole area.
+            var plain = ImageryReader.Load(png);
+            var cfg = Config(TerrainMode.PureProcedural, 33, 2000f);
+            Rect whole = ImageryReader.Extent(cfg, null, plain);
+            Check("picture without bounds loads and is stretched over the whole area", plain.texture.width == 64 && !plain.georeferenced && whole.xMin == -1000f && whole.width == 2000f && Mathf.Approximately(ImageryReader.Coverage(cfg, whole), 1f));
+
+            // With bounds and a real-world mode it is placed by coordinates: here, the eastern half of a 0.02 degree square at 28 N 77 E.
+            File.WriteAllText(Path.ChangeExtension(png, ".json"), "{\"west\":77.01,\"south\":28.0,\"east\":77.02,\"north\":28.02,\"source\":\"synthetic test picture\",\"licence\":\"none\"}");
+            var placed = ImageryReader.Load(png);
+            var dem = new ElevationGrid { width = 3, height = 3, metres = new float[9], west = 77.0, east = 77.02, south = 28.0, north = 28.02, pixelIsArea = false };
+            dem.FillNoDataAndMeasure(null);
+            cfg.mode = TerrainMode.RealWorldAccurate; cfg.demPath = "synthetic";
+            Rect half = ImageryReader.Extent(cfg, dem, placed);
+            float lonMetres = (float)(0.01 * GeoMath.MetresPerDegreeLongitude(28.01)), latMetres = (float)(0.02 * GeoMath.MetresPerDegreeLatitude(28.01));
+            Check($"picture with bounds is placed by coordinates ({half.width:F0} m x {half.height:F0} m, starting at the centre line)",
+                placed.georeferenced && Mathf.Abs(half.xMin) < 0.5f && Mathf.Abs(half.width - lonMetres) < 0.5f && Mathf.Abs(half.height - latMetres) < 0.5f && Mathf.Abs(half.yMin + latMetres * 0.5f) < 0.5f);
+            Check("coverage is about half when the picture covers the eastern half", Mathf.Abs(ImageryReader.Coverage(cfg, half) - 0.5f * lonMetres / 1000f) < 0.02f);
+
+            // Built into a terrain: one extra layer per tile, sized to the picture, weighted by the blend only where it covers.
+            cfg.mode = TerrainMode.PureProcedural; cfg.tilesPerSide = 2; cfg.imageryBlend = 0.75f;
+            var layer = new TerrainLayer();
+            cfg.surfaceRules.Add(new SurfaceRule { label = "Everything", layer = layer });
+            var eastHalf = new Imagery { texture = plain.texture, georeferenced = false };
+            var result = TerrainBuilder.Build(cfg, null, null, null, eastHalf);
+            try
+            {
+                var d0 = result.tiles[0].terrainData; var d1 = result.tiles[1].terrainData;
+                var l0 = d0.terrainLayers[d0.terrainLayers.Length - 1]; var l1 = d1.terrainLayers[d1.terrainLayers.Length - 1];
+                Check("each tile gets an imagery layer spanning the whole picture, offset by the tile's position",
+                    d0.terrainLayers.Length == 2 && l0.diffuseTexture == plain.texture && l0.tileSize == new Vector2(2000f, 2000f) && l0.tileOffset == Vector2.zero && l1.tileOffset == new Vector2(1000f, 0f));
+                float[,,] a = d0.GetAlphamaps(0, 0, 4, 4);
+                Check("imagery takes its blend share and the rules keep the rest", Mathf.Abs(a[1, 1, 1] - 0.75f) < 0.02f && Mathf.Abs(a[1, 1, 0] - 0.25f) < 0.02f);
+                float before = result.field.At(5, 5);
+                cfg.imageryBlend = 0f;
+                var noPicture = HeightfieldGenerator.Generate(cfg, null);
+                Check("imagery never changes heights", noPicture.At(5, 5) == before);
+            }
+            finally
+            {
+                foreach (var t in result.tiles) { foreach (var l in t.terrainData.terrainLayers) if (l != layer) Free(l); Free(t.terrainData); }
+                Free(result.root); Free(layer); Free(plain.texture); Free(placed.texture); Free(cfg);
+            }
+
+            File.WriteAllText(Path.Combine(dir, "scene.tif"), "x");
+            Check("GeoTIFF imagery is refused with the conversion command", Throws(() => ImageryReader.Load(Path.Combine(dir, "scene.tif")), "gdal_translate"));
+            File.WriteAllText(Path.Combine(dir, "broken.png"), "not a picture");
+            Check("a file that is not a picture is reported", Throws(() => ImageryReader.Load(Path.Combine(dir, "broken.png")), "could not be read"));
+            Check("missing imagery file is reported", Throws(() => ImageryReader.Load(Path.Combine(dir, "nope.png")), "not found"));
         }
 
         // --- Unity Terrain objects ---

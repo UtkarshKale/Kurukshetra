@@ -23,21 +23,55 @@ namespace Chaukanna.Scenario
             }
         }
 
-        // Returns the root; one material instance is shared by all parts of the contact.
-        public static GameObject Build(ContactDefinition def, out Material material, out Transform wingL, out Transform wingR)
+        public const string RotorPrefix = "Rotor";
+
+        // Which look a contact gets. All looks of a class are the same size for detection; only the shape differs.
+        public static GameObject PickPrefab(ContactDefinition def, int variantSeed)
         {
-            GameObject root = def.prefab != null ? Object.Instantiate(def.prefab) : BuildPlaceholder(def.silhouette, def.cue);
+            if (def.variants != null && def.variants.Count > 0)
+            {
+                // The main prefab counts as one of the choices.
+                int choices = def.variants.Count + (def.prefab != null ? 1 : 0);
+                int pick = (variantSeed & 0x7FFFFFFF) % choices;
+                if (pick < def.variants.Count && def.variants[pick] != null) return def.variants[pick];
+            }
+            return def.prefab;
+        }
+
+        // Returns the root. Every material on the contact is replaced by its own copy, so tinting one contact (F1 debug)
+        // never touches another contact or the asset.
+        public static GameObject Build(ContactDefinition def, out Material[] materials, out Transform wingL, out Transform wingR, int variantSeed = 0)
+        {
+            GameObject prefab = PickPrefab(def, variantSeed);
+            GameObject root = prefab != null ? Object.Instantiate(prefab) : BuildPlaceholder(def.silhouette, def.cue);
             root.transform.localScale = Vector3.one * def.size;
             wingL = root.transform.Find(WingLeftName);
             wingR = root.transform.Find(WingRightName);
 
-            material = null;
+            var copies = new System.Collections.Generic.Dictionary<Material, Material>();
             foreach (var r in root.GetComponentsInChildren<Renderer>())
             {
-                if (material == null) material = new Material(r.sharedMaterial);
-                r.sharedMaterial = material;
+                var shared = r.sharedMaterials;
+                for (int i = 0; i < shared.Length; i++)
+                {
+                    if (shared[i] == null) continue;
+                    if (!copies.TryGetValue(shared[i], out Material copy)) copies[shared[i]] = copy = new Material(shared[i]);
+                    shared[i] = copy;
+                }
+                r.sharedMaterials = shared;
             }
+            materials = new Material[copies.Count];
+            copies.Values.CopyTo(materials, 0);
             return root;
+        }
+
+        // Rotor parts of a model (objects whose name starts with "Rotor"), for spinning.
+        public static Transform[] FindRotors(GameObject root)
+        {
+            var list = new System.Collections.Generic.List<Transform>();
+            foreach (var t in root.GetComponentsInChildren<Transform>())
+                if (t.name.StartsWith(RotorPrefix, System.StringComparison.OrdinalIgnoreCase)) list.Add(t);
+            return list.ToArray();
         }
 
         // Also used in the Editor to bake the placeholder prefabs.
@@ -54,7 +88,7 @@ namespace Chaukanna.Scenario
             return root;
         }
 
-        static void BuildCue(Transform root, Cue cue)
+        public static void BuildCue(Transform root, Cue cue)
         {
             switch (cue)
             {

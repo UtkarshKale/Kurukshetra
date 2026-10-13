@@ -22,16 +22,19 @@ namespace Chaukanna.Scenario
         public bool OnHold => Data.OnHold;
         public bool Decided => Data.Decided;
 
-        Material material;
+        Material[] materials = new Material[0];
+        Color[] ownColours = new Color[0];      // each material's own colour, restored when the debug tint is off
         string despawnReason;
 
-        public void Initialise(int id, ContactDefinition definition, Material sharedMaterial)
+        public void Initialise(int id, ContactDefinition definition, Material[] contactMaterials)
         {
             Id = id;
             Definition = definition;
             TruthClass = definition.contactClass;
             SpawnTime = ContactRegistry.ScenarioTime;
-            material = sharedMaterial;
+            materials = contactMaterials ?? new Material[0];
+            ownColours = new Color[materials.Length];
+            for (int i = 0; i < materials.Length; i++) ownColours[i] = materials[i].color;
             Data = new ContactRecord { id = id, truthClass = TruthClass, spawnTime = SpawnTime };
             RefreshColour();
             ContactRegistry.Register(this);
@@ -123,14 +126,15 @@ namespace Chaukanna.Scenario
 
         public void RefreshColour()
         {
-            if (material != null)
-                material.color = ContactRegistry.TruthColours ? ContactVisuals.TruthColour(TruthClass) : ContactVisuals.Neutral;
+            // Debug tint (F1) paints the whole contact in its class colour; otherwise it wears its own colours.
+            for (int i = 0; i < materials.Length; i++)
+                if (materials[i] != null) materials[i].color = ContactRegistry.TruthColours ? ContactVisuals.TruthColour(TruthClass) : ownColours[i];
         }
 
         void OnDestroy()
         {
             if (Data != null) ContactRegistry.Unregister(this, despawnReason ?? "Destroyed");
-            if (material != null) Destroy(material);
+            foreach (var m in materials) if (m != null) Destroy(m);
         }
     }
 }

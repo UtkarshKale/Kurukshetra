@@ -14,6 +14,8 @@ namespace Chaukanna.Scenario
         public ScenarioPreset preset;
         [Tooltip("What hostiles fly at. Defaults to this transform.")]
         public Transform defendedPoint;
+        [Tooltip("Start a run as soon as Play begins, without waiting for the trainer's START. For quick testing only.")]
+        public bool autoStart;
 
         [Header("Inspector override")]
         [Tooltip("On: the values below replace the preset's for this run (the preset asset is not modified). Off: the preset is used unchanged.")]
@@ -63,7 +65,7 @@ namespace Chaukanna.Scenario
         bool finished;
 
         public float ScenarioTime { get; private set; }
-        public bool Finished => finished;
+        public bool Finished => finished && plan != null;
         public float Duration => active != null ? active.duration : 0f;
         public int ActiveSeed => active != null ? active.seed : 0;
         public int RunNumber { get; private set; }   // increments on every (re)start
@@ -90,8 +92,15 @@ namespace Chaukanna.Scenario
                 return;
             }
             if (defendedPoint == null) defendedPoint = transform;
-            Restart();
+            // Nothing happens until the trainer presses START (or StartRun / Restart is called), unless Auto Start is ticked.
+            if (autoStart) Restart();
         }
+
+        // True until the first run has been started.
+        public bool Waiting => plan == null;
+
+        // Set by the trainer's setup: where drones may appear (world x, z). Empty = the ring in front of the post.
+        [System.NonSerialized] public List<Vector3> customSpawnPoints = new List<Vector3>();
 
         // Ends the run on the next frame, e.g. to see the results without waiting out the clock.
         [ContextMenu("End Scenario Now")]
@@ -148,6 +157,7 @@ namespace Chaukanna.Scenario
 
             RunConditions.Difficulty = TrainerConfig != null ? TrainerConfig.difficulty : "";
             RunConditions.NightVisionSeconds = 0f;
+            RunConditions.AllowMovement = TrainerConfig != null && TrainerConfig.allowMovement;
             RunNumber++;
             ScenarioTime = 0f;
             next = 0;
@@ -165,7 +175,7 @@ namespace Chaukanna.Scenario
                 Debug.Log("[Scenario] Truth colours " + (ContactRegistry.TruthColours ? "ON (debug)" : "OFF"));
             }
 
-            if (finished) return;
+            if (finished || plan == null) return;
             ScenarioTime += Time.deltaTime;
             ContactRegistry.ScenarioTime = ScenarioTime;
 
@@ -220,6 +230,16 @@ namespace Chaukanna.Scenario
                 start = OnSector(bearing, r, altitude),
                 motionSeed = motionSeed,
             };
+            // Trainer-placed spawn points replace the ring. The point is picked from values already drawn, so the rest of
+            // the plan (times, speeds, classes) is the same with or without them.
+            if (customSpawnPoints != null && customSpawnPoints.Count > 0)
+            {
+                Vector3 point = customSpawnPoints[(motionSeed & 0x7FFFFFFF) % customSpawnPoints.Count];
+                point += new Vector3((u4 - 0.5f) * 60f, 0f, (u5 - 0.5f) * 60f);     // spread, so drones from one point don't stack
+                float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(point);
+                point.y = (float.IsNaN(ground) ? 0f : ground) + altitude;
+                p.start = point;
+            }
 
             switch (def.behaviour)
             {
@@ -241,14 +261,16 @@ namespace Chaukanna.Scenario
 
         void Spawn(PlannedSpawn p, int id)
         {
-            var go = ContactVisuals.Build(p.def, out var material, out var wingL, out var wingR);
+            var go = ContactVisuals.Build(p.def, out var materials, out var wingL, out var wingR, p.motionSeed / 7);
             go.name = $"Contact_{id:00}";   // name must not reveal class in the hierarchy either
             go.transform.SetParent(transform, true);
             go.transform.position = p.start;
 
             var contact = go.AddComponent<Contact>();
-            contact.Initialise(id, p.def, material);
-            go.AddComponent<ContactMotion>().Initialise(contact, p.def.behaviour, p.speed, p.goal, p.orbitRadius, p.motionSeed, wingL, wingR);
+            contact.Initialise(id, p.def, materials);
+            var motion = go.AddComponent<ContactMotion>();
+            motion.Initialise(contact, p.def.behaviour, p.speed, p.goal, p.orbitRadius, p.motionSeed, wingL, wingR);
+            motion.rotors = ContactVisuals.FindRotors(go);
         }
 
         Vector3 OnSector(float bearingDeg, float radius, float altitude)

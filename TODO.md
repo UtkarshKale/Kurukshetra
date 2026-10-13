@@ -36,6 +36,16 @@ Work top to bottom. One task per session. Tick [x] when done and log it in PROGR
 - [ ] T4. (plan) Hybrid randomized mode: scenarios mixed so the trainee doesn't know what's coming; each with difficulty adjustment.
 - [ ] T5. Scenario builder routes: scripted, procedural, form-based (LLM-assisted builder is for the full product, not the demo).
 - [ ] T6. Saved session history feeding the trend charts; sample history for the demo (captioned "sample data"). Partly done: the dashboard reads the last 10 saved sessions and pads with labelled sample points.
+- [ ] T22. Soldier walking is a simple ground-follower (no jump, crouch, slope limit or collision with objects). Upgrade to a CharacterController when there is something to collide with.
+- [ ] T23. Typed number boxes exist for whole numbers only; sliders (terrain weights) and text paths are unchanged. Tab between boxes is Unity's default behaviour, not tested.
+- [x] T24. XCharts charts on the score dashboard (Charts tab), in its own optional assembly (Assets/Chaukanna/Charts); built-in charts stay on the Overview tab. Needs a hand test: the tab's layout could not be seen from the CLI.
+- [ ] T25. XCharts needed one line changed to compile on Unity 6000.6 (SerieLabelPool.cs, EntityId cast). Re-apply it if XCharts is updated.
+- [ ] T16. Choose the networking stack for LAN multiplayer (Netcode for GameObjects + Unity Transport, or another). None is installed; adding one is a new package and needs the user's yes.
+- [ ] T17. Lobby: trainer hosts, players join over the LAN, press Ready, START sends terrain + scenario + posts to everyone, each player spawns at their post. The Lobby tab and the PlayerSlot list are placeholders shaped for this.
+- [ ] T18. Per-player state in the field: today only the local player (Player 1) has a camera, sensor and score; other posts are placed and flattened only.
+- [ ] T19. Trainer menu and in-field trainer panel duplicate the scenario controls; share one implementation when the UI moves to a canvas (T1).
+- [ ] T20. Drone spawn points are plain points; add spawn arcs / sectors and per-class spawn points.
+- [ ] T21. Built player: add TrainerMenu and MixedSky to Build Settings (a ProjectSettings change, so the user does it).
 - [ ] T7. Multiplayer / LAN and unit-level stats replace the placeholders (after the demo). Swap points: IPlayerSource and IUnitStatsSource in Scripts/Trainer/DashboardData.cs.
 - [ ] T8. Truth map through an orthographic camera and render texture. Needs a dedicated layer, which means a ProjectSettings change.
 - [ ] T9. Typed seed field and a real preset dropdown on the trainer panel (now -/+ buttons and preset buttons, because typed digits would hit the player's 1-5 keys).
@@ -49,11 +59,12 @@ Work top to bottom. One task per session. Tick [x] when done and log it in PROGR
 ## Terrain (after pass 1)
 - [ ] G1. GeoTIFF import. No reader is built in: convert with GDAL for now (steps in the terrain README). A maintained library means a new package, so ask first.
 - [ ] G2. Online DEM download tested end to end (OpenTopography needs the user's free API key; Copernicus and NASA need accounts).
-- [ ] G3. Satellite imagery or land-cover texturing, kept separate from elevation.
+- [x] G3a. Satellite imagery as terrain colour (PNG / JPG with bounds), kept separate from elevation.
+- [ ] G3b. ESA WorldCover class raster driving the surface layers (trees, grass, crops, built-up, bare, water).
 - [ ] G4. Vegetation and props on the generated terrain.
 - [ ] G5. Contour lines and terrain shading on the trainer's truth map.
 - [ ] G6. Urban and rural scenario terrain presets; pick real locations for the demo.
-- [ ] G7. Terrain chosen from the trainer panel and regenerated at run start from the scenario seed.
+- [x] G7. Terrain chosen in the trainer menu and built at run start (scene TrainerMenu, Terrain tab).
 - [ ] G8. Erosion, runtime streaming and GPU generation are deliberately out of scope until needed.
 - [ ] G9. Run a real elevation file through the tool (pass 1 was proven on synthetic files only). Needs the user to pick a location and supply or approve a download.
 - [ ] G10. 16-bit PNG heightmap import (not built; RAW, HGT and ASC are).
@@ -73,6 +84,12 @@ Work top to bottom. One task per session. Tick [x] when done and log it in PROGR
 - [ ] S7. Boids for the birds in Mixed Sky too (they wander individually now), reusing the swarm boids.
 
 ## Polish, demo and team
+- [x] P1a. Contact placeholders replaced with the downloaded models: NateGazzard drone (both quads), Predator (both fixed-wings), Quaternius pigeon and jay (birds, two types picked by seed). Wrapper prefabs in Prefabs/Contacts/.
+- [ ] P1b. Manned aircraft: the Helicopter and Small Airplane are .glb only. Re-download as OBJ from Poly Pizza (or approve the glTFast package), then add the contact class (S4).
+- [ ] P1c. Only one quad model and one fixed-wing model exist, so hostile and friendly/civilian differ only by the added cue (payload box, antenna). Get the FPV racing drone and a second fixed-wing for real variety; a Shahed-style delta wing is still missing.
+- [ ] P1d. The pigeon is a standing cartoon bird with no flying animation and the jay has no texture (white). Find flying bird models with a flap clip.
+- [ ] P1e. Environment art (nature pack, city kits), effects (particle pack) and sounds (Sonniss, Kenney) are downloaded but not used yet.
+- [ ] P1f. Delete the nature pack's Blends folder: Unity logs 'Blender could not be found' for every .blend file.
 - [ ] P1. Replace placeholders with models (see assets-download-list.md in the cloud project files; CC-BY models need end credits).
 - [ ] P2. Sound and effects pass (muzzle flash, engage, jam); better UI look.
 - [ ] P3. VR shot (Quest over Link) - drop if time runs short.
@@ -91,3 +108,5 @@ Work top to bottom. One task per session. Tick [x] when done and log it in PROGR
 - [x] Hold reversible with hold-delay rule; score dashboard (roster, stats, heatmap, timeline, decision-tree boxes, trends, unit placeholder); F5 removed.
 - [x] Day / Dusk / Night, Clear / Hazy / Foggy, night vision (N); difficulty levels Recruit / Trained / Expert; "Recommended next" with Apply.
 - [x] Night and dusk sky boxes from All Sky; moonlit night. Terrain generator pass 1 (Chaukanna > Terrain Generator).
+- [x] Trainer main-menu scene (Terrain / Scenario / Map / Lobby, START); field waits for START; player posts and drone spawn points placed on a map; ground imagery.
+- [x] Trainer setting for soldier movement (W A S D within a radius, or fixed at the post); night-vision surround hidden in binoculars; typed number boxes on both trainer panels.

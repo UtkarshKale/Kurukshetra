@@ -110,6 +110,29 @@ namespace Chaukanna.Trainer
             Check("cannot go above the hardest or below the easiest", DifficultyAdvisor.Recommend(2, 3, 95f) == 2 && DifficultyAdvisor.Recommend(0, 3, 10f) == 0);
             Check("thresholds are parameters", DifficultyAdvisor.Recommend(1, 3, 75f, 70f, 40f) == 2);
 
+            // Typed numbers: valid text applies, out-of-range text clamps, anything else keeps the old value.
+            Check("typed '120' applies", NumberEntry.Parse("120", 300, 30, 1800) == 120);
+            Check("typed ' 45 ' is trimmed", NumberEntry.Parse(" 45 ", 300, 30, 1800) == 45);
+            Check("typed '5' clamps up to the minimum", NumberEntry.Parse("5", 300, 30, 1800) == 30);
+            Check("typed '99999' clamps down to the maximum", NumberEntry.Parse("99999", 300, 30, 1800) == 1800);
+            Check("typed '-3' clamps to 0 for a count", NumberEntry.Parse("-3", 6, 0, 50) == 0);
+            Check("typed 'abc' reverts to the old value", NumberEntry.Parse("abc", 300, 30, 1800) == 300);
+            Check("empty text reverts to the old value", NumberEntry.Parse("", 300, 30, 1800) == 300 && NumberEntry.Parse("   ", 300, 30, 1800) == 300);
+            Check("typed '120.7' takes the whole part", NumberEntry.Parse("120.7", 300, 30, 1800) == 120);
+            Check("a negative seed can be typed", NumberEntry.Parse("-42", 1, int.MinValue, int.MaxValue) == -42);
+            Check("a huge number does not overflow", NumberEntry.Parse("99999999999999", 1, 0, 1000) == 1000);
+
+            // Soldier movement: default is fixed at the post; the walk radius is a circle around it.
+            var move = new ScenarioConfig();
+            Check("movement is off by default with a 50 m radius", !move.allowMovement && move.moveRadius == 50f);
+            var post = new Vector3(100f, 5f, -200f);
+            Check("inside the radius the position is unchanged", Chaukanna.Player.ObserverMove.ClampToRadius(post, new Vector3(120f, 9f, -200f), 50f) == new Vector3(120f, 9f, -200f));
+            Vector3 pulled = Chaukanna.Player.ObserverMove.ClampToRadius(post, new Vector3(400f, 9f, -200f), 50f);
+            Check("outside the radius it is pulled back to the edge, height untouched", Mathf.Approximately(pulled.x, 150f) && pulled.y == 9f && pulled.z == -200f);
+            Check("radius 0 means no limit", Chaukanna.Player.ObserverMove.ClampToRadius(post, new Vector3(900f, 0f, 900f), 0f) == new Vector3(900f, 0f, 900f));
+            var bad2 = new ScenarioConfig { moveRadius = -5f, walkSpeed = 0f, runSpeed = 1f }.Validate();
+            Check("movement values are clamped (radius >= 0, run >= walk)", bad2.moveRadius == 0f && bad2.walkSpeed == 0.5f && bad2.runSpeed >= bad2.walkSpeed);
+
             // Clone is independent.
             var a = new ScenarioConfig();
             var b = a.Clone();

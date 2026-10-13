@@ -37,7 +37,8 @@ namespace Chaukanna.TerrainGen
 
         // Builds or rebuilds the tiles under `existingRoot` (or a new root). makeData lets the editor save each
         // TerrainData as an asset; at runtime pass null and the data stays in memory.
-        public static TerrainBuildResult Build(TerrainGenConfig cfg, ElevationGrid dem, GeneratedTerrainRoot existingRoot = null, Func<string, TerrainData, TerrainData> makeData = null)
+        // imagery (optional) colours the terrain; saveAsset lets the editor keep the picture and its layers as assets.
+        public static TerrainBuildResult Build(TerrainGenConfig cfg, ElevationGrid dem, GeneratedTerrainRoot existingRoot = null, Func<string, TerrainData, TerrainData> makeData = null, Imagery imagery = null, Action<string, UnityEngine.Object> saveAsset = null)
         {
             var errors = cfg.Validate();
             if (errors.Count > 0) throw new DemException(string.Join("\n", errors));
@@ -68,6 +69,22 @@ namespace Chaukanna.TerrainGen
             var layers = new List<TerrainLayer>();
             foreach (var rule in cfg.surfaceRules) if (rule.layer != null && !layers.Contains(rule.layer)) layers.Add(rule.layer);
 
+            // Imagery: where the picture sits, and how much of the terrain it covers.
+            bool useImagery = imagery != null && imagery.texture != null && cfg.imageryBlend > 0f;
+            Rect imageryExtent = default;
+            if (useImagery)
+            {
+                imageryExtent = ImageryReader.Extent(cfg, dem, imagery);
+                float coverage = ImageryReader.Coverage(cfg, imageryExtent);
+                if (coverage <= 0f) { useImagery = false; result.warnings.Add("The imagery does not overlap the terrain area at all, so it was not used. Check its bounds against the elevation file."); }
+                else
+                {
+                    if (coverage < 0.99f) result.warnings.Add($"The imagery covers only {coverage * 100f:F0} % of the terrain; the rest uses the surface rules.");
+                    if (!imagery.georeferenced || !cfg.UsesDem) result.warnings.Add("The imagery has no usable position here, so it is stretched over the whole terrain.");
+                    if (saveAsset != null) saveAsset("Imagery", imagery.texture);
+                }
+            }
+
             var grid = new Terrain[tiles, tiles];
             float[,] heights = null;
             for (int tz = 0; tz < tiles; tz++)
@@ -81,7 +98,18 @@ namespace Chaukanna.TerrainGen
                 if (makeData != null) data = makeData(name, data);
                 heights = TileHeights(field, tx, tz, res, min, range, heights);
                 data.SetHeights(0, 0, heights);                       // one call per tile
-                if (layers.Count > 0) Paint(cfg, field, data, layers, tx, tz, res, min);
+                var tileLayers = layers;
+                int imageryIndex = -1;
+                if (useImagery)
+                {
+                    // One layer per tile, because each tile needs its own offset into the picture.
+                    // Unity maps texture u = (local x + tileOffset.x) / tileSize.x, so the offset is the tile's west / south edge measured from the picture's.
+                    var layer = new TerrainLayer { name = name + "_Imagery", diffuseTexture = imagery.texture, tileSize = new Vector2(imageryExtent.width, imageryExtent.height), tileOffset = new Vector2(-half + tx * tileSize - imageryExtent.xMin, -half + tz * tileSize - imageryExtent.yMin), smoothness = 0f, metallic = 0f };
+                    if (saveAsset != null) saveAsset(layer.name, layer);
+                    tileLayers = new List<TerrainLayer>(layers) { layer };
+                    imageryIndex = tileLayers.Count - 1;
+                }
+                if (tileLayers.Count > 0) Paint(cfg, field, data, tileLayers, tx, tz, res, min, imageryIndex, imageryExtent, new Vector2(-half + tx * tileSize, -half + tz * tileSize), tileSize);
 
                 var go = Terrain.CreateTerrainGameObject(data);
                 go.name = name;
@@ -107,7 +135,7 @@ namespace Chaukanna.TerrainGen
         }
 
         // Surface weights from elevation (metres above the area's lowest point) and slope (degrees).
-        static void Paint(TerrainGenConfig cfg, Heightfield field, TerrainData data, List<TerrainLayer> layers, int tileX, int tileZ, int res, float min)
+        static void Paint(TerrainGenConfig cfg, Heightfield field, TerrainData data, List<TerrainLayer> layers, int tileX, int tileZ, int res, float min, int imageryIndex, Rect imageryExtent, Vector2 tileOrigin, float tileSize)
         {
             data.terrainLayers = layers.ToArray();
             int a = Mathf.Min(res - 1, 1024);
@@ -127,11 +155,23 @@ namespace Chaukanna.TerrainGen
                 {
                     if (rule.layer == null) continue;
                     float w = RuleWeight(rule, height, slope);
-                    map[z, x, layers.IndexOf(rule.layer)] += w;
+                    int index = layers.IndexOf(rule.layer);
+                    if (index < 0) continue;
+                    map[z, x, index] += w;
                     total += w;
                 }
-                if (total <= 0.0001f) map[z, x, 0] = 1f;       // nothing matched: fall back to the first layer
-                else for (int l = 0; l < layers.Count; l++) map[z, x, l] /= total;
+                int ruleLayers = imageryIndex >= 0 ? layers.Count - 1 : layers.Count;
+                if (total <= 0.0001f) { if (ruleLayers > 0) map[z, x, 0] = 1f; }       // nothing matched: fall back to the first layer
+                else for (int l = 0; l < ruleLayers; l++) map[z, x, l] /= total;
+
+                if (imageryIndex >= 0)
+                {
+                    // The picture takes its share only where it actually covers the ground.
+                    var world = new Vector2(tileOrigin.x + (x + 0.5f) / a * tileSize, tileOrigin.y + (z + 0.5f) / a * tileSize);
+                    float share = imageryExtent.Contains(world) || ruleLayers == 0 ? (ruleLayers == 0 ? 1f : cfg.imageryBlend) : 0f;
+                    for (int l = 0; l < ruleLayers; l++) map[z, x, l] *= 1f - share;
+                    map[z, x, imageryIndex] = share;
+                }
             }
             data.SetAlphamaps(0, 0, map);
         }

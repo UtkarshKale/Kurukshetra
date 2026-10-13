@@ -17,6 +17,8 @@ namespace Chaukanna.Scenario
         void Start()
         {
             cam = GetComponent<Camera>();
+            // Walking is a separate component, added here so existing scenes get it without being edited.
+            if (GetComponent<Chaukanna.Player.ObserverMove>() == null) gameObject.AddComponent<Chaukanna.Player.ObserverMove>();
             Vector3 e = transform.eulerAngles;
             yaw = e.y;
             pitch = -Mathf.DeltaAngle(0f, e.x);

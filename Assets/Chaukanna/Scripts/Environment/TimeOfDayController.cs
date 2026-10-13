@@ -26,6 +26,7 @@ namespace Chaukanna.Environment
 
         ScenarioSpawner spawner;
         ContactSensor sensor;
+        Binoculars binoculars;
         int run = -1;
         float difficultySize = 1f;
 
@@ -201,7 +202,7 @@ namespace Chaukanna.Environment
         // Night-vision goggles: green wash, moving grain and a dark surround. Drawn under the binocular mask and the HUD.
         void OnGUI()
         {
-            if (profile == null || Event.current.type != EventType.Repaint) return;
+            if (profile == null || Event.current.type != EventType.Repaint || PlayerView.HideOverlays) return;
             GUI.depth = 20;
             GUI.BeginGroup(PlayerView.Rect);
             float w = PlayerView.Width, h = PlayerView.Height, ui = h / 720f;
@@ -221,8 +222,10 @@ namespace Chaukanna.Environment
                 float ox = Random.value, oy = Random.value, tiles = h / 256f;
                 GUI.DrawTextureWithTexCoords(new Rect(0f, 0f, w, h), noise, new Rect(ox, oy, tiles * w / h, tiles));
 
-                // Dark surround: narrows the usable view.
-                GUI.color = Color.black;
+                // Dark surround: narrows the usable view. Faded out through binoculars, whose own two-lens mask already does that.
+                if (binoculars == null) binoculars = FindAnyObjectByType<Binoculars>();
+                float surround = 1f - (binoculars != null ? binoculars.ZoomBlend : 0f);
+                GUI.color = new Color(0f, 0f, 0f, surround);
                 float d = h * profile.nightVisionTube * 1.4f;   // the texture's clear circle is 1/1.4 of its size
                 var r = new Rect((w - d) * 0.5f, (h - d) * 0.5f, d, d);
                 GUI.DrawTexture(r, tube);

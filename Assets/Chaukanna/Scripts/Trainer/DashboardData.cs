@@ -136,6 +136,73 @@ namespace Chaukanna.Trainer
         }
     }
 
+    // What the optional XCharts panel is given, as JSON. Field names must match XChartsPanel.Payload in the Charts folder.
+    [Serializable]
+    public class ChartPayload
+    {
+        [Serializable] public class Named { public string name; public float value; }
+        [Serializable] public class SessionPoint { public string label; public float scorePercent, detectionSeconds, classificationAccuracy, engagementScore; public bool sample; }
+        [Serializable] public class ClassRow { public string name; public int right, wrong, noCall; }
+
+        public string playerName = "";
+        public List<SessionPoint> sessions = new List<SessionPoint>();
+        public List<Named> counts = new List<Named>();
+        public List<ClassRow> classes = new List<ClassRow>();
+        public List<Named> detectionBins = new List<Named>();
+        public List<Named> nodePoints = new List<Named>();
+
+        // trend = the padded list the dashboard already shows (sample points first, then saved sessions).
+        public static ChartPayload Build(string playerName, SessionResult s, List<TrendPoint> trend)
+        {
+            var p = new ChartPayload { playerName = playerName ?? "" };
+            if (trend != null)
+                for (int i = 0; i < trend.Count; i++)
+                    p.sessions.Add(new SessionPoint { label = (i + 1) + (trend[i].sample ? "*" : ""), scorePercent = trend[i].scorePercent, detectionSeconds = trend[i].detectionSeconds, classificationAccuracy = trend[i].classificationAccuracy, engagementScore = trend[i].engagementScore, sample = trend[i].sample });
+            if (s == null) return p;
+
+            Add(p.counts, "Missed", s.missed); Add(p.counts, "Unresolved", s.unresolved); Add(p.counts, "False engage", s.falseEngagements);
+            Add(p.counts, "Missed hostile", s.missedHostiles); Add(p.counts, "Wrong AI followed", s.followedWrongHint);
+
+            // Calls per true class, from the confusion grid: the diagonal is right, the last column is "no call".
+            int cols = s.confusionColumns != null ? s.confusionColumns.Length : 0;
+            for (int row = 0; s.confusionRows != null && row < s.confusionRows.Length; row++)
+            {
+                var r = new ClassRow { name = s.confusionRows[row] };
+                for (int col = 0; col < cols; col++)
+                {
+                    int n = s.confusion[row * cols + col];
+                    if (col == cols - 1) r.noCall += n; else if (col == row) r.right += n; else r.wrong += n;
+                }
+                p.classes.Add(r);
+            }
+
+            // How long each scored contact took to be seen.
+            int[] bins = new int[5];
+            float points0 = 0f, points1 = 0f, points2 = 0f;
+            foreach (var c in s.contacts)
+            {
+                if (!c.scored) continue;
+                if (!c.detected) bins[4]++;
+                else if (c.detectionSeconds < 5f) bins[0]++;
+                else if (c.detectionSeconds < 10f) bins[1]++;
+                else if (c.detectionSeconds < 20f) bins[2]++;
+                else bins[3]++;
+                if (c.nodes.Count > 0) points0 += c.nodes[0].points;
+                if (c.nodes.Count > 1) points1 += c.nodes[1].points;
+                if (c.nodes.Count > 2) points2 += c.nodes[2].points;
+            }
+            string[] names = { "under 5 s", "5-10 s", "10-20 s", "over 20 s", "never" };
+            for (int i = 0; i < bins.Length; i++) Add(p.detectionBins, names[i], bins[i]);
+            Add(p.nodePoints, "Detect", points0); Add(p.nodePoints, "Classify", points1); Add(p.nodePoints, "Action", points2);
+            return p;
+        }
+
+        static void Add(List<Named> list, string name, float value)
+        {
+            list.Add(new Named { name = name, value = value });
+        }
+    }
+
     // The one live player on this machine.
     public class LocalPlayerSource : IPlayerSource
     {

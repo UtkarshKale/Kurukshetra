@@ -44,6 +44,8 @@ namespace Chaukanna.Scenario
         {
             float dt = Time.deltaTime;
             age += dt;
+            for (int i = 0; i < rotors.Length; i++)
+                if (rotors[i] != null) rotors[i].Rotate(Vector3.up, RotorDegreesPerSecond * (jammed ? 0.25f : 1f) * ((i & 1) == 0 ? 1f : -1f) * dt, Space.World);
             if (jammed) { JammedDescent(dt); return; }
             lateClamp = true;
             switch (behaviour)
@@ -62,6 +64,10 @@ namespace Chaukanna.Scenario
                     break;
             }
         }
+
+        // Rotor parts found on the model. They spin about the vertical; slower once the drone has been jammed.
+        [System.NonSerialized] public Transform[] rotors = new Transform[0];
+        const float RotorDegreesPerSecond = 2400f;
 
         bool jammed, lateClamp;
         const float MinGroundClearance = 8f;

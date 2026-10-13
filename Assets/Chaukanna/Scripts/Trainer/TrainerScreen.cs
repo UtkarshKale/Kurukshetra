@@ -43,7 +43,8 @@ namespace Chaukanna.Trainer
         ScoreDashboard dashboard;
         Chaukanna.Scoring.ScoreKeeper scoreKeeper;
         Camera playerCamera;
-        GUIStyle label, button, title, small;
+        GUIStyle label, button, title, small, field;
+        bool wasTyping;
         bool applied;   // a trainer config has been started at least once
         float controlsBottom = 340f;   // measured each repaint so the map starts right under the controls
 
@@ -123,6 +124,14 @@ namespace Chaukanna.Trainer
             return index >= 0 && index < difficulties.Count && difficulties[index] != null ? difficulties[index].displayName : "-";
         }
 
+        // Used when the run comes from the trainer menu: adopt its scenario and level, then start.
+        public void StartSessionRun(ScenarioConfig scenario, int difficulty)
+        {
+            Working = scenario.Clone().Validate();
+            SetDifficulty(difficulty);
+            StartRun();
+        }
+
         public void StartRun()
         {
             if (spawner == null) return;
@@ -135,7 +144,20 @@ namespace Chaukanna.Trainer
 
         void OnGUI()
         {
-            if (!PlayerView.Split || spawner == null) return;
+            if (spawner == null) return;
+            if (!PlayerView.Split)
+            {
+                // Nothing runs until the trainer starts it. Say how, in the player's view.
+                if (spawner.Waiting && Event.current.type == EventType.Repaint)
+                {
+                    var hint = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(22f * Screen.height / 720f), fontStyle = FontStyle.Bold };
+                    hint.normal.textColor = Color.white;
+                    var box = new Rect(Screen.width * 0.5f - 330f * Screen.height / 720f, Screen.height * 0.42f, 660f * Screen.height / 720f, 70f * Screen.height / 720f);
+                    Fill(box, new Color(0f, 0f, 0f, 0.7f));
+                    GUI.Label(box, "Waiting for the trainer.\nPress F6 for the trainer panel, then START.", hint);
+                }
+                return;
+            }
             if (dashboard != null && dashboard.Expanded) return;   // the dashboard is covering the whole window
             if (label == null)
             {
@@ -154,12 +176,21 @@ namespace Chaukanna.Trainer
             var saved = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(ui, ui, 1f));
             float w = Screen.width * PlayerView.TrainerFraction / ui, h = 720f;
-            Fill(new Rect(0f, 0f, w, h), new Color(0.05f, 0.06f, 0.08f, 1f));
+            // With the dashboard's Charts tab open, paint only the header so the charts canvas underneath is not covered.
+            bool chartsOpen = dashboard != null && dashboard.IsOpen && dashboard.ChartsActive;
+            Fill(new Rect(0f, 0f, w, chartsOpen ? ScoreDashboard.TrainerHeaderHeight : h), new Color(0.05f, 0.06f, 0.08f, 1f));
 
             const float pad = 10f, row = 24f;
             GUILayout.BeginArea(new Rect(pad, pad, w - pad * 2f, h - pad * 2f));
 
+            GUILayout.BeginHorizontal();
             GUILayout.Label("TRAINER  (F6 to hide)", title);
+            if (!string.IsNullOrEmpty(Chaukanna.Session.SessionSetup.menuScenePath) && GUILayout.Button("Back to menu", button, GUILayout.Width(120f), GUILayout.Height(row)))
+            {
+                SetSplit(false);
+                Chaukanna.Session.SessionSetup.Load(Chaukanna.Session.SessionSetup.menuScenePath);
+            }
+            GUILayout.EndHorizontal();
 
             // While the score dashboard is open it takes over this half; keep just the button that closes it.
             if (dashboard != null && dashboard.IsOpen)
@@ -185,9 +216,7 @@ namespace Chaukanna.Trainer
 
             // Seed and randomize.
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"Seed  <b>{Working.seed}</b>", label, GUILayout.Width(130f));
-            if (GUILayout.Button("-", button, GUILayout.Width(30f), GUILayout.Height(row))) Working.seed--;
-            if (GUILayout.Button("+", button, GUILayout.Width(30f), GUILayout.Height(row))) Working.seed++;
+            Working.seed = Stepper("Seed", Working.seed, 1, row, int.MinValue, int.MaxValue);
             if (GUILayout.Button("Randomize (new seed)", button, GUILayout.Height(row))) RandomizeWithSeed(System.Environment.TickCount & 0xFFFFF);
             if (GUILayout.Button("From this seed", button, GUILayout.Height(row))) RandomizeWithSeed(Working.seed);
             GUILayout.EndHorizontal();
@@ -228,6 +257,10 @@ namespace Chaukanna.Trainer
             if (GUILayout.Button("Visibility: " + Working.visibility.ToString().ToUpper(), button, GUILayout.Height(row))) Working.visibility = (Visibility)(((int)Working.visibility + 1) % 3);
             if (difficulties.Count > 0 && GUILayout.Button("Difficulty: " + DifficultyName(difficultyIndex).ToUpper(), button, GUILayout.Height(row))) SetDifficulty((difficultyIndex + 1) % difficulties.Count);
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Soldier: " + (Working.allowMovement ? "CAN MOVE" : "FIXED AT POST"), button, GUILayout.Height(row))) Working.allowMovement = !Working.allowMovement;
+            Working.moveRadius = Stepper("Radius m", Mathf.RoundToInt(Working.moveRadius), 10, row, 0, 2000);
+            GUILayout.EndHorizontal();
 
             // After a run: a suggestion only. The trainer decides.
             int recommended = scoreKeeper != null && spawner.Finished ? RecommendedLevel(scoreKeeper.Last) : -1;
@@ -254,6 +287,14 @@ namespace Chaukanna.Trainer
             if (Event.current.type == EventType.Repaint) controlsBottom = GUILayoutUtility.GetLastRect().yMax;
             GUILayout.EndArea();
 
+            // While a number box has focus the player's hotkeys are ignored, so typed digits don't classify contacts.
+            bool typing = NumberEntry.AnyFocused;
+            if (typing != wasTyping)
+            {
+                wasTyping = typing;
+                ContactRegistry.InputBlocked = typing || (dashboard != null && dashboard.Expanded);
+            }
+
             // Truth map and event feed fill what is left.
             float feedH = feedLines * (small.fontSize + 5f) + 8f;
             float top = pad + controlsBottom + 10f;
@@ -265,19 +306,18 @@ namespace Chaukanna.Trainer
             GUI.matrix = saved;
         }
 
-        int Stepper(string name, int value, int step, float row)
+        // Label, a box to type the value into, and - / + buttons.
+        int Stepper(string name, int value, int step, float row, int min = 0, int max = 1000000)
         {
-            GUILayout.Label($"{name}  <b>{value}</b>", label, GUILayout.Width(120f), GUILayout.Height(row));
-            if (GUILayout.Button("-", button, GUILayout.Width(30f), GUILayout.Height(row))) value -= step;
-            if (GUILayout.Button("+", button, GUILayout.Width(30f), GUILayout.Height(row))) value += step;
-            GUILayout.Space(12f);
-            return value;
+            if (field == null) field = new GUIStyle(GUI.skin.textField);
+            field.fontSize = fontSize;
+            return NumberEntry.Stepper("field." + name, name, value, step, min, max, label, field, button, row, 84f);
         }
 
         string Status()
         {
             string source = applied ? "" : "  (Inspector values; press START to apply)";
-            if (spawner.Finished) return "COMPLETE" + source;
+            if (spawner.Waiting) return "WAITING: press START to begin";
             int t = (int)spawner.ScenarioTime, d = (int)spawner.Duration;
             string level = spawner.TrainerConfig != null && spawner.TrainerConfig.difficulty.Length > 0 ? "   " + spawner.TrainerConfig.difficulty : "";
             return $"RUNNING {t / 60:00}:{t % 60:00} / {d / 60:00}:{d % 60:00}   seed {spawner.ActiveSeed}{level}{source}";
@@ -321,8 +361,12 @@ namespace Chaukanna.Trainer
                 float yaw = playerCamera.transform.eulerAngles.y - sectorYaw;
                 float hFov = Camera.VerticalToHorizontalFieldOfView(playerCamera.fieldOfView, playerCamera.aspect) * 0.5f;
                 var cone = new Color(0.4f, 1f, 0.5f, 0.8f);
-                Dotted(centre, yaw - hFov, radius * scale, cone);
-                Dotted(centre, yaw + hFov, radius * scale, cone);
+                // Drawn from where the soldier is now, which is not the post once movement is allowed.
+                Vector3 offset = Quaternion.Euler(0f, -sectorYaw, 0f) * (playerCamera.transform.position - origin);
+                Vector2 soldier = centre + new Vector2(offset.x, -offset.z) * scale;
+                Dotted(soldier, yaw - hFov, radius * scale, cone);
+                Dotted(soldier, yaw + hFov, radius * scale, cone);
+                Dot(soldier, 6f, cone);
             }
             Dot(centre, 7f, Color.white);   // the post
 

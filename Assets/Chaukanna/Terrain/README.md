@@ -98,6 +98,61 @@ Nothing is downloaded automatically, and no data ships with the project.
 
 **Licences and attribution:** you are responsible for following the terms of whatever data you use. SRTM and NASADEM are NASA products and ask to be cited. Copernicus DEM is free to use but requires its attribution notice. OpenTopography asks that both the dataset and OpenTopography be cited. Copy the exact wording from the provider's page into the config's "Licence and attribution" field; "Provenance" is filled in when a file is loaded.
 
+## Ground imagery (satellite true colour)
+
+Optional. A picture only colours the terrain; its brightness is never used as height.
+
+- Format: 8-bit RGB **PNG or JPG**, north up.
+- Position: put `<name>.json` beside it with its edges in degrees:
+
+```json
+{ "west": 77.00, "south": 28.00, "east": 77.05, "north": 28.05, "source": "Sentinel-2 L2A true colour, 2025-11-03", "licence": "Contains modified Copernicus Sentinel data 2025" }
+```
+
+- With bounds and a real-world mode, the picture is placed by its coordinates on the terrain. The report warns when it covers only part of the area (the rest uses the surface rules) and refuses to use it when it does not overlap at all.
+- Without bounds, or in Pure Procedural, it is stretched over the whole terrain and the report says so.
+- **Imagery blend / Picture strength**: 0 = surface rules only, 1 = picture only where it covers.
+- Set it in the Terrain Generator window under Appearance, or on the Terrain tab of the trainer menu.
+
+### Preparing data offline with GDAL (for an air-gapped machine)
+
+Do this once on a connected machine, then copy the three files (`dem.asc`, `imagery.png`, `imagery.json`) across. Replace the four numbers with your area's west, south, east, north.
+
+```
+gdalwarp -t_srs EPSG:4326 -te 77.00 28.00 77.05 28.05 -r bilinear  dem_source.tif  dem_clip.tif
+gdal_translate -of AAIGrid dem_clip.tif dem.asc
+
+gdalwarp -t_srs EPSG:4326 -te 77.00 28.00 77.05 28.05 -r cubic  truecolour_source.tif  img_clip.tif
+gdal_translate -of PNG -ot Byte -b 1 -b 2 -b 3 img_clip.tif imagery.png
+```
+
+Then write `imagery.json` with the same four numbers. If the true-colour source is not already 8-bit (raw Sentinel-2 bands are 16-bit reflectance), add a stretch such as `-scale 0 3000 0 255` to the last command.
+
+### Sources planned for this project
+
+| Layer | Source | Notes |
+|---|---|---|
+| Elevation | CartoDEM (Bhuvan, ISRO), SRTM 1 arc-second, or Copernicus GLO-30 | GLO-30 is a surface model: it includes tree tops and roofs. All are about 30 m, which smooths away walls, bunds and tree lines. |
+| True colour | Sentinel-2 (10 m) | Free. Attribution: "Contains modified Copernicus Sentinel data [year]". |
+| Land cover | ESA WorldCover (10 m) | Planned input to drive the surface layers (trees, grass, crops, built-up, bare, water). **Not built yet.** |
+| Buildings | Google Open Buildings | Later. |
+
+Why hybrid: a 30 m elevation grid gives the true large shape of the land but none of the small cover that matters at an observation post. Real World + Subtle Detail and Custom Hybrid keep the real shape and add procedural small-scale relief on top.
+
+No real elevation file or satellite picture has been run through the tool yet; imagery placement has been checked with a synthetic test picture only.
+
+## Trainer menu (scene `TrainerMenu`)
+
+The same generator runs at play time from the trainer's main menu, with no asset files written.
+
+- Open `Assets/Chaukanna/Scenes/TrainerMenu.unity` and press Play.
+- **Terrain**: mode, preset, seed, area, detail, elevation file, ground picture, Generate preview.
+- **Scenario**: scripted scenarios, Randomize, counts, duration, time of day, visibility, difficulty, ROE.
+- **Map**: click to place each player's post and the drone spawn points. With no spawn points, drones use the ring in front of the post.
+- **Lobby**: placeholder until LAN multiplayer is added.
+- **START** loads the field scene, builds the terrain there from the same settings and seed, flattens a pad under each post, moves the local player to their post and starts the run. Nothing in the field runs before that.
+- In the field, F6 opens the trainer panel, which has **Back to menu**.
+- For a built player (not the Editor), add both scenes to Build Settings.
 ## Geographic handling
 
 - Elevation grids are held in latitude/longitude with the north row first; orientation is checked by the self-test.
@@ -146,8 +201,8 @@ Generate only ever replaces a terrain that this tool made from the same config, 
 - No real elevation file has been run through it yet; fidelity has been proven against synthetic files only.
 - No direct GeoTIFF or 16-bit PNG import.
 - The online download is untested without an API key.
-- Terrain is baked in the editor. It is not yet chosen from the trainer panel or regenerated at run start.
-- No satellite imagery, land cover or vegetation.
+- Terrain can be baked in the editor or built at run start from the trainer menu.
+- Ground imagery is supported (PNG / JPG); land cover (WorldCover) and vegetation are not.
 - No erosion simulation, runtime streaming or GPU generation.
 - One elevation file at a time: an area crossing two `.hgt` tiles needs them merged first (`gdal_merge` or `gdalbuildvrt`, then `gdal_translate -of AAIGrid`).
 - Local metre coordinates are a flat approximation around the centre: fine for a few tens of kilometres, not for whole countries.
@@ -159,5 +214,6 @@ Generate only ever replaces a terrain that this tool made from the same config, 
 - `Scripts/ElevationGrid.cs`: source grid, local projection, file readers, NoData filling.
 - `Scripts/HeightfieldGenerator.cs`: the mode pipeline, warp, terrace, post pad, slope.
 - `Scripts/TerrainBuilder.cs`: Unity terrain tiles, surface painting, ground-height lookup.
+- `Scripts/Imagery.cs`: ground picture loading and placement.
 - `Scripts/TerrainGenSelfTest.cs`: acceptance checks.
 - `Scripts/Editor/TerrainGenWindow.cs`: the editor window and script-callable generate.
