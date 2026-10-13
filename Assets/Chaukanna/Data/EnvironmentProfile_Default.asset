@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c60f3296b56ac44ba3d882c91ee2e5d, type: 3}
+  m_Name: EnvironmentProfile_Default
+  m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Environment.EnvironmentProfile
+  dusk:
+    sunElevation: 6
+    sunColour: {r: 1, g: 0.6, b: 0.35, a: 1}
+    sunIntensity: 0.45
+    ambientColour: {r: 0.28, g: 0.24, b: 0.28, a: 1}
+    skybox: {fileID: 2100000, guid: b4f152e0498484391a9f0d5a1facf03b, type: 2}
+    skyExposure: 1
+    skyTint: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+    reflectionIntensity: 0.4
+    fogColour: {r: 0.45, g: 0.36, b: 0.36, a: 1}
+    minVisibleSizeMultiplier: 1.4
+  night:
+    sunElevation: 35
+    sunColour: {r: 0.6, g: 0.7, b: 1, a: 1}
+    sunIntensity: 0.18
+    ambientColour: {r: 0.05, g: 0.06, b: 0.09, a: 1}
+    skybox: {fileID: 2100000, guid: c494c335823f54b52b2e87e1b7a63a23, type: 2}
+    skyExposure: 1
+    skyTint: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+    reflectionIntensity: 0.25
+    fogColour: {r: 0.03, g: 0.04, b: 0.06, a: 1}
+    minVisibleSizeMultiplier: 2
+  dayFogColour: {r: 0.75, g: 0.8, b: 0.86, a: 1}
+  hazyRange: 0.6
+  foggyRange: 0.35
+  nightVisionRecovery: 0.6
+  nightVisionTint: {r: 0.25, g: 1, b: 0.3, a: 1}
+  nightVisionAmbient: {r: 0.22, g: 0.4, b: 0.22, a: 1}
+  nightVisionSunIntensity: 0.5
+  nightVisionSkyExposure: 0.3
+  nightVisionWash: 0.22
+  nightVisionNoise: 0.12
+  nightVisionTube: 1.05

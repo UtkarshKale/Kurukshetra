@@ -99,6 +99,15 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.unity.ides": {
+      "version": "https://github.com/LILQK/com.unity.ides.git",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.test-framework": "1.1.9"
+      },
+      "hash": "ebba4dfe671076eedf387566f7d0bfaee017e5eb"
+    },
     "com.unity.inputsystem": {
       "version": "1.20.0",
       "depth": 0,

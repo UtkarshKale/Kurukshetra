@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e2f7e0cdffd92d54cbd713184e2c97c5, type: 3}
+  m_Name: MixedSky_Preset01
+  m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Scenario.ScenarioPreset
+  seed: 1001
+  duration: 300
+  hostileClassesEnabled: 0000000001000000i
+  hostileCount: 3
+  friendlyCount: 2
+  civilianCount: 2
+  birdCount: 6
+  timeOfDayHours: 10
+  visibilityMetres: 5000
+  sectorArcDegrees: 120
+  spawnRingRadius: 1000
+  spawnWindowStart: 3
+  spawnWindowEnd: 240
+  definitions:
+  - {fileID: 11400000, guid: 70ac62e8e2325584a890414d2940eac2, type: 2}
+  - {fileID: 11400000, guid: f311dae02271f1e41916b3ad447f2a92, type: 2}
+  - {fileID: 11400000, guid: 3171dc895e00c1646a0307d223be88d6, type: 2}
+  - {fileID: 11400000, guid: 70141392eb33a9448a974c5ed09d34a0, type: 2}
+  - {fileID: 11400000, guid: 6e3a33ee322970c4ea7f47679bdf7abb, type: 2}

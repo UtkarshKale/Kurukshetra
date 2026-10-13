@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a7498378fa769b4a9b2d6c9f0f9557d, type: 3}
+  m_Name: Difficulty_Trained
+  m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Trainer.DifficultyProfile
+  displayName: Trained
+  contactCountMultiplier: 1
+  decoyShare: 1
+  speedMultiplier: 1
+  extraHazeLevels: 0
+  minVisibleSizeMultiplier: 1
+  aiErrorRateOk: 0.15
+  aiErrorRateDegraded: 0.35
+  sensorDegradedProbability: 0.25
+  roeFlipProbability: 0.4
