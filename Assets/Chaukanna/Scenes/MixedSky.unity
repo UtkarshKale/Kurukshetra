@@ -167,6 +167,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: d9a2a2c6282ae3b48acd22b2685bfa7d, type: 2}
   - {fileID: 11400000, guid: 49daf2dcb52ddb34eae81ddb2fdcf1e7, type: 2}
   - {fileID: 11400000, guid: 0598c143777d50447a173563580aa030, type: 2}
+  - {fileID: 11400000, guid: 8b0c0b8406cef2847aec57c70d1c17ac, type: 2}
+  - {fileID: 11400000, guid: df008bae99d723f4daac0fe8c30876fe, type: 2}
   randomizeBounds:
     hostiles: {x: 1, y: 6}
     friendlies: {x: 0, y: 4}
@@ -863,10 +865,24 @@ MonoBehaviour:
   friendlyCount: 10
   civilianCount: 10
   birdCount: 10
+  blendInPercent: 0
+  site: 0
+  swarmSize: 0
+  swarmTime: 60
+  swarmBearing: 999
+  birdFlocks: 0
+  flockSize: 8
+  swarmProfile: {fileID: 0}
+  flockProfile: {fileID: 0}
   sectorArcDegrees: 120
   spawnRingRadius: 1000
   spawnWindowStart: 1
   spawnWindowEnd: 240
+  hostileQuadModels: []
+  hostileFixedWingModels: []
+  friendlyIsrModels: []
+  civilianQuadModels: []
+  birdModels: []
 --- !u!4 &1697183948
 Transform:
   m_ObjectHideFlags: 0

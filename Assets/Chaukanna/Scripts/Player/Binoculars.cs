@@ -50,7 +50,8 @@ namespace Chaukanna.Player
         void Update()
         {
             var mouse = Mouse.current;
-            if (mouse != null && mouse.rightButton.wasPressedThisFrame && !Chaukanna.Scenario.ContactRegistry.InputBlocked) Zoomed = !Zoomed;
+            // In VR mode the hands raise and lower the optic (ViewRigSwitch); right-click is only for desktop.
+            if (mouse != null && mouse.rightButton.wasPressedThisFrame && !Chaukanna.Scenario.ContactRegistry.InputBlocked && !ViewRigSwitch.VrActive) Zoomed = !Zoomed;
 
             float target = Zoomed ? zoomedFov : normalFov;
             float fov = Mathf.Lerp(cam.fieldOfView, target, 1f - Mathf.Exp(-zoomSpeed * Time.unscaledDeltaTime));

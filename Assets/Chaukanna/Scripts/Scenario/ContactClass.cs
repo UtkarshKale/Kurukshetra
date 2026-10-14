@@ -52,6 +52,58 @@ namespace Chaukanna.Scenario
         WeaponsTight,
         WeaponsFree,
         UnderAttack,
+        // Module 1 cards (solution doc §5.4.4). Placeholder wording until an officer replaces it.
+        CardA,      // attack in progress
+        CardB,      // alert: engage only positively identified hostile
+        CardC,      // peacetime / own drones up: report and track, engage only in self-defence or on order
+    }
+
+    // Names shown on the banner, the tablet and the dashboard.
+    public static class RoeCards
+    {
+        public static bool IsLettered(RoeCard c) => c == RoeCard.CardA || c == RoeCard.CardB || c == RoeCard.CardC;
+
+        // Cards under which holding a hostile costs time (the hold-delay rule).
+        public static bool IsAttack(RoeCard c) => c == RoeCard.UnderAttack || c == RoeCard.CardA;
+
+        public static string Label(RoeCard c)
+        {
+            switch (c)
+            {
+                case RoeCard.WeaponsHold: return "WEAPONS HOLD";
+                case RoeCard.WeaponsTight: return "WEAPONS TIGHT";
+                case RoeCard.WeaponsFree: return "WEAPONS FREE";
+                case RoeCard.UnderAttack: return "UNDER ATTACK";
+                case RoeCard.CardA: return "CARD A - ATTACK IN PROGRESS";
+                case RoeCard.CardB: return "CARD B - ENGAGE ONLY POSITIVELY IDENTIFIED HOSTILE";
+                default: return "CARD C - OWN DRONES UP: REPORT AND TRACK";
+            }
+        }
+
+        public static string Short(RoeCard c)
+        {
+            switch (c)
+            {
+                case RoeCard.WeaponsHold: return "HOLD";
+                case RoeCard.WeaponsTight: return "TIGHT";
+                case RoeCard.WeaponsFree: return "FREE";
+                case RoeCard.UnderAttack: return "UNDER ATTACK";
+                case RoeCard.CardA: return "CARD A";
+                case RoeCard.CardB: return "CARD B";
+                default: return "CARD C";
+            }
+        }
+
+        // The order the trainer's button steps through.
+        public static readonly RoeCard[] Cycle = { RoeCard.CardA, RoeCard.CardB, RoeCard.CardC, RoeCard.WeaponsHold, RoeCard.UnderAttack };
+        public static RoeCard Next(RoeCard c) => Cycle[(System.Array.IndexOf(Cycle, c) + 1) % Cycle.Length];
+    }
+
+    // A recorded change of card during a run.
+    public struct RoeChange
+    {
+        public float time;
+        public RoeCard from, to;
     }
 
     // One final action per contact.

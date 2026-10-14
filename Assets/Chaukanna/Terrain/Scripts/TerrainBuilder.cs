@@ -4,6 +4,9 @@ using UnityEngine;
 
 namespace Chaukanna.TerrainGen
 {
+    // Marks the coarse surround built around a real-world play area (see TerrainBuilder.BuildSurround).
+    public class SurroundTerrain : MonoBehaviour { }
+
     // Marks the root object this tool made, so regenerating only ever replaces its own output.
     public class GeneratedTerrainRoot : MonoBehaviour
     {
@@ -40,10 +43,22 @@ namespace Chaukanna.TerrainGen
         // imagery (optional) colours the terrain; saveAsset lets the editor keep the picture and its layers as assets.
         public static TerrainBuildResult Build(TerrainGenConfig cfg, ElevationGrid dem, GeneratedTerrainRoot existingRoot = null, Func<string, TerrainData, TerrainData> makeData = null, Imagery imagery = null, Action<string, UnityEngine.Object> saveAsset = null)
         {
+            var result = new TerrainBuildResult();
+            var steps = BuildInSteps(result, cfg, dem, existingRoot, makeData, imagery, saveAsset);
+            while (steps.MoveNext()) { }
+            return result;
+        }
+
+        // The same build, one step per frame when run as a coroutine: the heightfield first, then one tile at a time.
+        // progress(fraction 0-1, what is being done) is called before each step, so a loading screen can show it.
+        public static System.Collections.IEnumerator BuildInSteps(TerrainBuildResult result, TerrainGenConfig cfg, ElevationGrid dem, GeneratedTerrainRoot existingRoot = null,
+            Func<string, TerrainData, TerrainData> makeData = null, Imagery imagery = null, Action<string, UnityEngine.Object> saveAsset = null, Action<float, string> progress = null)
+        {
             var errors = cfg.Validate();
             if (errors.Count > 0) throw new DemException(string.Join("\n", errors));
 
-            var result = new TerrainBuildResult();
+            progress?.Invoke(0f, "Shaping the ground");
+            yield return null;
             var field = result.field = HeightfieldGenerator.Generate(cfg, dem);
 
             // Vertical range: the real span of the data plus a little headroom, so nothing is clipped and nothing is rescaled.
@@ -66,8 +81,10 @@ namespace Chaukanna.TerrainGen
 
             int tiles = Mathf.Max(1, cfg.tilesPerSide), res = cfg.heightmapResolution;
             float tileSize = cfg.TileSize, half = cfg.sizeMetres * 0.5f;
-            var layers = new List<TerrainLayer>();
-            foreach (var rule in cfg.surfaceRules) if (rule.layer != null && !layers.Contains(rule.layer)) layers.Add(rule.layer);
+            // Surface: from the kit and biome when there is a kit, otherwise the config's own rules.
+            var rules = cfg.surfaceKit != null ? SurfaceBiomes.Rules(cfg.surfaceKit, SurfaceBiomes.Resolve(cfg.biome, field)) : cfg.surfaceRules.FindAll(x => x.layer != null);
+            var analysis = rules.Count > 0 ? TerrainAnalysis.Compute(field) : null;
+            if (cfg.surfaceKit != null) result.warnings.Add($"Surface: {SurfaceBiomes.Resolve(cfg.biome, field)} materials.");
 
             // Imagery: where the picture sits, and how much of the terrain it covers.
             bool useImagery = imagery != null && imagery.texture != null && cfg.imageryBlend > 0f;
@@ -90,6 +107,8 @@ namespace Chaukanna.TerrainGen
             for (int tz = 0; tz < tiles; tz++)
             for (int tx = 0; tx < tiles; tx++)
             {
+                progress?.Invoke(0.35f + 0.6f * (tz * tiles + tx) / (tiles * tiles), tiles > 1 ? $"Painting tile {tz * tiles + tx + 1} of {tiles * tiles}" : "Painting the ground");
+                yield return null;
                 string name = $"Tile_{tx}_{tz}";
                 var data = new TerrainData { name = name };
                 data.heightmapResolution = res;                       // set before size: changing it resets the size
@@ -98,18 +117,16 @@ namespace Chaukanna.TerrainGen
                 if (makeData != null) data = makeData(name, data);
                 heights = TileHeights(field, tx, tz, res, min, range, heights);
                 data.SetHeights(0, 0, heights);                       // one call per tile
-                var tileLayers = layers;
-                int imageryIndex = -1;
+                TerrainLayer imageryLayer = null;
                 if (useImagery)
                 {
                     // One layer per tile, because each tile needs its own offset into the picture.
                     // Unity maps texture u = (local x + tileOffset.x) / tileSize.x, so the offset is the tile's west / south edge measured from the picture's.
-                    var layer = new TerrainLayer { name = name + "_Imagery", diffuseTexture = imagery.texture, tileSize = new Vector2(imageryExtent.width, imageryExtent.height), tileOffset = new Vector2(-half + tx * tileSize - imageryExtent.xMin, -half + tz * tileSize - imageryExtent.yMin), smoothness = 0f, metallic = 0f };
-                    if (saveAsset != null) saveAsset(layer.name, layer);
-                    tileLayers = new List<TerrainLayer>(layers) { layer };
-                    imageryIndex = tileLayers.Count - 1;
+                    imageryLayer = new TerrainLayer { name = name + "_Imagery", diffuseTexture = imagery.texture, tileSize = new Vector2(imageryExtent.width, imageryExtent.height), tileOffset = new Vector2(-half + tx * tileSize - imageryExtent.xMin, -half + tz * tileSize - imageryExtent.yMin), smoothness = 0f, metallic = 0f };
+                    if (saveAsset != null) saveAsset(imageryLayer.name, imageryLayer);
                 }
-                if (tileLayers.Count > 0) Paint(cfg, field, data, tileLayers, tx, tz, res, min, imageryIndex, imageryExtent, new Vector2(-half + tx * tileSize, -half + tz * tileSize), tileSize);
+                if (rules.Count > 0 || imageryLayer != null)
+                    Paint(cfg, field, analysis, rules, data, imageryLayer, tx, tz, res, imageryExtent, new Vector2(-half + tx * tileSize, -half + tz * tileSize), tileSize);
 
                 var go = Terrain.CreateTerrainGameObject(data);
                 go.name = name;
@@ -126,7 +143,7 @@ namespace Chaukanna.TerrainGen
 
             result.report = Report(cfg, dem, field, min, range, yOffset, result.warnings);
             existingRoot.report = result.report;
-            return result;
+            progress?.Invoke(1f, "Ground ready");
         }
 
         static void Destroy(UnityEngine.Object o)
@@ -134,42 +151,80 @@ namespace Chaukanna.TerrainGen
             if (Application.isPlaying) UnityEngine.Object.Destroy(o); else UnityEngine.Object.DestroyImmediate(o);
         }
 
-        // Surface weights from elevation (metres above the area's lowest point) and slope (degrees).
-        static void Paint(TerrainGenConfig cfg, Heightfield field, TerrainData data, List<TerrainLayer> layers, int tileX, int tileZ, int res, float min, int imageryIndex, Rect imageryExtent, Vector2 tileOrigin, float tileSize)
+        // At most this many surface materials per tile: with the satellite picture that is 3 + 1 = 4, one rendering pass.
+        public const int MaxDetailLayersWithImagery = 3, MaxDetailLayers = 4;
+
+        // Surface weights from the rules (height, slope, wetness, shape, facing, noise), then the satellite picture on top.
+        // Each tile keeps only the materials that matter most on it, so it renders in one pass.
+        static void Paint(TerrainGenConfig cfg, Heightfield field, TerrainAnalysis analysis, List<SurfaceRule> rules, TerrainData data, TerrainLayer imageryLayer,
+            int tileX, int tileZ, int res, Rect imageryExtent, Vector2 tileOrigin, float tileSize)
         {
-            data.terrainLayers = layers.ToArray();
             int a = Mathf.Min(res - 1, 1024);
-            data.alphamapResolution = a;
-            var map = new float[a, a, layers.Count];
             int ox = tileX * (res - 1), oz = tileZ * (res - 1);
             float toSample = (res - 1) / (float)a;
+
+            // Distinct materials named by the rules, and every rule's weight at every alphamap sample.
+            var materials = new List<TerrainLayer>();
+            var ruleMaterial = new int[rules.Count];
+            for (int i = 0; i < rules.Count; i++)
+            {
+                int m = materials.IndexOf(rules[i].layer);
+                if (m < 0) { materials.Add(rules[i].layer); m = materials.Count - 1; }
+                ruleMaterial[i] = m;
+            }
+            var weights = new float[a * a * Math.Max(1, materials.Count)];
+            var totals = new double[materials.Count];
             for (int z = 0; z < a; z++)
             for (int x = 0; x < a; x++)
             {
                 int sx = Mathf.Min(field.resolution - 1, ox + Mathf.RoundToInt((x + 0.5f) * toSample));
                 int sz = Mathf.Min(field.resolution - 1, oz + Mathf.RoundToInt((z + 0.5f) * toSample));
-                float height = field.At(sx, sz) - field.min;
+                float absolute = field.At(sx, sz), height = absolute - field.min;
                 float slope = HeightfieldGenerator.SlopeDegrees(field, sx, sz);
-                float total = 0f;
-                foreach (var rule in cfg.surfaceRules)
+                float wet = 0.5f, curv = 0f, north = 0f;
+                analysis?.At(sx, sz, out wet, out curv, out north);
+                float east = tileOrigin.x + (x + 0.5f) / a * tileSize, northM = tileOrigin.y + (z + 0.5f) / a * tileSize;
+                for (int i = 0; i < rules.Count; i++)
                 {
-                    if (rule.layer == null) continue;
-                    float w = RuleWeight(rule, height, slope);
-                    int index = layers.IndexOf(rule.layer);
-                    if (index < 0) continue;
-                    map[z, x, index] += w;
-                    total += w;
+                    var r = rules[i];
+                    float noise = r.breakup > 0f ? (float)(0.5 + 0.5 * Noise.Fbm(east / Math.Max(1f, r.breakupScaleMetres), northM / Math.Max(1f, r.breakupScaleMetres), cfg.seed + 7919 * (i + 1), 3, 2.0, 0.5)) : 0.5f;
+                    float w = RuleWeight(r, height, absolute, slope, wet, curv, north, noise);
+                    weights[(z * a + x) * materials.Count + ruleMaterial[i]] += w;
+                    totals[ruleMaterial[i]] += w;
                 }
-                int ruleLayers = imageryIndex >= 0 ? layers.Count - 1 : layers.Count;
-                if (total <= 0.0001f) { if (ruleLayers > 0) map[z, x, 0] = 1f; }       // nothing matched: fall back to the first layer
-                else for (int l = 0; l < ruleLayers; l++) map[z, x, l] /= total;
+            }
+
+            // Keep the strongest materials for this tile.
+            int keep = Mathf.Min(materials.Count, imageryLayer != null ? MaxDetailLayersWithImagery : MaxDetailLayers);
+            var chosen = new List<int>();
+            for (int m = 0; m < materials.Count; m++) chosen.Add(m);
+            chosen.Sort((p, q) => totals[q].CompareTo(totals[p]));
+            if (chosen.Count > keep) chosen.RemoveRange(keep, chosen.Count - keep);
+
+            var tileLayers = new List<TerrainLayer>();
+            foreach (int m in chosen) tileLayers.Add(materials[m]);
+            int imageryIndex = -1;
+            if (imageryLayer != null) { tileLayers.Add(imageryLayer); imageryIndex = tileLayers.Count - 1; }
+            if (tileLayers.Count == 0) return;
+            data.terrainLayers = tileLayers.ToArray();
+            data.alphamapResolution = a;
+            var map = new float[a, a, tileLayers.Count];
+            int detail = chosen.Count;
+            for (int z = 0; z < a; z++)
+            for (int x = 0; x < a; x++)
+            {
+                float total = 0f;
+                for (int c = 0; c < detail; c++) { float w = weights[(z * a + x) * materials.Count + chosen[c]]; map[z, x, c] = w; total += w; }
+                if (total <= 0.0001f) { if (detail > 0) map[z, x, 0] = 1f; }       // nothing matched: the tile's main material
+                else for (int c = 0; c < detail; c++) map[z, x, c] /= total;
 
                 if (imageryIndex >= 0)
                 {
-                    // The picture takes its share only where it actually covers the ground.
+                    // The picture takes its share only where it actually covers the ground; the detail materials keep the rest,
+                    // so close up there is texture and from a distance the real colours.
                     var world = new Vector2(tileOrigin.x + (x + 0.5f) / a * tileSize, tileOrigin.y + (z + 0.5f) / a * tileSize);
-                    float share = imageryExtent.Contains(world) || ruleLayers == 0 ? (ruleLayers == 0 ? 1f : cfg.imageryBlend) : 0f;
-                    for (int l = 0; l < ruleLayers; l++) map[z, x, l] *= 1f - share;
+                    float share = imageryExtent.Contains(world) || detail == 0 ? (detail == 0 ? 1f : cfg.imageryBlend) : 0f;
+                    for (int c = 0; c < detail; c++) map[z, x, c] *= 1f - share;
                     map[z, x, imageryIndex] = share;
                 }
             }
@@ -179,11 +234,20 @@ namespace Chaukanna.TerrainGen
         // 1 inside the rule's height and slope band, fading to 0 over its blend distances.
         public static float RuleWeight(SurfaceRule r, float height, float slopeDegrees)
         {
-            float h = Band(height, r.minHeight, r.maxHeight, Mathf.Max(0.01f, r.heightBlend));
-            float s = Band(slopeDegrees, r.minSlope, r.maxSlope, Mathf.Max(0.01f, r.slopeBlend));
-            return h * s * Mathf.Max(0f, r.weight);
+            return RuleWeight(r, height, height, slopeDegrees, Mathf.Clamp(0.5f, r.minWetness, r.maxWetness), Mathf.Clamp(0f, r.minCurvature, r.maxCurvature), 0f, 0.5f);
         }
 
+        // The full rule: every condition is a soft band, multiplied together.
+        public static float RuleWeight(SurfaceRule r, float heightAboveLowest, float elevation, float slopeDegrees, float wetness, float curvature, float northness, float noise01)
+        {
+            float h = Band(r.absoluteHeight ? elevation : heightAboveLowest, r.minHeight, r.maxHeight, Mathf.Max(0.01f, r.heightBlend));
+            float s = Band(slopeDegrees, r.minSlope, r.maxSlope, Mathf.Max(0.01f, r.slopeBlend));
+            float w = Band(wetness, r.minWetness, r.maxWetness, Mathf.Max(0.001f, r.wetnessBlend));
+            float c = Band(curvature, r.minCurvature, r.maxCurvature, Mathf.Max(0.0001f, r.curvatureBlend));
+            float facing = Mathf.Max(0f, 1f + r.northBias * northness);
+            float noise = Mathf.Lerp(1f, Mathf.Clamp01(noise01) * 2f, Mathf.Clamp01(r.breakup));
+            return h * s * w * c * facing * noise * Mathf.Max(0f, r.weight);
+        }
         static float Band(float v, float lo, float hi, float blend)
         {
             return Mathf.Clamp01((v - lo) / blend + 1f) * Mathf.Clamp01((hi - v) / blend + 1f);
@@ -215,7 +279,9 @@ namespace Chaukanna.TerrainGen
         // Ground height in world space under a point, from whichever generated or other Terrain is there. NaN if none.
         public static float GroundHeight(Vector3 position)
         {
+            // The play area wins over the surround (which lies just under it); the surround answers only outside it.
             var terrains = Terrain.activeTerrains;
+            float fallback = float.NaN;
             for (int i = 0; i < terrains.Length; i++)
             {
                 var t = terrains[i];
@@ -223,9 +289,41 @@ namespace Chaukanna.TerrainGen
                 Vector3 local = position - t.transform.position;
                 Vector3 size = t.terrainData.size;
                 if (local.x < 0f || local.z < 0f || local.x > size.x || local.z > size.z) continue;
-                return t.SampleHeight(position) + t.transform.position.y;
+                float h = t.SampleHeight(position) + t.transform.position.y;
+                if (t.GetComponentInParent<SurroundTerrain>() != null) { if (float.IsNaN(fallback)) fallback = h; continue; }
+                return h;
             }
-            return float.NaN;
+            return fallback;
         }
+
+        // Builds the coarse surround: a bigger area of the same place around the play area, so the horizon is real
+        // ground instead of empty sky. It lies a few metres under the play area, has no collider and is drawn coarser.
+        public static TerrainBuildResult BuildSurround(TerrainGenConfig cfg, ElevationGrid dem, Imagery imagery, float playAreaCentreElevation)
+        {
+            var c = UnityEngine.Object.Instantiate(cfg);
+            c.name = cfg.name + " (surround)";
+            c.mode = TerrainMode.RealWorldAccurate;
+            c.useFileCentre = true;
+            c.sizeMetres = Mathf.Floor((float)Math.Min(dem.WidthMetres, dem.HeightMetres));
+            c.tilesPerSide = 1;
+            c.heightmapResolution = 513;
+            c.flattenPostPad = false;
+            c.groundPostAtZero = false;
+            var result = Build(c, dem, null, null, imagery);
+            result.root.name = "GeneratedTerrain (surround)";
+            result.root.AddComponent<SurroundTerrain>();
+            result.root.transform.position = new Vector3(0f, -playAreaCentreElevation - SurroundSink, 0f);
+            foreach (var t in result.tiles)
+            {
+                t.heightmapPixelError = 10f;
+                t.basemapDistance = 20000f;
+                var col = t.GetComponent<TerrainCollider>();
+                if (col != null) UnityEngine.Object.Destroy(col);
+            }
+            UnityEngine.Object.Destroy(c);
+            return result;
+        }
+
+        public const float SurroundSink = 4f;
     }
 }

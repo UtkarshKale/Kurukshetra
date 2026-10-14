@@ -217,3 +217,16 @@ Generate only ever replaces a terrain that this tool made from the same config, 
 - `Scripts/Imagery.cs`: ground picture loading and placement.
 - `Scripts/TerrainGenSelfTest.cs`: acceptance checks.
 - `Scripts/Editor/TerrainGenWindow.cs`: the editor window and script-callable generate.
+
+
+## Real places: pick on the map and download (no key, no GDAL)
+
+On the trainer menu's Terrain tab, **Map: pick a place** shows an OpenStreetMap map. Drag to pan, mouse wheel to zoom, click to put the centre of the area there, or type a place into the search box and press Enter. Set **Radius m**: the terrain is the square that encloses that circle (side = 2 x radius). **Download terrain** fetches the elevation and switches the terrain to it (Real World Accurate unless a real-world mode was already picked). Then press Generate preview, pick a mode and START.
+
+- Elevation source: AWS Open Data **Terrain Tiles** (Mapzen Terrarium PNG, `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`), height = (R x 256 + G + B / 256) - 32768 metres. Attribution: Terrain Tiles, Mapzen / AWS Open Data; sources include SRTM, GMTED2010, ETOPO1, NED and others, listed at https://github.com/tilezen/joerd/blob/master/docs/attribution.md . Code: `Scripts/WebTiles.cs`.
+- Zoom: the finest up to 13 (about 15 to 19 m per pixel at mid latitudes) that keeps the area within 64 tiles; bigger areas use a coarser zoom. Honest resolution: the underlying data is about 30 m (SRTM) in most of the world, including India; finer samples are interpolated.
+- Output: `RealData/<name>/<name>.raw` + `.json` (16-bit, 0.2 m steps from -1000 m, local metric grid around the centre, about two samples per source pixel, 257 to 2049 square). It is a normal RAW + JSON elevation file, so it works offline afterwards and is listed under "Downloaded before".
+- Caches: every downloaded tile (elevation and map) is kept in `%USERPROFILE%/.chaukanna/tiles/` and never fetched twice.
+- Map tiles: `tile.openstreetmap.org`, with the User-Agent `Chaukanna-SIH-trainer/0.1`, the visible credit "© OpenStreetMap contributors", only the tiles on screen, at most two at a time (OSM tile usage policy). Search: Nominatim, one request per second at most, only on Enter.
+- Offline: the map shows "Map offline"; type latitude and longitude, or use an area downloaded before.
+- Example data: `RealData/Jammu_AFS` (Jammu Air Force Station, 32.6889 N 74.8375 E, 5 x 5 km, 268 to 313 m: flat plain) with configs `Configs/Jammu_AFS_Accurate`, `Jammu_AFS_Hybrid_SubtleDetail` and `Jammu_AFS_Hybrid_MajorVariations`.

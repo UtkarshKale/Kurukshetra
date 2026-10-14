@@ -32,7 +32,71 @@ namespace Chaukanna.Player
         public float EffectiveMaxRange => maxVisibleRange * rangeMultiplier;
 
         public Contact Locked { get; private set; }
+
+        // Multi-select: Ctrl (or Shift) + click adds or removes the contact under the aim dot, holding the button and
+        // sweeping adds every contact the dot passes over, G selects everything in view, X or Esc clears, and holding Tab
+        // draws a lasso round several at once (LassoSelect).
+        // While the list is not empty, the classify and action keys apply to every contact in it.
+        public readonly List<Contact> Selected = new List<Contact>();
+        readonly List<Contact> targets = new List<Contact>();
+
+        // What the decision keys act on: the selection if there is one, otherwise the locked contact.
+        public List<Contact> Targets
+        {
+            get
+            {
+                targets.Clear();
+                if (Selected.Count > 0) targets.AddRange(Selected);
+                else if (Locked != null) targets.Add(Locked);
+                return targets;
+            }
+        }
+
+        public void ClearSelection()
+        {
+            Selected.Clear();
+        }
+
+        public bool Select(Contact c, bool toggle = false)
+        {
+            if (c == null) return false;
+            if (Selected.Contains(c))
+            {
+                if (toggle) Selected.Remove(c);
+                return !toggle;
+            }
+            // The contact that was simply locked joins the group, so "lock one, Ctrl+click the next" gives two.
+            if (Selected.Count == 0 && Locked != null && Locked != c) Selected.Add(Locked);
+            Selected.Add(c);
+            if (c.FirstLockTime < 0f) c.MarkLocked($"range {Vector3.Distance(transform.position, c.transform.position):F0} m (group)");
+            return true;
+        }
+
+        public int SelectAllInView()
+        {
+            foreach (var c in visible) Select(c);
+            return Selected.Count;
+        }
         public int VisibleCount => visible.Count;
+        // What the player can see this frame (the detection test below). The lasso only ever picks from this.
+        public List<Contact> Visible => visible;
+
+        // The lasso's result. Replace = the picked contacts become the group, Add = join it, Remove = leave it.
+        public void ApplyLasso(List<Contact> picked, LassoMode mode, string how)
+        {
+            if (mode == LassoMode.Add && Selected.Count == 0 && Locked != null) Selected.Add(Locked);   // the locked one stays in
+            LassoMath.Apply(Selected, picked, mode);
+            if (mode == LassoMode.Remove) return;
+            foreach (var c in picked)
+                if (c != null && c.FirstLockTime < 0f) c.MarkLocked($"range {Vector3.Distance(transform.position, c.transform.position):F0} m ({how})");
+        }
+
+        // The same detection test the lasso relies on, for any list of contacts (self-tests).
+        public void SeeNow(IEnumerable<Contact> from, List<Contact> into)
+        {
+            into.Clear();
+            foreach (var c in from) if (c != null && CanSee(c, out _, out _)) into.Add(c);
+        }
         public int DetectedTotal { get; private set; }
 
         readonly List<Contact> visible = new List<Contact>();
@@ -41,7 +105,8 @@ namespace Chaukanna.Player
         bool cursorWasLocked;
         GUIStyle labelStyle;
 
-        float FovScale => cam.fieldOfView / referenceFov;
+        Camera Cam => cam != null ? cam : (cam = GetComponent<Camera>());
+        float FovScale => Cam.fieldOfView / referenceFov;
 
         void Awake()
         {
@@ -67,10 +132,53 @@ namespace Chaukanna.Player
 
             if (Locked == null && !ReferenceEquals(Locked, null)) Locked = null;   // despawned
 
+            Selected.RemoveAll(c => c == null);    // despawned
+
+            // Positive identification: a target looked at through the binoculars (zoomed in) while it is in view.
+            if (binoculars != null && binoculars.ZoomBlend > 0.8f)
+            {
+                if (Locked != null && visible.Contains(Locked)) Locked.Data.opticsVerified = true;
+                foreach (var c in Selected) if (c != null && visible.Contains(c)) c.Data.opticsVerified = true;
+            }
+
             // The click that captures the mouse (ObserverLook) must not also lock.
             var mouse = Mouse.current;
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame && cursorWasLocked && !ContactRegistry.InputBlocked) TryLockAtCentre();
+            var kb = Keyboard.current;
+            bool add = kb != null && (kb.leftCtrlKey.isPressed || kb.rightCtrlKey.isPressed || kb.leftShiftKey.isPressed && !RunConditions.AllowMovement);
+            bool lasso = LassoSelect.Holding;   // Tab held: the lasso owns the mouse and Esc
+            if (mouse != null && cursorWasLocked && !ContactRegistry.InputBlocked && !lasso)
+            {
+                if (add)
+                {
+                    // Click toggles; keeping the button down and sweeping only ever adds.
+                    if (mouse.leftButton.wasPressedThisFrame) Select(AtCentre(), true);
+                    else if (mouse.leftButton.isPressed) Select(AtCentre());
+                }
+                else if (mouse.leftButton.wasPressedThisFrame)
+                {
+                    ClearSelection();
+                    TryLockAtCentre();
+                }
+            }
+            if (kb != null && !ContactRegistry.InputBlocked && !lasso)
+            {
+                if (kb.gKey.wasPressedThisFrame) SelectAllInView();
+                if (kb.xKey.wasPressedThisFrame || kb.escapeKey.wasPressedThisFrame) ClearSelection();
+            }
             cursorWasLocked = Cursor.lockState == CursorLockMode.Locked;
+        }
+
+        // The visible contact nearest the aim dot, within the lock tolerance. Null = none.
+        Contact AtCentre()
+        {
+            Contact best = null;
+            float bestAngle = lockToleranceDegrees * FovScale;
+            foreach (var c in visible)
+            {
+                float angle = Vector3.Angle(transform.forward, c.transform.position - transform.position);
+                if (angle <= bestAngle) { best = c; bestAngle = angle; }
+            }
+            return best;
         }
 
         // Could the player see it at the given FOV if they were looking the right way? Used as the start of the detection clock.
@@ -92,7 +200,7 @@ namespace Chaukanna.Player
 
             if (range > EffectiveMaxRange) return false;
             if (apparentDegrees < minApparentDegrees * sizeThresholdMultiplier * FovScale) return false;
-            Vector3 vp = cam.WorldToViewportPoint(pos);
+            Vector3 vp = Cam.WorldToViewportPoint(pos);
             if (vp.z <= 0f || vp.x < 0f || vp.x > 1f || vp.y < 0f || vp.y > 1f) return false;
             return !Physics.Linecast(eye, pos, terrainMask, QueryTriggerInteraction.Ignore);
         }
@@ -100,14 +208,7 @@ namespace Chaukanna.Player
         // Locks the visible contact nearest the screen centre, or unlocks if there is none within tolerance.
         public bool TryLockAtCentre()
         {
-            Contact best = null;
-            float bestAngle = lockToleranceDegrees * FovScale;
-            foreach (var c in visible)
-            {
-                float angle = Vector3.Angle(transform.forward, c.transform.position - transform.position);
-                if (angle <= bestAngle) { best = c; bestAngle = angle; }
-            }
-
+            Contact best = AtCentre();
             if (best == Locked) return best != null;
             if (Locked != null) ContactRegistry.Record(ContactEventType.Unlock, Locked, null);
             Locked = best;
@@ -129,13 +230,49 @@ namespace Chaukanna.Player
             float cx = PlayerView.Width * 0.5f, cy = PlayerView.Height * 0.5f;
             Box(new Rect(cx - 1f, cy - 1f, 2f, 2f), new Color(1f, 1f, 1f, 0.6f));   // aim dot
 
-            if (Locked == null) return;
-            Vector3 sp = cam.WorldToScreenPoint(Locked.transform.position);
-            if (sp.z <= 0f) return;
-            float x = sp.x - PlayerView.Rect.x, y = PlayerView.Height - sp.y;   // screen pixels to this view's GUI space
             float ui = PlayerView.Height / 720f;
-            float h = 14f * ui, len = 6f * ui, t = Mathf.Max(1f, 2f * ui);
-            var col = Color.white;
+            if (labelStyle == null) labelStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleLeft };
+            labelStyle.fontSize = Mathf.RoundToInt(labelFontSize * ui);
+
+            // Every contact in the group gets cyan brackets and its own short tag.
+            var groupColour = new Color(0.3f, 0.9f, 1f);
+            foreach (var c in Selected)
+            {
+                if (c == null || !Brackets(c, groupColour, ui, out float gx, out float gy, out float gh)) continue;
+                string tag = $"#{c.Id:00}" + (c.Call != PlayerCall.None ? " " + c.Call.Label() : "") + (c.Actioned ? " " + ActionTag(c.Action) : "");
+                GUI.Label(new Rect(gx + gh + 6f * ui, gy - 20f * ui, 600f * ui, 40f * ui), tag, labelStyle);
+            }
+            if (Selected.Count > 0)
+            {
+                GUI.Label(new Rect(cx - 300f * ui, cy + 40f * ui, 600f * ui, 30f * ui),
+                    $"GROUP: {Selected.Count} selected.  1-5 and H R J F apply to all.  X clears.", new GUIStyle(labelStyle) { alignment = TextAnchor.MiddleCenter });
+                return;
+            }
+
+            if (Locked == null) return;
+            if (!Brackets(Locked, Color.white, ui, out float x, out float y, out float h)) return;
+            float range = Vector3.Distance(transform.position, Locked.transform.position);
+            // Id, range and the player's own call and action; never the truth class.
+            string label = $"#{Locked.Id:00}  {range:F0} m";
+            if (Locked.Call != PlayerCall.None) label += "  CALL: " + Locked.Call.Label();
+            if (Locked.CanFireAgain) label += "  MISSED - F TO FIRE AGAIN";
+            else if (Locked.OnHold) label += "  HELD - R / J / F to act";
+            else if (Locked.Actioned) label += "  " + ActionTag(Locked.Action) + (Locked.CanChangeAction ? "  (1-5 / H R J F to change)" : "  (1-5 to change the call)");
+            // What a sensor would flag: the track has left the pattern it was flying. Not the truth class.
+            if (Locked.AnomalyShown) label += "\n! TRACK LEFT ITS PATROL PATTERN";
+            GUI.Label(new Rect(x + h + 6f * ui, y - 30f * ui, 900f * ui, 60f * ui), label, labelStyle);
+        }
+
+        // Corner brackets around a contact. False when it is behind the camera.
+        bool Brackets(Contact c, Color col, float ui, out float x, out float y, out float h)
+        {
+            x = y = 0f;
+            h = 14f * ui;
+            Vector3 sp = cam.WorldToScreenPoint(c.transform.position);
+            if (sp.z <= 0f) return false;
+            x = sp.x - PlayerView.Rect.x;
+            y = PlayerView.Height - sp.y;   // screen pixels to this view's GUI space
+            float len = 6f * ui, t = Mathf.Max(1f, 2f * ui);
             for (int sx = -1; sx <= 1; sx += 2)
             for (int sy = -1; sy <= 1; sy += 2)
             {
@@ -143,19 +280,8 @@ namespace Chaukanna.Player
                 Box(new Rect(Mathf.Min(px, px - sx * len), py - t * 0.5f, len, t), col);
                 Box(new Rect(px - t * 0.5f, Mathf.Min(py, py - sy * len), t, len), col);
             }
-
-            if (labelStyle == null) labelStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleLeft };
-            labelStyle.fontSize = Mathf.RoundToInt(labelFontSize * ui);
-            float range = Vector3.Distance(transform.position, Locked.transform.position);
-            // Id, range and the player's own call and action; never the truth class.
-            string label = $"#{Locked.Id:00}  {range:F0} m";
-            if (Locked.Call != PlayerCall.None) label += "  CALL: " + Locked.Call.Label();
-            if (Locked.CanFireAgain) label += "  MISSED - F TO FIRE AGAIN";
-            else if (Locked.OnHold) label += "  HELD - R / J / F to act";
-            else if (Locked.Actioned) label += "  " + ActionTag(Locked.Action);
-            GUI.Label(new Rect(x + h + 6f * ui, y - 20f * ui, 900f * ui, 40f * ui), label, labelStyle);
+            return true;
         }
-
         public static string ActionTag(PlayerAction a)
         {
             switch (a)

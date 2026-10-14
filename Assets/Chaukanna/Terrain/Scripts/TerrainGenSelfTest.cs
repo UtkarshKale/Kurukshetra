@@ -36,6 +36,8 @@ namespace Chaukanna.TerrainGen
                 InvalidInputChecks(dir);
                 ImageryChecks(dir);
                 UnityTerrainChecks();
+                WebTileChecks(dir);
+                SurfaceChecks();
             }
             catch (Exception e)
             {
@@ -496,6 +498,134 @@ namespace Chaukanna.TerrainGen
             catch (DemException e) { return e.Message.IndexOf(messageContains, StringComparison.OrdinalIgnoreCase) >= 0; }
             catch (Exception) { return false; }
             return false;
+        }
+
+        // Real-place download: tile maths, the Terrarium decode, and the whole pipeline from cached tiles (no network).
+        static void WebTileChecks(string dir)
+        {
+            // Terrarium: (R * 256 + G + B / 256) - 32768.
+            Check("terrarium decode: sea level", ElevationDownloader.Decode(128, 0, 0) == 0f);
+            Check("terrarium decode: 300.5 m", Mathf.Approximately(ElevationDownloader.Decode(129, 44, 128), 300.5f));
+            Check("terrarium decode: below sea level", ElevationDownloader.Decode(127, 255, 0) == -1f);
+
+            // Web Mercator round trip, and the well-known tile for a place.
+            WebMercator.ToPixel(32.6875, 74.8375, 13, out double px, out double py);
+            WebMercator.FromPixel(px, py, 13, out double lat, out double lon);
+            Check("mercator round trip", Math.Abs(lat - 32.6875) < 1e-9 && Math.Abs(lon - 74.8375) < 1e-9);
+            Check("tile of a known place (0,0 at zoom 1 is the north-west quarter)", (int)(px / 256) == (int)((74.8375 + 180) / 360 * 8192) && WebMercator.WorldPixels(1) == 512);
+            Check("metres per pixel at the equator, zoom 0", Math.Abs(WebMercator.MetresPerPixel(0, 0) - 156543.03) < 0.1);
+
+            // Zoom choice: finest zoom up to 13 that keeps within the tile budget.
+            var small = new AreaRequest { latitude = 32.6875, longitude = 74.8375, radiusMetres = 2500f };
+            int zs = small.Zoom(out int smallTiles);
+            var big = new AreaRequest { latitude = 32.6875, longitude = 74.8375, radiusMetres = 60000f };
+            int zb = big.Zoom(out int bigTiles);
+            Check($"zoom: 5 km area at zoom 13 ({smallTiles} tiles); 120 km area drops to {zb} within 64 tiles", zs == 13 && smallTiles <= 64 && zb < 13 && bigTiles <= 64);
+            Check("grid size: power of two plus one, about two samples per source pixel", ElevationDownloader.GridSize(5000f, 16f) == 1025 && ElevationDownloader.GridSize(5000f, 40f) == 257 && ElevationDownloader.GridSize(500000f, 16f) == 2049);
+
+            // One synthetic tile through PNG and back.
+            var tex = new Texture2D(256, 256, TextureFormat.RGBA32, false);
+            var px32 = new Color32[256 * 256];
+            for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) px32[y * 256 + x] = new Color32(129, (byte)(255 - y), 0, 255);   // top row (texture row 255) = 256 m
+            tex.SetPixels32(px32);
+            byte[] png = tex.EncodeToPNG();
+            UnityEngine.Object.DestroyImmediate(tex);
+            var mosaic = new float[256 * 256];
+            Check("tile decodes with the top row first", ElevationDownloader.DecodeTile(png, mosaic, 256, 0, 0) && mosaic[0] == 256f && mosaic[255 * 256] == 511f);
+
+            // Whole pipeline offline: every tile already in a (temporary) cache, so no request is made.
+            string cache = Path.Combine(dir, "tiles"), areas = Path.Combine(dir, "areas");
+            ElevationDownloader.CacheFolderOverride = cache;
+            ElevationDownloader.AreasFolderOverride = areas;
+            try
+            {
+                var flat = new Texture2D(256, 256, TextureFormat.RGBA32, false);
+                var fill = new Color32[256 * 256];
+                for (int i = 0; i < fill.Length; i++) fill[i] = new Color32(129, 144, 0, 255);   // 400 m everywhere
+                flat.SetPixels32(fill);
+                byte[] flatPng = flat.EncodeToPNG();
+                UnityEngine.Object.DestroyImmediate(flat);
+                var req = new AreaRequest { name = "Self test/area", latitude = 32.6875, longitude = 74.8375, radiusMetres = 1500f };
+                int z = req.Zoom(out _);
+                req.Bounds(out double s, out double w, out double n, out double e, 200.0);
+                WebMercator.TileRange(s, w, n, e, z, out int x0, out int y0, out int x1, out int y1);
+                for (int ty = y0; ty <= y1; ty++)
+                for (int tx = x0; tx <= x1; tx++)
+                {
+                    string p = ElevationDownloader.TileCachePath("terrarium", z, tx, ty);
+                    Directory.CreateDirectory(Path.GetDirectoryName(p));
+                    File.WriteAllBytes(p, flatPng);
+                }
+                AreaDownloadResult got = null;
+                var run = ElevationDownloader.Download(req, null, r => got = r);
+                int steps = 0;
+                while (run.MoveNext() && steps++ < 1000) { }
+                Check("offline download uses only cached tiles", got != null && got.ok && got.tilesFetched == 0 && got.tilesFromCache == (x1 - x0 + 1) * (y1 - y0 + 1));
+                Check("area name is made safe for a file name", got != null && Path.GetFileName(got.rawPath) == "Self_test_area.raw");
+                var grid = got != null && got.ok ? DemReader.Load(got.rawPath) : null;
+                Check("the written file reads back: 400 m, centred, 3 km across", grid != null && Math.Abs(grid.minElevation - 400f) < 0.3f && Math.Abs(grid.maxElevation - 400f) < 0.3f
+                    && Math.Abs(grid.CentreLatitude - 32.6875) < 1e-6 && Math.Abs(grid.CentreLongitude - 74.8375) < 1e-6 && Math.Abs(grid.WidthMetres - 3000.0) < 1.0);
+                Check("it is listed as downloaded", ElevationDownloader.DownloadedAreas().Count == 1);
+            }
+            finally
+            {
+                ElevationDownloader.CacheFolderOverride = null;
+                ElevationDownloader.AreasFolderOverride = null;
+            }
+        }
+
+        // Ground materials: tileable noise, terrain analysis on a known shape, and the extra rule conditions.
+        static void SurfaceChecks()
+        {
+            bool wraps = true;
+            for (int i = 0; i < 16; i++)
+            {
+                float v = i / 16f;
+                if (Mathf.Abs(TileNoise.Fbm(0f, v, 4, 5, 3) - TileNoise.Fbm(1f, v, 4, 5, 3)) > 1e-4f) wraps = false;
+                if (Mathf.Abs(TileNoise.Ridged(v, 0f, 3, 4, 3) - TileNoise.Ridged(v, 1f, 3, 4, 3)) > 1e-4f) wraps = false;
+                TileNoise.Cells(0f, v, 9, 5, out float a1, out _, out _);
+                TileNoise.Cells(1f, v, 9, 5, out float b1, out _, out _);
+                if (Mathf.Abs(a1 - b1) > 1e-4f) wraps = false;
+            }
+            Check("material noise wraps at the texture edges (tiles without seams)", wraps);
+
+            // A V-shaped valley running north-south: floor at x = middle, sides rising east and west, falling to the north.
+            var f = new Heightfield { resolution = 129, sizeMetres = 2560f, metres = new float[129 * 129] };
+            for (int z = 0; z < 129; z++)
+            for (int x = 0; x < 129; x++)
+                f.metres[z * 129 + x] = 1000f + Mathf.Abs(x - 64) * 8f + z * 2f;
+            f.min = 1000f; f.max = 1000f + 64 * 8f + 128 * 2f;
+            var an = TerrainAnalysis.Compute(f);
+            an.At(64, 40, out float floorWet, out float floorCurv, out _);
+            an.At(10, 40, out float sideWet, out float sideCurv, out _);
+            Check($"wetness: valley floor {floorWet:F2} is wetter than the hillside {sideWet:F2}", floorWet > 0.5f && sideWet < floorWet);
+            Check("curvature: the valley floor is a hollow (positive), the open slope is not", floorCurv > 0.01f && Mathf.Abs(sideCurv) < 0.01f);
+            an.At(64, 40, out _, out _, out float floorNorth);
+            Check("facing: this valley rises to the north, so it faces south (negative)", floorNorth < 0f);
+            var ridge = new Heightfield { resolution = 65, sizeMetres = 640f, metres = new float[65 * 65] };
+            for (int z = 0; z < 65; z++) for (int x = 0; x < 65; x++) ridge.metres[z * 65 + x] = 500f - Mathf.Abs(x - 32) * 5f;
+            TerrainAnalysis.Compute(ridge).At(32, 32, out _, out float crest, out _);
+            Check("curvature: a crest is negative", crest < -0.01f);
+
+            var snow = new SurfaceRule { absoluteHeight = true, minHeight = 4300f, heightBlend = 100f, northBias = 1f };
+            Check("snow line is absolute height", TerrainBuilder.RuleWeight(snow, 50f, 4600f, 10f, 0.5f, 0f, 0f, 0.5f) > 0.9f && TerrainBuilder.RuleWeight(snow, 3000f, 3600f, 10f, 0.5f, 0f, 0f, 0.5f) == 0f);
+            Check("north bias: more on north faces, none on south faces at full bias",
+                TerrainBuilder.RuleWeight(snow, 0f, 4600f, 10f, 0.5f, 0f, 1f, 0.5f) > TerrainBuilder.RuleWeight(snow, 0f, 4600f, 10f, 0.5f, 0f, 0f, 0.5f) && TerrainBuilder.RuleWeight(snow, 0f, 4600f, 10f, 0.5f, 0f, -1f, 0.5f) == 0f);
+            var green = new SurfaceRule { minWetness = 0.55f, wetnessBlend = 0.1f };
+            Check("valley green only where it is wet", TerrainBuilder.RuleWeight(green, 0f, 0f, 5f, 0.9f, 0f, 0f, 0.5f) > 0.9f && TerrainBuilder.RuleWeight(green, 0f, 0f, 5f, 0.2f, 0f, 0f, 0.5f) == 0f);
+            var neutral = new SurfaceRule();
+            Check("a rule with only the old settings behaves as before", Mathf.Approximately(TerrainBuilder.RuleWeight(neutral, 100f, 30f), 1f));
+            var kit = ScriptableObject.CreateInstance<TerrainSurfaceKit>();
+            kit.rock = new TerrainLayer(); kit.scree = new TerrainLayer(); kit.soil = new TerrainLayer(); kit.grass = new TerrainLayer(); kit.snow = new TerrainLayer(); kit.sand = new TerrainLayer();
+            bool allBiomes = true;
+            foreach (SurfaceBiome b in Enum.GetValues(typeof(SurfaceBiome))) if (b != SurfaceBiome.Auto && SurfaceBiomes.Rules(kit, b).Count < 4) allBiomes = false;
+            Check("every biome has at least four placement rules", allBiomes);
+            var high = new Heightfield { min = 2600f, max = 4500f }; var flat = new Heightfield { min = 260f, max = 320f };
+            Check("auto biome: Kargil heights = high desert, Jammu = plains", SurfaceBiomes.Resolve(SurfaceBiome.Auto, high) == SurfaceBiome.HighDesert && SurfaceBiomes.Resolve(SurfaceBiome.Auto, flat) == SurfaceBiome.Plains);
+            UnityEngine.Object.DestroyImmediate(kit);
+
+            Check("satellite picture size: 5 km at 4 m pixels = 2048, never above 4096", ImageryDownloader.PictureSize(5000f, 3.9) == 2048 && ImageryDownloader.PictureSize(50000f, 3.9) == 4096 && ImageryDownloader.PictureSize(1000f, 20) == 512);
+            Check("surround and picture files sit beside the area", ElevationDownloader.SurroundPath("C:/a/Kargil/Kargil.raw").Replace('\\', '/') == "C:/a/Kargil/Kargil_surround.raw" && ImageryDownloader.PathFor("C:/a/Kargil/Kargil.raw").Replace('\\', '/') == "C:/a/Kargil/Kargil_satellite.jpg");
         }
 
         static void Check(string name, bool ok)

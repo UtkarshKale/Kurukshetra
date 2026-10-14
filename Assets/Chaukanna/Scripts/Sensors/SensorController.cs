@@ -39,6 +39,14 @@ namespace Chaukanna.Sensors
         float sampleTimer;
         float aiErrorOverride = -1f;   // from the trainer config; negative = use the profile
 
+        // For the VR hand tablet, which shows the same readings on a screen in the left hand.
+        public int RfSampleCount => RfSamples;
+        public float RfAt(int i) => rfHistory[(rfHead + 1 + Mathf.Clamp(i, 0, RfSamples - 1)) % RfSamples];   // 0 = oldest
+        public string StateText => stateText;
+        public string BearingText => bearingText;
+        public string AiText => aiText;
+        public float RelativeBearing => HasBearing ? SensorMath.RelativeBearing(transform.eulerAngles.y, WorldBearing) : float.NaN;
+
         // Cached so the panel doesn't build strings every frame.
         string stateText = "", bearingText = "SOUND  --", aiText = "";
         float shownRelative = float.NaN;
@@ -189,6 +197,7 @@ namespace Chaukanna.Sensors
         void DrawGui()
         {
             if (profile == null || Event.current.type != EventType.Repaint) return;
+            if (ViewRigSwitch.VrActive) return;      // in VR the panel is the tablet in the left hand
             float ui = PlayerView.Height / 720f;
             if (style == null) style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleLeft, wordWrap = false };
             style.fontSize = Mathf.RoundToInt(fontSize * ui);

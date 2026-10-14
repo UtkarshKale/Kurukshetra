@@ -41,6 +41,42 @@ namespace Chaukanna.Scoring
         public float decisionLatency = -1f;         // call to final action, seconds; -1 = no action
         public int engageAttempts;
 
+        // Changing one's mind, and blend-in hostiles.
+        public string firstCall = "";
+        public int callChanges;
+        public int actionChanges;
+        public int changePenalty;                   // points lost to second-guessing, already inside the nodes
+        public bool group;                          // decided as part of a multi-select
+        public bool deceptive;                      // a hostile flying an own-drone patrol
+        public float anomalyTime = -1f;             // when it gave itself away; -1 = it never did
+        public bool deceptionCaught;                // re-called correctly after the anomaly
+        public string severity = "";                // Sound / Minor / Major / Critical under a lettered card
+        public bool staleCard;                      // right under the card before a change, wrong under the one in force
+
+        // Full scoring (doc §5.4).
+        public float n1aSeconds = -1f;              // search: could be seen > came into view
+        public float n1bSeconds = -1f;              // perception: in view > locked (marked)
+        public string perceptionBand = "";          // full / partial / late
+        public float reportLatency = -1f;           // locked > called
+        public string reportBand = "";
+        public float clockOpen = -1f, deadline = -1f;   // decision clock, scenario seconds; -1 = no clock (never in view)
+        public string deadlineReason = "";
+        public string missKind = "";                // search failure (never in view) / perception failure (in view, never marked)
+        public bool clockMiss;                      // hostile with no active decision by its release point
+        public bool correctRejection;               // non-hostile left alone until it left
+        public bool unverified;                     // engaged with the AI cue as the only evidence
+        public string processSeverity = "";         // judged on what the player believed (their own call), not on truth
+        public int processScore = -1;               // 100 minus penalty units; -1 = no decision
+        public string outcome = "";                 // N4: Neutralised / Leaked / Not stopped / Tracked / Clear / Fratricide / Collateral / Pending
+        public string grid = "";                    // Sound, successful / Sound, unlucky / Lucky / Unsound / Pending / No decision
+        // Your call vs the sound call: the reference choice and its modelled consequence (an annotated replay, not a re-run).
+        public string yourCall = "", soundCall = "", soundAction = "", consequence = "";
+        public bool matchedSound;
+        public List<string> history = new List<string>();
+
+        // Which branch of the decision tree this contact took at each checkpoint (see DecisionTreeData).
+        public string detBranch = "", classBranch = "", actBranch = "", outcomeBranch = "";
+
         // Timeline, scenario seconds; negative = never. For the dashboard.
         public float spawnTime = -1f, firstInViewTime = -1f, lockTime = -1f, callTime = -1f, actionTime = -1f, despawnTime = -1f;
         public bool engageHit;
@@ -62,6 +98,9 @@ namespace Chaukanna.Scoring
         public float nightVisionPercent;            // share of the run with night vision on
         public string difficulty = "";              // empty = no difficulty level applied
         public bool allowMovement;                  // the soldier could walk
+        public string displayTier = "desktop";      // desktop, vr-sim or mixed: never pooled with each other
+        public int comfortRating = -1;              // VR only: 1-5 from the after-run check, 0 = skipped, -1 = not asked
+        public string comfortSickness = "";
 
         public int totalPoints;
         public int maxPoints;                       // best case for the scored contacts: 8 each (3 detect + 3 classify + 2 action)
@@ -72,11 +111,16 @@ namespace Chaukanna.Scoring
 
         public int scoredContacts;
         public int notScored;
+        public int notDetectable;                   // never detectable at all: listed, not in the max (see ScoringRules)
         public int detected;
         public int missed;
         public int unresolved;
         public int falseEngagements;                // engaged something that was not hostile
         public int missedHostiles;                  // hostiles with no action taken
+        public int decisionChanges;                 // calls and actions changed after a final action
+        public int groupDecisions;                  // contacts decided as part of a multi-select
+        public int deceptiveContacts;               // blend-in hostiles in the run
+        public int deceptionsCaught;                // ...re-called correctly after giving themselves away
 
         // AI assist, data only: no points attached.
         public int aiHintsShown;
@@ -90,6 +134,85 @@ namespace Chaukanna.Scoring
         public int[] confusion;
 
         public List<ContactResult> contacts = new List<ContactResult>();
+        public CardChangeResult cardChange = new CardChangeResult();
+
+        public SwarmTriageResult swarm = new SwarmTriageResult();
+
+        // Full scoring roll-up.
+        public float processScore = -1f;            // mean of the decided contacts' process scores
+        public int gridSoundSuccessful, gridSoundUnlucky, gridLucky, gridUnsound;
+        public int clockMisses, correctRejections, unverifiedEngagements;
+        public int searchFailures, perceptionFailures;   // never brought into view / in view but never marked before the deadline
+        public SdtResult reportSdt = new SdtResult(), engageSdt = new SdtResult();
+    }
+
+    // Signal detection for one kind of decision: hit and false-alarm counts, d' (can tell them apart) and c (trigger-happy
+    // below 0, hesitant above 0), with the log-linear correction; "gated" = enough trials to show them (doc §5.4.3).
+    [Serializable]
+    public class SdtResult
+    {
+        public int hits, signals, falseAlarms, noise;
+        public float dPrime, c;
+        public bool gated;
+
+        public static SdtResult From(int hits, int signals, int falseAlarms, int noise, int minimumTrials)
+        {
+            var r = new SdtResult { hits = hits, signals = signals, falseAlarms = falseAlarms, noise = noise };
+            float h = (hits + 0.5f) / (signals + 1f), f = (falseAlarms + 0.5f) / (noise + 1f);
+            float zh = Probit(h), zf = Probit(f);
+            r.dPrime = zh - zf;
+            r.c = -0.5f * (zh + zf);
+            r.gated = signals >= minimumTrials && noise >= minimumTrials;
+            return r;
+        }
+
+        // Inverse of the standard normal distribution (Acklam's rational approximation, error below 1.2e-9).
+        public static float Probit(double p)
+        {
+            p = Math.Max(1e-9, Math.Min(1 - 1e-9, p));
+            double[] a = { -3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00 };
+            double[] b = { -5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01 };
+            double[] c = { -7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00 };
+            double[] d = { 7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00 };
+            double q, x;
+            if (p < 0.02425) { q = Math.Sqrt(-2 * Math.Log(p)); x = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+            else if (p > 1 - 0.02425) { q = Math.Sqrt(-2 * Math.Log(1 - p)); x = -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+            else { q = p - 0.5; double rr = q * q; x = (((((a[0] * rr + a[1]) * rr + a[2]) * rr + a[3]) * rr + a[4]) * rr + a[5]) * q / (((((b[0] * rr + b[1]) * rr + b[2]) * rr + b[3]) * rr + b[4]) * rr + 1); }
+            return (float)x;
+        }
+
+        public string Describe(string name)
+        {
+            string counts = $"{hits}/{signals} hits, {falseAlarms}/{noise} false alarms";
+            return gated ? $"{name}: d' {dPrime:F2}, c {c:+0.00;-0.00;0.00} ({counts})" : $"{name}: insufficient data for d'/c ({counts}; needs 20 of each)";
+        }
+    }
+
+    // Swarm triage at prototype size (doc §5.4.6): did the player act on the members nearest the post first, and how
+    // many got through.
+    [Serializable]
+    public class SwarmTriageResult
+    {
+        public bool happened;
+        public int size, seen, actedOn, nearestFirst, leakers;
+        public float nearestFirstRate = -1f;    // share of first actions aimed at one of the two nearest members
+        public float firstActionSeconds = -1f;  // first member in view > first jam / engage on any member
+        public int points, maxPoints;
+        public string summary = "";
+    }
+
+    // The card-change node (doc §5.4.5): how the player adapted when the ROE card changed mid-run.
+    [Serializable]
+    public class CardChangeResult
+    {
+        public bool happened;
+        public string from = "", to = "";
+        public float time = -1f;
+        public float adaptationSeconds = -1f;   // first decision that was right under the new card where the cards disagree; -1 = none
+        public int staleErrors;                 // decisions right under the old card but wrong under the new one
+        public int decisionsAfter;
+        public int points, maxPoints;
+        public string summary = "";
     }
 
     // Decision-tree scorer: DETECTED? > CLASSIFIED RIGHT? > RIGHT ACTION FOR THE ROE CARD?
@@ -131,8 +254,21 @@ namespace Chaukanna.Scoring
             }
         }
 
-        public static SessionResult Calculate(IList<ContactRecord> records, RuleSet rules, float runEndTime, int seed = 0)
+        // The card in force at a moment, from the start card and the recorded changes.
+        public static RoeCard CardAt(float time, RoeCard start, IList<RoeChange> changes)
         {
+            var card = start;
+            if (changes != null) foreach (var ch in changes) if (ch.time <= time) card = ch.to;
+            return card;
+        }
+
+        static RoeCard startCardForRun;
+        static IList<RoeChange> changesForRun;
+
+        public static SessionResult Calculate(IList<ContactRecord> records, RuleSet rules, float runEndTime, int seed = 0, IList<RoeChange> roeChanges = null, RoeCard startCard = RoeCard.WeaponsHold)
+        {
+            startCardForRun = startCard;
+            changesForRun = roeChanges;
             var s = new SessionResult
             {
                 seed = seed,
@@ -144,7 +280,7 @@ namespace Chaukanna.Scoring
 
             float detectionSum = 0f;
             int right = 0, actioned = 0, correctActions = 0;
-            int maxPerContact = rules.fastPoints + rules.rightPoints + BestActionPoints(rules);
+            int maxPerContact = rules.fastPoints + rules.rightPoints + Math.Max(BestActionPoints(rules), rules.soundPoints);
 
             foreach (var r in records)
             {
@@ -171,7 +307,11 @@ namespace Chaukanna.Scoring
                     }
                 }
                 else c.aiText = "AI -";
-                if (!c.scored) { s.notScored++; continue; }
+                if (r.group) s.groupDecisions++;
+                if (r.deceptive) s.deceptiveContacts++;
+                if (c.deceptionCaught) s.deceptionsCaught++;
+                s.decisionChanges += r.callRevisions + r.actionRevisions;
+                if (!c.scored) { s.notScored++; if (c.notScoredReason == NotDetectableReason) s.notDetectable++; continue; }
 
                 s.scoredContacts++;
                 s.totalPoints += c.total;
@@ -199,7 +339,159 @@ namespace Chaukanna.Scoring
                 s.classificationAccuracy = 100f * right / s.detected;
             }
             if (actioned > 0) s.engagementDecisionScore = 100f * correctActions / actioned;
+            RollUp(s, records, rules);
+            s.swarm = Triage(records, rules);
+            if (s.swarm.happened) { s.totalPoints += s.swarm.points; s.maxPoints += s.swarm.maxPoints; }
+            if (roeChanges != null && roeChanges.Count > 0)
+            {
+                s.cardChange = CardChange(records, rules, roeChanges[0], s.contacts);
+                s.totalPoints += s.cardChange.points;
+                s.maxPoints += s.cardChange.maxPoints;
+            }
             return s;
+        }
+
+        public static SwarmTriageResult Triage(IList<ContactRecord> records, RuleSet rules)
+        {
+            var t = new SwarmTriageResult { maxPoints = rules.swarmTriageMaxPoints };
+            float firstSeen = float.MaxValue, firstAction = float.MaxValue;
+            foreach (var r in records)
+            {
+                if (r.swarmId < 0) continue;
+                t.happened = true;
+                t.size++;
+                if (r.firstInViewTime >= 0f) { t.seen++; firstSeen = Mathf.Min(firstSeen, r.firstInViewTime); }
+                if (r.despawnReason == "ReachedDefendedPoint") t.leakers++;
+                if (r.swarmRank >= 0)
+                {
+                    t.actedOn++;
+                    if (r.swarmRank <= 1) t.nearestFirst++;
+                    if (r.actionTime >= 0f) firstAction = Mathf.Min(firstAction, r.actionTime);
+                }
+            }
+            if (!t.happened) return t;
+            if (t.actedOn > 0) t.nearestFirstRate = (float)t.nearestFirst / t.actedOn;
+            if (firstSeen < float.MaxValue && firstAction < float.MaxValue) t.firstActionSeconds = Math.Max(0f, firstAction - firstSeen);
+            // Up to 2 points for going after the nearest first, 1 for letting none through.
+            t.points = (t.nearestFirstRate > 0f ? Mathf.RoundToInt(2f * t.nearestFirstRate) : 0) + (t.leakers == 0 && t.actedOn > 0 ? 1 : 0);
+            t.points = Math.Min(t.points, t.maxPoints);
+            t.summary = $"swarm of {t.size}: {t.seen} seen, {t.actedOn} acted on, {(t.nearestFirstRate < 0f ? "-" : (100f * t.nearestFirstRate).ToString("F0") + " %")} nearest-first, {t.leakers} reached the post"
+                + (t.firstActionSeconds >= 0f ? $", first action {F(t.firstActionSeconds)} s after the first was seen" : "") + $" ({t.points} of {t.maxPoints})";
+            return t;
+        }
+
+        // Process score, grid, clock and the two signal-detection analyses over the scored contacts.
+        static void RollUp(SessionResult s, IList<ContactRecord> records, RuleSet rules)
+        {
+            int processSum = 0, processN = 0;
+            int rHits = 0, rSignals = 0, rFa = 0, rNoise = 0, eHits = 0, eSignals = 0, eFa = 0, eNoise = 0;
+            for (int i = 0; i < records.Count && i < s.contacts.Count; i++)
+            {
+                var r = records[i];
+                var c = s.contacts[i];
+                if (!c.scored) continue;
+                if (c.processScore >= 0) { processSum += c.processScore; processN++; }
+                switch (c.grid)
+                {
+                    case "Sound, successful": s.gridSoundSuccessful++; break;
+                    case "Sound, unlucky": s.gridSoundUnlucky++; break;
+                    case "Lucky": s.gridLucky++; break;
+                    case "Unsound": s.gridUnsound++; break;
+                }
+                if (c.clockMiss) s.clockMisses++;
+                if (c.missKind.StartsWith("search")) s.searchFailures++;
+                if (c.missKind.StartsWith("perception")) s.perceptionFailures++;
+                if (c.correctRejection) s.correctRejections++;
+                if (c.unverified) s.unverifiedEngagements++;
+
+                // Report: is there a drone? Signal = any drone, noise = birds. "Yes" = called it a drone.
+                bool drone = r.truthClass != ContactClass.Bird;
+                bool saidDrone = r.call != PlayerCall.None && r.call != PlayerCall.Bird;
+                if (drone) { rSignals++; if (saidDrone) rHits++; }
+                else { rNoise++; if (saidDrone) rFa++; }
+
+                // Engage: is it hostile? Signal = hostiles that came into view, noise = the rest that came into view. "Yes" = jam or engage.
+                if (!c.detected) continue;
+                bool hostile = Category(r.truthClass) == ContactCategory.Hostile;
+                bool fired = r.action == PlayerAction.Jam || r.action == PlayerAction.Engage;
+                if (hostile) { eSignals++; if (fired) eHits++; }
+                else { eNoise++; if (fired) eFa++; }
+            }
+            s.processScore = processN > 0 ? (float)processSum / processN : -1f;
+            s.reportSdt = SdtResult.From(rHits, rSignals, rFa, rNoise, rules.sdtMinimumTrials);
+            s.engageSdt = SdtResult.From(eHits, eSignals, eFa, eNoise, rules.sdtMinimumTrials);
+        }
+
+        // The class the player's call names (their belief), if any.
+        public static bool CallClass(PlayerCall call, out ContactClass believed)
+        {
+            switch (call)
+            {
+                case PlayerCall.HostileQuad: believed = ContactClass.HostileQuad; return true;
+                case PlayerCall.HostileFixedWing: believed = ContactClass.HostileFixedWing; return true;
+                case PlayerCall.OwnIsrDrone: believed = ContactClass.FriendlyISR; return true;
+                case PlayerCall.CivilianDrone: believed = ContactClass.CivilianQuad; return true;
+                case PlayerCall.Bird: believed = ContactClass.Bird; return true;
+                default: believed = ContactClass.Bird; return false;
+            }
+        }
+        static int Units(Severity s, RuleSet rules) => s == Severity.Sound ? 0 : s == Severity.Minor ? rules.penaltyMinor : s == Severity.Major ? rules.penaltyMajor : rules.penaltyCritical;
+
+        // Severity of a decision for a class under a card: the matrix for lettered cards, the old rules otherwise.
+        static Severity Judge(RuleSet rules, RoeCard card, ContactClass truth, PlayerAction action)
+        {
+            var lettered = rules.Card(card);
+            if (lettered != null) return lettered.Lookup(RuleSet.Group(truth), action);
+            var rule = rules.Find(card, Category(truth), action);
+            if (rule == null) return Severity.Minor;
+            return rule.correct ? Severity.Sound : rule.points <= -5 ? Severity.Critical : rule.points < 0 ? Severity.Major : Severity.Minor;
+        }
+
+        // Grace: decisions made within a few seconds of the change were committed under the old card.
+        public static CardChangeResult CardChange(IList<ContactRecord> records, RuleSet rules, RoeChange change, List<ContactResult> results = null)
+        {
+            var cc = new CardChangeResult { happened = true, from = change.from.ToString(), to = change.to.ToString(), time = change.time, maxPoints = rules.cardChangeMaxPoints };
+            var oldCard = rules.Card(change.from);
+            var newCard = rules.Card(change.to);
+            float first = float.MaxValue;
+            foreach (var r in records)
+            {
+                if (!r.Actioned || r.actionTime < change.time + rules.cardChangeGraceSeconds) continue;
+                cc.decisionsAfter++;
+                var g = RuleSet.Group(r.truthClass);
+                Severity now = newCard != null ? newCard.Lookup(g, r.action) : (OldRuleCorrect(rules, change.to, r) ? Severity.Sound : Severity.Major);
+                Severity before = oldCard != null ? oldCard.Lookup(g, r.action) : (OldRuleCorrect(rules, change.from, r) ? Severity.Sound : Severity.Major);
+                if (before == Severity.Sound && now != Severity.Sound)
+                {
+                    cc.staleErrors++;
+                    if (results != null) foreach (var c in results) if (c.id == r.id) c.staleCard = true;
+                }
+                // Adaptation shows on a contact the two cards treat differently, decided right under the new one.
+                bool disagree = oldCard != null && newCard != null && CardsDiffer(oldCard, newCard, g);
+                if (now == Severity.Sound && (disagree || oldCard == null || newCard == null)) first = Mathf.Min(first, r.actionTime);
+            }
+            if (first < float.MaxValue) cc.adaptationSeconds = first - change.time;
+            int p = rules.cardChangeMaxPoints - cc.staleErrors;
+            if (cc.adaptationSeconds < 0f) p -= 2;
+            else if (cc.adaptationSeconds > rules.cardChangeSlowSeconds) p -= 1;
+            cc.points = Math.Max(-rules.cardChangeMaxPoints, Math.Min(rules.cardChangeMaxPoints, p));
+            cc.summary = $"{RoeCards.Short(change.from)} > {RoeCards.Short(change.to)} at {F(change.time)} s: "
+                + (cc.adaptationSeconds >= 0f ? $"adapted in {F(cc.adaptationSeconds)} s" : "no decision showed the new card")
+                + $", {cc.staleErrors} stale-card error{(cc.staleErrors == 1 ? "" : "s")} in {cc.decisionsAfter} decision{(cc.decisionsAfter == 1 ? "" : "s")} after the change ({cc.points:+0;-0;0} of {cc.maxPoints})";
+            return cc;
+        }
+
+        // The two cards treat this kind of contact differently for at least one action.
+        static bool CardsDiffer(CardDefinition a, CardDefinition b, ThreatGroup g)
+        {
+            foreach (var act in new[] { PlayerAction.Hold, PlayerAction.Report, PlayerAction.Jam, PlayerAction.Engage }) if (a.Lookup(g, act) != b.Lookup(g, act)) return true;
+            return false;
+        }
+
+        static bool OldRuleCorrect(RuleSet rules, RoeCard card, ContactRecord r)
+        {
+            var rule = rules.Find(card, Category(r.truthClass), r.action);
+            return rule != null && rule.correct;
         }
 
         static int BestActionPoints(RuleSet rules)
@@ -231,6 +523,13 @@ namespace Chaukanna.Scoring
                 despawnTime = r.despawnTime,
                 engageAttempts = r.shots,
                 engageHit = r.engageHit,
+                firstCall = r.firstCall.Label(),
+                callChanges = r.callChanges,
+                actionChanges = r.actionRevisions,
+                group = r.group,
+                deceptive = r.deceptive,
+                anomalyTime = r.anomalyTime,
+                history = new List<string>(r.history),
             };
             string head = $"#{r.id:00} {r.truthClass}";
 
@@ -239,6 +538,28 @@ namespace Chaukanna.Scoring
                 c.scored = false;
                 c.notScoredReason = "spawned too late";
                 c.path = head + " | not scored: spawned too late";
+                c.detBranch = "Not scored";
+                return c;
+            }
+
+            // Taken out by the trainer before the player had decided anything: the player was never given the whole job.
+            if (r.despawnReason == Contact.RemovedByTrainer && r.action == PlayerAction.None)
+            {
+                c.scored = false;
+                c.notScoredReason = "removed by trainer";
+                c.path = head + " | not scored: removed by the trainer";
+                c.detBranch = "Not scored";
+                return c;
+            }
+
+            // Never detectable: out of range, behind terrain or too small for its whole life, wherever the player looked.
+            // Nobody could have seen it, so it says so in the AAR and does not count against the player.
+            if (!c.detected && rules.excludeNeverDetectable && r.firstDetectableTime < 0f)
+            {
+                c.scored = false;
+                c.notScoredReason = NotDetectableReason;
+                c.path = head + " | not scored: not detectable (never in range, line of sight and size at once)";
+                c.detBranch = "Not detectable";
                 return c;
             }
 
@@ -247,6 +568,10 @@ namespace Chaukanna.Scoring
             {
                 c.nodes.Add(new NodeResult { label = "DET", points = 0, passed = false, reason = "never in view" });
                 c.path = head + " | MISSED = 0";
+                c.detBranch = "Missed";
+                c.missKind = "search failure: could have been seen, never brought into view";
+                c.outcome = r.despawnReason == "ReachedDefendedPoint" && Category(r.truthClass) == ContactCategory.Hostile ? "Leaked" : "Pending";
+                Counterfactual(r, rules, c, Category(r.truthClass) == ContactCategory.Hostile, false, runEndTime);
                 return c;
             }
             float from = r.firstDetectableTime >= 0f ? Math.Min(r.firstDetectableTime, r.firstInViewTime) : r.spawnTime;
@@ -254,18 +579,99 @@ namespace Chaukanna.Scoring
             int detPoints = c.detectionSeconds < rules.fastSeconds ? rules.fastPoints
                 : c.detectionSeconds <= rules.mediumSeconds ? rules.mediumPoints : rules.slowPoints;
             c.nodes.Add(new NodeResult { label = "DET", points = detPoints, passed = true, reason = F(c.detectionSeconds) + "s" });
+            c.detBranch = c.detectionSeconds < rules.fastSeconds ? "Fast" : c.detectionSeconds <= rules.mediumSeconds ? "Medium" : "Slow";
+            // N1a = search (could be seen > came into view; the DET points above), N1b = perception (in view > locked).
+            c.n1aSeconds = c.detectionSeconds;
+            if (r.firstLockTime >= 0f)
+            {
+                c.n1bSeconds = Math.Max(0f, r.firstLockTime - r.firstInViewTime);
+                c.perceptionBand = c.n1bSeconds <= rules.perceptionFullSeconds ? "full" : c.n1bSeconds <= rules.perceptionPartialSeconds ? "partial" : "late";
+            }
+            else c.perceptionBand = "never locked";
 
-            // Node 2: classified right?
+            // Node 2: classified right? The latest call is the one judged; how the player got there adjusts it.
             var cls = new NodeResult { label = "CLASS" };
-            if (r.call == PlayerCall.None) { cls.points = 0; cls.reason = "no call"; }
-            else if (r.call == RightCall(r.truthClass)) { cls.points = rules.rightPoints; cls.passed = true; cls.reason = "right"; }
-            else if (IsNearMiss(r, rules)) { cls.points = rules.nearMissPoints; cls.reason = $"near-miss, called {r.call.Label()}"; }
-            else { cls.points = rules.wrongPoints; cls.reason = $"wrong, called {r.call.Label()}"; }
+            bool rightNow = r.call != PlayerCall.None && r.call == RightCall(r.truthClass);
+            bool changed = r.callChanges > 0;
+            bool wasRight = changed && r.callBeforeChange == RightCall(r.truthClass);
+            if (r.call == PlayerCall.None) { cls.points = 0; cls.reason = "no call"; c.classBranch = "No call"; }
+            else if (rightNow)
+            {
+                cls.points = rules.rightPoints;
+                cls.passed = true;
+                cls.reason = "right";
+                c.classBranch = "Right";
+                if (changed && !wasRight && r.deceptive && r.callChangeInformed)
+                {
+                    // Watched it, saw it break pattern, and re-called it: the best outcome for a blend-in.
+                    cls.points += rules.deceptionCaughtBonus;
+                    cls.reason = $"right after the anomaly, was {r.callBeforeChange.Label()}: caught the deception";
+                    c.deceptionCaught = true;
+                    c.classBranch = "Caught deception";
+                }
+                else if (changed && !wasRight && r.lastCallChangeWasRevision)
+                {
+                    c.changePenalty += rules.secondGuessPenalty;
+                    cls.points += rules.secondGuessPenalty;
+                    cls.reason = $"right on a second guess, was {r.callBeforeChange.Label()}";
+                    c.classBranch = "Second guess";
+                }
+            }
+            else
+            {
+                bool nearMiss = IsNearMiss(r, rules);
+                cls.points = nearMiss ? rules.nearMissPoints : rules.wrongPoints;
+                cls.reason = (nearMiss ? "near-miss" : "wrong") + $", called {r.call.Label()}";
+                c.classBranch = nearMiss ? "Near miss" : "Wrong";
+                if (wasRight && r.lastCallChangeWasRevision)
+                {
+                    c.changePenalty += rules.changedToWrongPenalty;
+                    cls.points += rules.changedToWrongPenalty;
+                    cls.reason += $", changed from the right call {r.callBeforeChange.Label()}";
+                    c.classBranch = "Changed to wrong";
+                }
+                else if (r.deceptive && r.call == PlayerCall.OwnIsrDrone)
+                {
+                    cls.reason += r.anomalyTime >= 0f ? ", deceived and not corrected after the anomaly" : ", deceived (it never broke pattern)";
+                    c.classBranch = "Deceived";
+                }
+            }
             c.nodes.Add(cls);
-
+            // Report node: lock (mark) to call; the call's accuracy is the CLASS node above.
+            if (r.callTime >= 0f && r.firstLockTime >= 0f)
+            {
+                c.reportLatency = Math.Max(0f, r.callTime - r.firstLockTime);
+                c.reportBand = c.reportLatency <= rules.reportFullSeconds ? "full" : c.reportLatency <= rules.reportPartialSeconds ? "partial" : "late";
+            }
             // Node 3: right action for the card in force when it was taken?
             var act = new NodeResult { label = "ACT" };
-            if (!r.Actioned) { act.points = 0; act.reason = "UNRESOLVED"; }
+            bool hostileTruth = Category(r.truthClass) == ContactCategory.Hostile;
+            // The decision clock (doc §5.4.1): opens when the contact is in view (or when it was called, if earlier), runs out at
+            // the class's release point for a hostile, or when a non-hostile leaves / after a fixed time.
+            c.clockOpen = ClockOpen(r);
+            c.deadline = Deadline(r, rules, c.clockOpen, out c.deadlineReason);
+            bool deadlinePassed = c.deadline >= 0f && c.deadline <= runEndTime;
+            bool decidedInTime = r.Actioned && r.action != PlayerAction.Hold && r.actionTime <= c.deadline + 0.01f;
+            if (deadlinePassed && r.firstLockTime < 0f) c.missKind = "perception failure: in view, never marked";
+            bool rejected = r.action == PlayerAction.None || r.action == PlayerAction.Hold || r.action == PlayerAction.Report;
+            if (rules.fullScoring && deadlinePassed && hostileTruth && !decidedInTime)
+            {
+                var card = CardAt(c.deadline, startCardForRun, changesForRun);
+                var sev = Judge(rules, card, r.truthClass, PlayerAction.Hold);
+                c.clockMiss = true;
+                c.severity = sev.ToString();
+                act.points = rules.Card(card) != null ? rules.Points(sev) : Math.Min(0, rules.Find(card, ContactCategory.Hostile, PlayerAction.Hold)?.points ?? 0);
+                string late = r.Actioned && r.action != PlayerAction.Hold ? $", {r.action} came at {F(r.actionTime)}s, too late" : r.OnHold ? ", still on hold" : "";
+                act.reason = $"MISS: no decision before {c.deadlineReason} at {F(c.deadline)}s{late} ({sev} under {RoeCards.Short(card)})";
+            }
+            else if (rules.fullScoring && deadlinePassed && !hostileTruth && rejected && !r.Actioned)
+            {
+                c.correctRejection = true;
+                act.points = rules.soundPoints;
+                act.passed = true;
+                act.reason = $"correct rejection: left alone until {c.deadlineReason}";
+            }
+            else if (!r.Actioned) { act.points = 0; act.reason = "UNRESOLVED"; }
             else
             {
                 var rule = rules.Find(r.roeAtAction, Category(r.truthClass), r.action);
@@ -274,21 +680,77 @@ namespace Chaukanna.Scoring
                     : $"{r.action} under {r.roeAtAction}";
                 if (r.holds > 0 && r.action != PlayerAction.Hold) under += $" (after {r.holds} hold{(r.holds > 1 ? "s" : "")}, {F(r.holdSeconds)}s)";
                 // Dithering on a hostile under attack costs points even if the final action was right.
-                if (r.action != PlayerAction.Hold && Category(r.truthClass) == ContactCategory.Hostile && rules.holdDelaySeconds > 0f)
+                if (r.action != PlayerAction.Hold && Category(r.truthClass) == ContactCategory.Hostile && rules.holdDelaySeconds > 0f && (RoeCards.IsAttack(r.roeAtAction) || r.holdUnderAttackSeconds > 0f))
                 {
                     int blocks = (int)(r.holdUnderAttackSeconds / rules.holdDelaySeconds);
                     c.holdPenalty = Math.Max(rules.holdDelayCap, blocks * rules.holdDelayPenalty);
                 }
-                if (rule == null) { act.points = 0; act.reason = under + ", no rule"; }
+                // Replacing a final action with nothing new to go on is second-guessing, and costs a little each time.
+                int actionChange = Math.Max(rules.actionChangeCap, r.uninformedActionRevisions * rules.actionChangePenalty);
+                c.changePenalty += actionChange;
+                var lettered = rules.Card(r.roeAtAction);
+                if (lettered != null)
+                {
+                    // Cards A / B / C: the severity matrix decides (doc §5.4.4).
+                    var sev = lettered.Lookup(RuleSet.Group(r.truthClass), r.action);
+                    c.severity = sev.ToString();
+                    act.points = rules.Points(sev) + c.holdPenalty + actionChange;
+                    act.passed = sev == Severity.Sound;
+                    act.reason = under + (sev == Severity.Sound ? ", sound" : $", {sev.ToString().ToUpperInvariant()} under {RoeCards.Short(r.roeAtAction)}")
+                        + (c.holdPenalty != 0 ? $", held {F(r.holdUnderAttackSeconds)}s under attack ({c.holdPenalty})" : "");
+                }
+                else if (rule == null) { act.points = actionChange; act.reason = under + ", no rule"; }
                 else
                 {
-                    act.points = rule.points + c.holdPenalty;
+                    act.points = rule.points + c.holdPenalty + actionChange;
                     act.passed = rule.correct;
                     act.reason = under + (string.IsNullOrEmpty(rule.flag) ? "" : ", " + rule.flag)
                         + (c.holdPenalty != 0 ? $", held {F(r.holdUnderAttackSeconds)}s under attack ({c.holdPenalty})" : "");
                 }
+                if (r.actionRevisions > 0)
+                    act.reason += $", action changed {r.actionRevisions}x" + (actionChange != 0 ? $" ({actionChange})" : " (new information, no penalty)");
+
+                // Unverified engagement: the AI cue was the only evidence (the player followed it and never looked through the binoculars).
+                if (rules.fullScoring && rules.flagUnverifiedEngagement && r.action == PlayerAction.Engage && r.aiHint != PlayerCall.None && r.call == r.aiHint && !r.opticsVerified)
+                {
+                    c.unverified = true;
+                    bool strict = r.roeAtAction == RoeCard.CardB || r.roeAtAction == RoeCard.CardC;
+                    int penalty = strict ? rules.majorPoints : -1;
+                    act.points += penalty;
+                    act.reason += $", UNVERIFIED: AI cue was the only evidence ({(strict ? "Major" : "Minor")}, {penalty})";
+                }
             }
+            // Hold or report on a non-hostile by its deadline is also a correct rejection (scored by the action rules above).
+            if (rules.fullScoring && deadlinePassed && !hostileTruth && rejected && r.Actioned) c.correctRejection = true;
             c.nodes.Add(act);
+            c.actBranch = c.clockMiss ? "Clock ran out" : c.correctRejection && !r.Actioned ? "Left alone" : r.Actioned ? r.action.ToString() : "No action";
+            c.outcomeBranch = c.clockMiss ? "Wrong action" : c.correctRejection ? "Right action" : !r.Actioned ? "Unresolved"
+                : r.action == PlayerAction.Engage && Category(r.truthClass) != ContactCategory.Hostile ? "False engagement"
+                : act.passed ? "Right action" : "Wrong action";
+
+            // N3 process: judged on what the player believed (their own call), not on the truth they could not know.
+            // N4 outcome: what actually happened. The two together give the process x outcome grid.
+            if (c.clockMiss || c.correctRejection || r.Actioned)
+            {
+                Severity process;
+                if (c.correctRejection) process = Severity.Sound;
+                else if (c.clockMiss) process = (Severity)Enum.Parse(typeof(Severity), c.severity);
+                else
+                {
+                    var card = r.roeAtAction;
+                    process = CallClass(r.call, out var believed) ? Judge(rules, card, believed, r.action) : Judge(rules, card, r.truthClass, r.action);
+                    if (c.unverified && process < Severity.Major) process = (card == RoeCard.CardB || card == RoeCard.CardC) ? Severity.Major : (Severity)Math.Max((int)process, (int)Severity.Minor);
+                }
+                c.processSeverity = process.ToString();
+                c.processScore = Math.Max(0, 100 - Units(process, rules));
+                c.outcome = Outcome(r, hostileTruth, c);
+                bool soundProcess = process <= Severity.Minor;
+                bool goodOutcome = c.outcome == "Neutralised" || c.outcome == "Clear" || c.outcome == "Tracked";
+                // A result not known yet (still in the air, nothing decisive happened) is not luck either way.
+                c.grid = c.outcome == "Pending" ? "Pending" : soundProcess ? (goodOutcome ? "Sound, successful" : "Sound, unlucky") : (goodOutcome ? "Lucky" : "Unsound");
+            }
+            else { c.outcome = "Pending"; c.grid = "No decision"; }
+            Counterfactual(r, rules, c, hostileTruth, decidedInTime, runEndTime);
 
             var sb = new StringBuilder(head).Append(" | ");
             for (int i = 0; i < c.nodes.Count; i++)
@@ -302,10 +764,118 @@ namespace Chaukanna.Scoring
             return c;
         }
 
+        public const string NotDetectableReason = "not detectable";
+
+        // The decision clock opens when the contact is in view, or when it was called if that came first; -1 = never in view.
+        public static float ClockOpen(ContactRecord r)
+        {
+            if (r.firstInViewTime < 0f) return -1f;
+            return r.callTime >= 0f ? Math.Min(r.firstInViewTime, r.callTime) : r.firstInViewTime;
+        }
+
+        // When the clock runs out; -1 = no clock (never in view). Hostile: first within its class's release range of the post,
+        // else when it reached the post, else a fixed time after the clock opened (it loitered). Non-hostile: when it left,
+        // or a fixed time after the clock opened, whichever is first.
+        public static float Deadline(ContactRecord r, RuleSet rules, float open, out string why)
+        {
+            why = "";
+            if (open < 0f) return -1f;
+            bool left = r.despawnTime >= 0f && (r.despawnReason == "ReachedDefendedPoint" || r.despawnReason == "ExitedSector");
+            if (Category(r.truthClass) == ContactCategory.Hostile)
+            {
+                var release = rules.Release(r.truthClass);
+                float range = release != null ? release.range : 150f;
+                float within = r.FirstWithin(range);
+                if (within >= 0f) { why = $"its release point ({range:F0} m from the post)"; return Math.Max(within, open); }
+                if (left && r.despawnReason == "ReachedDefendedPoint") { why = "it reached the post"; return r.despawnTime; }
+                why = "the loiter limit";
+                return open + (release != null ? release.fallbackSeconds : 90f);
+            }
+            float limit = open + rules.nonHostileDeadlineSeconds;
+            if (left && r.despawnTime < limit) { why = "it left"; return r.despawnTime; }
+            why = $"{rules.nonHostileDeadlineSeconds:F0} s in view";
+            return limit;
+        }
+
+        // "Your call" vs "the sound call" (doc §1.5, chairman change 8). This is the doc's fallback (K10): an annotated replay
+        // of the logged run plus the reference choice, not a re-simulation. The sound call is the right class and the least
+        // escalatory action the card rates Sound, made before the clock ran out.
+        static void Counterfactual(ContactRecord r, RuleSet rules, ContactResult c, bool hostile, bool decidedInTime, float runEndTime)
+        {
+            var right = RightCall(r.truthClass);
+            if (!c.detected)
+            {
+                c.yourCall = "never brought into view";
+                c.soundCall = r.firstDetectableTime >= 0f ? $"search the sector: it could be seen from {F(r.firstDetectableTime)} s" : "search the sector";
+                c.consequence = hostile ? (c.outcome == "Leaked" ? "it reached the post unseen" : "a hostile went unseen") : "no harm done: it was not a threat";
+                return;
+            }
+            float decideBy = c.deadline >= 0f ? c.deadline : runEndTime;
+            var card = r.Actioned && decidedInTime ? r.roeAtAction : CardAt(Math.Min(decideBy, runEndTime), startCardForRun, changesForRun);
+            var sound = SoundAction(rules, card, r.truthClass);
+            c.soundAction = sound.ToString();
+            c.yourCall = (r.call != PlayerCall.None ? r.call.Label() : "no call")
+                + (r.Actioned ? $", {r.action} at {F(r.actionTime)} s" + (c.deadline >= 0f && r.actionTime > c.deadline + 0.01f ? " (after the deadline)" : "") : ", no action");
+            c.soundCall = $"{right.Label()}, {sound}" + (c.deadline >= 0f ? $" by {F(c.deadline)} s ({c.deadlineReason})" : "") + $" under {RoeCards.Short(card)}";
+
+            bool rightCall = r.call == right;
+            bool soundAction = r.Actioned && Judge(rules, r.roeAtAction, r.truthClass, r.action) == Severity.Sound;
+            bool inTime = !hostile || decidedInTime;
+            c.matchedSound = rightCall && (soundAction || (!hostile && !r.Actioned && c.correctRejection)) && inTime;
+            if (c.matchedSound) { c.consequence = "your call was the sound call"; return; }
+            if (hostile)
+            {
+                string instead = c.outcome == "Leaked" ? "instead it reached the post" : c.outcome == "Neutralised" ? "it came down anyway, but later or for the wrong reason" : c.outcome == "Pending" ? "instead it was still flying at the end" : $"instead: {c.outcome.ToLowerInvariant()}";
+                c.consequence = sound == PlayerAction.Report ? $"reported and tracked before {c.deadlineReason}; {instead}"
+                    : $"{(sound == PlayerAction.Jam ? "jammed" : "engaged")} before {c.deadlineReason}, it would not have reached its release point; {instead}";
+            }
+            else
+            {
+                c.consequence = c.outcome == "Fratricide" ? "the own drone would still be flying: you shot it down"
+                    : c.outcome == "Collateral" ? "the civil drone would still be flying: you shot it down"
+                    : c.outcome.StartsWith("Fired") ? "no round would have been fired at it"
+                    : r.action == PlayerAction.Jam ? "it would not have been jammed" : "same result: no harm done";
+            }
+        }
+
+        // The least escalatory action the card rates Sound for this truth; if none is Sound, the least bad.
+        public static PlayerAction SoundAction(RuleSet rules, RoeCard card, ContactClass truth)
+        {
+            var order = new[] { PlayerAction.Report, PlayerAction.Jam, PlayerAction.Engage, PlayerAction.Hold };
+            PlayerAction best = PlayerAction.Report;
+            var bestSev = Severity.Critical;
+            foreach (var a in order)
+            {
+                var sev = Judge(rules, card, truth, a);
+                if (sev == Severity.Sound) return a;
+                if (sev < bestSev) { bestSev = sev; best = a; }
+            }
+            return best;
+        }
+
+        // N4: what happened in the sim.
+        static string Outcome(ContactRecord r, bool hostile, ContactResult c)
+        {
+            bool fired = r.action == PlayerAction.Engage && r.shots > 0;
+            if (hostile)
+            {
+                // Jammed with effect (link lost, coming down) counts as neutralised even before it reaches the ground.
+                if ((fired && r.engageHit) || r.despawnReason == "JammedDown" || (r.action == PlayerAction.Jam && r.actionLocked)) return "Neutralised";
+                if (r.despawnReason == "ReachedDefendedPoint") return "Leaked";
+                if (r.action == PlayerAction.Report && r.truthClass == ContactClass.HostileFixedWing) return "Tracked";
+                return r.despawnTime >= 0f ? "Not stopped" : "Pending";
+            }
+            if (fired && r.engageHit) return r.truthClass == ContactClass.FriendlyISR ? "Fratricide" : "Collateral";
+            if (fired) return r.truthClass == ContactClass.FriendlyISR ? "Fired on own" : r.truthClass == ContactClass.Bird ? "Fired on a bird" : "Fired on civil";
+            return "Clear";
+        }
+
         static bool IsNearMiss(ContactRecord r, RuleSet rules)
         {
+            // Look-alikes are confusable closer in at dusk and at night (N2 partial credit by range and light).
+            float factor = !rules.fullScoring ? 1f : r.callLight == (int)TimeOfDay.Night ? rules.nightNearMissRangeFactor : r.callLight == (int)TimeOfDay.Dusk ? rules.duskNearMissRangeFactor : 1f;
             foreach (var n in rules.nearMisses)
-                if (n.truth == r.truthClass && n.call == r.call && r.callRange >= n.minRange) return true;
+                if (n.truth == r.truthClass && n.call == r.call && r.callRange >= n.minRange * factor) return true;
             return false;
         }
 
@@ -318,11 +888,16 @@ namespace Chaukanna.Scoring
         public static string Describe(SessionResult s)
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"[Score] TOTAL {s.totalPoints} / {s.maxPoints} over {s.scoredContacts} scored contacts ({s.notScored} not scored)");
+            sb.AppendLine($"[Score] TOTAL {s.totalPoints} / {s.maxPoints} over {s.scoredContacts} scored contacts ({s.notScored} not scored, of which {s.notDetectable} never detectable)");
             sb.AppendLine($"[Score] Average detection time: {(s.averageDetectionSeconds < 0f ? "-" : F(s.averageDetectionSeconds) + " s")} ({s.detected} detected, {s.missed} missed)");
             sb.AppendLine($"[Score] Classification accuracy: {F(s.classificationAccuracy)} % of detected contacts");
             sb.AppendLine($"[Score] Engagement decision score: {F(s.engagementDecisionScore)} % of actioned contacts");
             sb.AppendLine($"[Score] Unresolved {s.unresolved}, false engagements {s.falseEngagements}, missed hostiles {s.missedHostiles}");
+            if (s.cardChange != null && s.cardChange.happened) sb.AppendLine("[Score] Card change: " + s.cardChange.summary);
+            if (s.swarm != null && s.swarm.happened) sb.AppendLine("[Score] Swarm triage: " + s.swarm.summary);
+            sb.AppendLine($"[Score] Process {(s.processScore < 0f ? "-" : F(s.processScore))} / 100. Grid: sound-successful {s.gridSoundSuccessful}, sound-unlucky {s.gridSoundUnlucky}, lucky {s.gridLucky}, unsound {s.gridUnsound}. Clock misses {s.clockMisses}, correct rejections {s.correctRejections}, unverified engagements {s.unverifiedEngagements}, search failures {s.searchFailures}, perception failures {s.perceptionFailures}");
+            sb.AppendLine("[Score] " + s.reportSdt.Describe("Report (is there a drone?)"));
+            sb.AppendLine("[Score] " + s.engageSdt.Describe("Engage (is it hostile?)"));
             sb.AppendLine($"[Score] AI assist: {s.aiHintsShown} hints shown, {s.wrongAiHints} wrong, followed a wrong hint {s.followedWrongHint}, overrode a wrong hint correctly {s.overrodeWrongHintCorrectly}");
             sb.AppendLine("[Score] Confusion grid (rows = truth, columns = call): " + string.Join(" | ", s.confusionColumns));
             int cols = s.confusionColumns.Length;

@@ -58,10 +58,10 @@ namespace Chaukanna.Trainer
             c.spawnWindowStart = 3f;
             c.spawnWindowEnd = c.duration * Float(rng, b.spawnEndFraction);
             c.sensorsDegraded = rng.NextDouble() < (difficulty != null ? difficulty.sensorDegradedProbability : b.degradedChance);
-            c.roeAtStart = RoeCard.WeaponsHold;
+            c.roeAtStart = RoeCard.CardB;
             c.roeFlip = rng.NextDouble() < (difficulty != null ? difficulty.roeFlipProbability : b.roeFlipChance);
             c.roeFlipTime = c.duration * Float(rng, b.roeFlipFraction);   // drawn even when unused, so later draws don't shift
-            c.roeFlipTo = RoeCard.UnderAttack;
+            c.roeFlipTo = RoeCard.CardA;
 
             // Conditions are drawn last so the values above stay the same for a seed as they were before conditions existed.
             double time = rng.NextDouble(), air = rng.NextDouble();

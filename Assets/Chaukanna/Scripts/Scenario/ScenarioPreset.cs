@@ -36,6 +36,10 @@ namespace Chaukanna.Scenario
         public float spawnWindowStart = 3f;
         public float spawnWindowEnd = 240f;
 
+        [Header("Site (rural / urban surroundings)")]
+        [Tooltip("Buildings, trees and bushes used when a run has a Rural or Urban site. Empty = simple shapes.")]
+        public SiteProfile siteProfile;
+
         [Header("Contact definitions (one per class)")]
         public List<ContactDefinition> definitions = new List<ContactDefinition>();
 

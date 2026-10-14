@@ -25,9 +25,9 @@ MonoBehaviour:
     spawnRingRadius: 1000
     spawnWindowStart: 3
     spawnWindowEnd: 240
-    roeAtStart: 0
+    roeAtStart: 5
     roeFlip: 0
     roeFlipTime: 120
-    roeFlipTo: 3
+    roeFlipTo: 4
     sensorsDegraded: 0
     aiErrorOverride: -1

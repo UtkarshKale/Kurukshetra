@@ -16,6 +16,7 @@ MonoBehaviour:
   contactCountMultiplier: 0.7
   decoyShare: 0.7
   speedMultiplier: 0.8
+  blendInPercent: 0
   extraHazeLevels: 0
   minVisibleSizeMultiplier: 0.8
   aiErrorRateOk: 0.08

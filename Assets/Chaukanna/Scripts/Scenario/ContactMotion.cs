@@ -48,6 +48,16 @@ namespace Chaukanna.Scenario
                 if (rotors[i] != null) rotors[i].Rotate(Vector3.up, RotorDegreesPerSecond * (jammed ? 0.25f : 1f) * ((i & 1) == 0 ? 1f : -1f) * dt, Space.World);
             if (jammed) { JammedDescent(dt); return; }
             lateClamp = true;
+            if (Group != null) return;          // a swarm or flock member: its group moves it (SwarmGroup.Step)
+            if (breakOffAfter >= 0f && age >= breakOffAfter)
+            {
+                // The blend-in hostile drops the act: it leaves the patrol orbit and runs in on the post.
+                breakOffAfter = -1f;
+                behaviour = FlightBehaviour.Approach;
+                goal = breakOffGoal;
+                speed *= BreakOffSpeedUp;
+                contact.MarkAnomaly("left its patrol orbit and turned for the post");
+            }
             switch (behaviour)
             {
                 case FlightBehaviour.Approach:
@@ -63,6 +73,17 @@ namespace Chaukanna.Scenario
                     if (Erratic(dt)) contact.Despawn("ExitedSector");
                     break;
             }
+        }
+
+        // Blend-in hostiles only: after this many seconds in the air, stop patrolling and attack `target`.
+        float breakOffAfter = -1f;
+        Vector3 breakOffGoal;
+        const float BreakOffSpeedUp = 1.35f;
+
+        public void SetDeception(float secondsUntilBreakOff, Vector3 target)
+        {
+            breakOffAfter = Mathf.Max(0f, secondsUntilBreakOff);
+            breakOffGoal = target;
         }
 
         // Rotor parts found on the model. They spin about the vertical; slower once the drone has been jammed.
@@ -153,13 +174,32 @@ namespace Chaukanna.Scenario
             transform.position = pos;
             Face(dir);
 
-            if (wingL != null)
-            {
-                float flap = Mathf.Sin(age * 22f + bobPhase) * 40f;
-                wingL.localRotation = Quaternion.Euler(0f, 0f, -flap);
-                wingR.localRotation = Quaternion.Euler(0f, 0f, flap);
-            }
+            Flap(1f);
             return false;
+        }
+
+        void Flap(float rate)
+        {
+            if (wingL == null || wingR == null) return;
+            float flap = Mathf.Sin(age * 22f * rate + bobPhase) * 40f;
+            wingL.localRotation = Quaternion.Euler(0f, 0f, -flap);
+            wingR.localRotation = Quaternion.Euler(0f, 0f, flap);
+        }
+
+        // --- Swarm and flock members: the group decides where they go. ---
+        [System.NonSerialized] public SwarmGroup Group;
+        public bool Jammed => jammed;
+
+        public void FlyGroupStep(Vector3 position, Vector3 velocity, float flapRate)
+        {
+            transform.position = position;
+            Face(velocity);
+            Flap(flapRate);
+        }
+
+        public void ArriveFromGroup(string reason)
+        {
+            contact.Despawn(reason);
         }
 
         void Face(Vector3 dir)

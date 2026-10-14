@@ -49,8 +49,8 @@ namespace Chaukanna.Trainer
 
             // Validation clamps silly values.
             var bad = new ScenarioConfig { duration = 5f, hostileCount = -3, birdCount = 9999, spawnRingRadius = 10f, spawnWindowStart = 500f, spawnWindowEnd = 1f, roeFlipTime = 9999f }.Validate();
-            Check("validate clamps out-of-range values",
-                bad.duration == 30f && bad.hostileCount == 0 && bad.birdCount == 100 && bad.spawnRingRadius == 200f
+            Check("validate fixes impossible values and has no upper limit on counts",
+                bad.duration == 5f && bad.hostileCount == 0 && bad.birdCount == 9999 && bad.spawnRingRadius == 10f
                 && bad.spawnWindowStart <= bad.duration && bad.spawnWindowEnd >= bad.spawnWindowStart && bad.roeFlipTime <= bad.duration);
 
             // Conditions from Randomize: every time of day and visibility turns up, roughly at the configured rates.
@@ -110,6 +110,15 @@ namespace Chaukanna.Trainer
             Check("cannot go above the hardest or below the easiest", DifficultyAdvisor.Recommend(2, 3, 95f) == 2 && DifficultyAdvisor.Recommend(0, 3, 10f) == 0);
             Check("thresholds are parameters", DifficultyAdvisor.Recommend(1, 3, 75f, 70f, 40f) == 2);
 
+            // No caps: whatever the trainer types is used; large values only raise a warning.
+            var big = new ScenarioConfig { hostileCount = 400, friendlyCount = 250, civilianCount = 120, birdCount = 5000, duration = 20000f, spawnRingRadius = 9000f, spawnWindowEnd = 20000f, moveRadius = 50000f, walkSpeed = 40f, runSpeed = 90f, speedMultiplier = 12f }.Validate();
+            Check("huge values pass through unchanged",
+                big.hostileCount == 400 && big.friendlyCount == 250 && big.civilianCount == 120 && big.birdCount == 5000 && big.duration == 20000f
+                && big.spawnRingRadius == 9000f && big.moveRadius == 50000f && big.walkSpeed == 40f && big.runSpeed == 90f && big.speedMultiplier == 12f);
+            Check("a very large run warns instead of clamping", big.Warning().Length > 0);
+            Check("a normal run has no warning", new ScenarioConfig().Validate().Warning().Length == 0);
+            Check("a stepper with no maximum accepts a million", NumberEntry.Parse("1000000", 6, 0, int.MaxValue) == 1000000);
+
             // Typed numbers: valid text applies, out-of-range text clamps, anything else keeps the old value.
             Check("typed '120' applies", NumberEntry.Parse("120", 300, 30, 1800) == 120);
             Check("typed ' 45 ' is trimmed", NumberEntry.Parse(" 45 ", 300, 30, 1800) == 45);
@@ -132,6 +141,27 @@ namespace Chaukanna.Trainer
             Check("radius 0 means no limit", Chaukanna.Player.ObserverMove.ClampToRadius(post, new Vector3(900f, 0f, 900f), 0f) == new Vector3(900f, 0f, 900f));
             var bad2 = new ScenarioConfig { moveRadius = -5f, walkSpeed = 0f, runSpeed = 1f }.Validate();
             Check("movement values are clamped (radius >= 0, run >= walk)", bad2.moveRadius == 0f && bad2.walkSpeed == 0.5f && bad2.runSpeed >= bad2.walkSpeed);
+
+            // Map picker: radius to pixels and back, at different zooms and latitudes; snapping; labels; tile URLs.
+            float px13 = MapPicker.RadiusToPixels(0.0, 13, 2500f), px14 = MapPicker.RadiusToPixels(0.0, 14, 2500f), px60 = MapPicker.RadiusToPixels(60.0, 13, 2500f);
+            Check("radius: one zoom level doubles the circle on screen", Mathf.Abs(px14 / px13 - 2f) < 1e-4f);
+            Check("radius: at 60 degrees north the same metres cover twice the pixels", Mathf.Abs(px60 / px13 - 2f) < 1e-3f);
+            Check("radius: pixels back to metres", Mathf.Abs(MapPicker.PixelsToRadius(32.69, 12, MapPicker.RadiusToPixels(32.69, 12, 3137f)) - 3137f) < 0.01f);
+            Check("radius: drag snaps to 50 m steps, never below 50", MapPicker.SnapRadius(2524f) == 2500f && MapPicker.SnapRadius(2526f) == 2550f && MapPicker.SnapRadius(3f) == 50f);
+            Check("radius labels", MapPicker.FormatMetres(2500f) == "2,500 m" && MapPicker.FormatMetres(750f) == "750 m" && MapPicker.FormatMetres(12500f) == "12.5 km");
+            Check("tile URL: OpenStreetMap is z/x/y", MapPicker.TileUrl(MapPicker.OsmUrl, 12, 2899, 1660) == "https://tile.openstreetmap.org/12/2899/1660.png");
+            Check("tile URL: Sentinel-2 (EOX) is z/y/x", MapPicker.TileUrl(MapPicker.Sentinel2Url, 14, 11598, 6643).EndsWith("/g/14/6643/11598.jpg"));
+            Check("tile URL: Esri is z/y/x and takes the key only when given", MapPicker.TileUrl(MapPicker.EsriImageryUrl, 14, 11598, 6643).EndsWith("/tile/14/6643/11598")
+                && MapPicker.TileUrl(MapPicker.EsriImageryUrl, 14, 11598, 6643, "abc").EndsWith("/tile/14/6643/11598?token=abc")
+                && !MapPicker.TileUrl(MapPicker.OsmUrl, 1, 0, 0, "abc").Contains("token"));
+
+            // Typed or pasted positions.
+            Check("coordinates: decimal with comma", GeoParse.TryParseLatLon("34.5735, 76.0974", out double la1, out double lo1) && Mathf.Approximately((float)la1, 34.5735f) && Mathf.Approximately((float)lo1, 76.0974f));
+            Check("coordinates: Google Earth style DMS", GeoParse.TryParseLatLon("34°34'24.79\"N 76°05'50.63\"E", out double la2, out double lo2) && System.Math.Abs(la2 - 34.573553) < 1e-5 && System.Math.Abs(lo2 - 76.097397) < 1e-5);
+            Check("coordinates: south and west are negative", GeoParse.TryParseLatLon("33°52'S 151°12'E", out double la3, out double lo3) && la3 < -33.8 && lo3 > 151.1
+                && GeoParse.TryParseLatLon("40 42 46 N 74 0 21 W", out double la4, out double lo4) && la4 > 40.7 && lo4 < -74.0);
+            Check("coordinates: a place name is not coordinates", !GeoParse.TryParseLatLon("Jammu Airport", out _, out _) && !GeoParse.TryParseLatLon("95, 10", out _, out _));
+            Check("tile URL: CARTO labels take the key as ?key=", MapPicker.TileUrl(MapPicker.CartoLabelsUrl, 4, 11, 6, "k").EndsWith("/4/11/6@2x.png?key=k"));
 
             // Clone is independent.
             var a = new ScenarioConfig();

@@ -33,15 +33,37 @@ namespace Chaukanna.Player
         float flipAt;
         GUIStyle style;
 
-        public static string Label(RoeCard c)
+        public static string Label(RoeCard c) => RoeCards.Label(c);
+
+        // Seconds into the run of a random card change: between 30 % and 70 % of the run, from the scenario seed.
+        public static float RandomFlipTime(int seed, float duration)
         {
-            switch (c)
+            var rng = new System.Random(seed ^ 0xC4D);
+            return duration * Mathf.Lerp(0.3f, 0.7f, (float)rng.NextDouble());
+        }
+
+        AudioSource tone;
+        AudioClip toneClip;
+
+        // A short two-note alert, made in code (no sound files in the project).
+        void PlayTone()
+        {
+            if (toneClip == null)
             {
-                case RoeCard.WeaponsHold: return "WEAPONS HOLD";
-                case RoeCard.WeaponsTight: return "WEAPONS TIGHT";
-                case RoeCard.WeaponsFree: return "WEAPONS FREE";
-                default: return "UNDER ATTACK";
+                const int rate = 44100;
+                var data = new float[(int)(rate * 0.6f)];
+                for (int i = 0; i < data.Length; i++)
+                {
+                    float t = i / (float)rate;
+                    float f = t < 0.3f ? 880f : 660f;
+                    float env = Mathf.Clamp01(t * 40f) * Mathf.Clamp01((0.6f - t) * 10f) * (Mathf.Repeat(t, 0.3f) < 0.27f ? 1f : 0f);
+                    data[i] = Mathf.Sin(2f * Mathf.PI * f * t) * 0.35f * env;
+                }
+                toneClip = AudioClip.Create("CardChangeTone", data.Length, 1, rate, false);
+                toneClip.SetData(data, 0);
             }
+            if (tone == null) { tone = gameObject.AddComponent<AudioSource>(); tone.playOnAwake = false; tone.spatialBlend = 0f; }
+            tone.PlayOneShot(toneClip);
         }
 
         void Update()
@@ -54,18 +76,20 @@ namespace Chaukanna.Player
                 var cfg = spawner.TrainerConfig;
                 startCard = cfg != null ? cfg.roeAtStart : card;
                 doFlip = cfg != null ? cfg.roeFlip : flipEnabled;
-                flipAt = cfg != null ? cfg.roeFlipTime : flipTime;
+                flipAt = cfg != null ? (cfg.roeFlipRandom ? RandomFlipTime(cfg.seed, cfg.duration) : cfg.roeFlipTime) : flipTime;
                 flipCard = cfg != null ? cfg.roeFlipTo : flipTo;
-                Current = ContactRegistry.CurrentRoe = startCard;
+                Current = ContactRegistry.CurrentRoe = ContactRegistry.RoeAtStart = startCard;
                 ContactRegistry.RoeSince = 0f;
                 flippedAt = -1f;
             }
             if (doFlip && flippedAt < 0f && spawner.ScenarioTime >= flipAt)
             {
                 flippedAt = spawner.ScenarioTime;
+                ContactRegistry.RoeChanges.Add(new RoeChange { time = flippedAt, from = Current, to = flipCard });
                 Current = ContactRegistry.CurrentRoe = flipCard;
                 ContactRegistry.RoeSince = flippedAt;
                 ContactRegistry.Note("ROE changed to " + Label(Current));
+                PlayTone();
             }
         }
 
@@ -88,7 +112,7 @@ namespace Chaukanna.Player
             var back = flashing ? new Color(0.8f, 0.1f, 0.1f, 0.85f) : new Color(0f, 0f, 0f, 0.55f);
 
             style.fontSize = Mathf.RoundToInt(bannerFontSize * ui);
-            Panel("ROE: " + Label(Current), 0.5f, back, ui);
+            Panel("ROE: " + Label(Current) + (RoeCards.IsLettered(Current) ? "  (PLACEHOLDER)" : ""), 0.5f, back, ui);
 
             float remaining = Mathf.Max(0f, spawner.Duration - spawner.ScenarioTime);
             style.fontSize = Mathf.RoundToInt(timerFontSize * ui);

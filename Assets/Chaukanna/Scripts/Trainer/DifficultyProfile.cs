@@ -16,6 +16,8 @@ namespace Chaukanna.Trainer
         [Tooltip("Extra multiplier on the decoys only (own ISR, civilian, birds). Above 1 = more clutter per hostile.")]
         public float decoyShare = 1f;
         public float speedMultiplier = 1f;
+        [Tooltip("Share of the hostiles (percent) that blend in by flying an own-drone patrol before breaking off. Used when the scenario leaves it at -1.")]
+        [Range(0f, 100f)] public float blendInPercent;
 
         [Header("Seeing")]
         [Tooltip("Visibility is made this many levels worse (Clear > Hazy > Foggy).")]
@@ -41,6 +43,7 @@ namespace Chaukanna.Trainer
             c.civilianCount = Scale(c.civilianCount, contactCountMultiplier * decoyShare);
             c.birdCount = Scale(c.birdCount, contactCountMultiplier * decoyShare);
             c.speedMultiplier *= speedMultiplier;
+            if (c.blendInPercent < 0f) c.blendInPercent = blendInPercent;      // the trainer's own number wins
             c.visibility = EnvironmentMath.Worsen(c.visibility, extraHazeLevels);
             c.detectionSizeMultiplier *= minVisibleSizeMultiplier;
             c.aiErrorOverride = c.sensorsDegraded ? aiErrorRateDegraded : aiErrorRateOk;

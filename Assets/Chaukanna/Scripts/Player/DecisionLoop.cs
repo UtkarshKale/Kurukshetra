@@ -64,39 +64,61 @@ namespace Chaukanna.Player
             if (kb.fKey.wasPressedThisFrame) Act(PlayerAction.Engage);
         }
 
+        // Both apply to every contact in the sensor's selection, or to the locked contact when nothing is selected.
+        // Each contact is still recorded and scored on its own. Returns true if at least one contact took it.
         public bool Classify(PlayerCall call)
         {
-            var c = sensor.Locked;
-            return c != null && c.Classify(call, Vector3.Distance(transform.position, c.transform.position));
+            var targets = sensor.Targets;
+            bool group = targets.Count > 1, any = false;
+            foreach (var c in targets)
+                if (c != null && c.Classify(call, Vector3.Distance(transform.position, c.transform.position), group)) any = true;
+            return any;
         }
 
         public bool Act(PlayerAction action)
         {
-            var c = sensor.Locked;
-            if (c == null || c.Call == PlayerCall.None) return false;
-            if (c.Decided && !(action == PlayerAction.Engage && c.CanFireAgain)) return false;
+            var targets = sensor.Targets;
+            if (targets.Count == 0) return false;
+            // One trigger pull is one salvo: every contact in the group gets a shot, then the cooldown runs.
+            if (action == PlayerAction.Engage)
+            {
+                if (Time.time - lastShotTime < engageCooldown) return false;
+            }
+            bool group = targets.Count > 1, any = false;
+            foreach (var c in targets.ToArray())
+                if (c != null && ActOn(c, action, group)) any = true;
+            if (any && action == PlayerAction.Engage) lastShotTime = Time.time;
+            return any;
+        }
 
+        bool ActOn(Contact c, PlayerAction action, bool group)
+        {
+            if (c.Call == PlayerCall.None) return false;
+            // Swarm triage: how near the post this member was, among its swarm, when it was first acted on.
+            if (c.Data.swarmId >= 0 && c.Data.swarmRank < 0 && (action == PlayerAction.Jam || action == PlayerAction.Engage))
+            {
+                var motion = c.GetComponent<ContactMotion>();
+                if (motion != null && motion.Group != null) c.Data.swarmRank = motion.Group.RankByDistance(motion);
+            }
             switch (action)
             {
                 case PlayerAction.Hold:
                 case PlayerAction.Report:
-                    return c.Act(action, null);
+                    return c.Act(action, null, group);
 
                 case PlayerAction.Jam:
-                    // Only the RF-controlled quads respond; fixed-wings and birds carry on.
+                    // Only the RF-controlled quads respond; fixed-wings and birds carry on. A jam that worked cannot be taken back.
                     bool affected = c.Definition.silhouette == Silhouette.Quad;
-                    if (!c.Act(action, affected ? "link lost, descending" : "no effect")) return false;
+                    if (!c.Act(action, affected ? "link lost, descending" : "no effect", group, affected)) return false;
                     if (affected) c.GetComponent<ContactMotion>().Jam();
                     return true;
 
                 case PlayerAction.Engage:
-                    if (Time.time - lastShotTime < engageCooldown) return false;
-                    lastShotTime = Time.time;
                     Vector3 target = c.transform.position;
                     float range = Vector3.Distance(transform.position, target);
                     float p = hitChance * Mathf.Lerp(1f, farRangeFactor, Mathf.Clamp01(range / farRange));
                     bool hit = rng.NextDouble() < p;
-                    if (!c.Shot(hit, $"{(hit ? "hit" : "miss")} (p {p:F2}, {range:F0} m)")) return false;
+                    if (!c.Shot(hit, $"{(hit ? "hit" : "miss")} (p {p:F2}, {range:F0} m)", group)) return false;
                     PlaceholderFx.Tracer(transform.position + Vector3.down * 0.3f, target);
                     if (hit)
                     {
@@ -107,7 +129,6 @@ namespace Chaukanna.Player
             }
             return false;
         }
-
         void PrintSummary()
         {
             summaryPrinted = true;
@@ -138,11 +159,13 @@ namespace Chaukanna.Player
         void DrawGui()
         {
             if (Event.current.type != EventType.Repaint || spawner == null || spawner.Finished) return;
-            var c = sensor.Locked;
-            bool canClassify = c != null && !c.Decided;
-            bool canFire = c != null && c.Call != PlayerCall.None && (!c.Decided || c.CanFireAgain);
-            bool canAct = canClassify && c.Call != PlayerCall.None;
-
+            // The call can always be changed. The action can be changed unless it physically happened.
+            var targets = sensor.Targets;
+            var c = targets.Count == 1 ? targets[0] : null;
+            bool many = targets.Count > 1;
+            bool canClassify = targets.Count > 0;
+            bool canAct = many || (c != null && c.Call != PlayerCall.None && c.CanChangeAction);
+            bool canFire = many || (c != null && c.Call != PlayerCall.None && (c.CanChangeAction || c.CanFireAgain));
             float ui = PlayerView.Height / 720f;
             if (style == null) style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft, wordWrap = false, richText = true };
             style.fontSize = Mathf.RoundToInt(fontSize * ui);
@@ -153,8 +176,11 @@ namespace Chaukanna.Player
                 $"<color={(canClassify ? on : off)}>CLASSIFY\n1 Hostile quad\n2 Hostile fixed-wing\n3 Own ISR drone\n4 Civilian drone\n5 Bird</color>\n\n" +
                 $"<color={(canAct ? on : off)}>ACTION\nH Hold\nR Report\nJ Jam</color>\n" +
                 $"<color={(canFire ? on : off)}>F Engage{(c != null && c.CanFireAgain ? " (fire again)" : "")}</color>";
-            if (c != null && c.Resolved) text += $"\n\n#{c.Id:00} resolved";
+            if (many) text += $"\n\nGROUP of {targets.Count}";
+            else if (c != null && c.Resolved) text += $"\n\n#{c.Id:00} resolved\n" + (c.CanChangeAction ? "any key changes it" : "1-5 changes the call");
             else if (c != null && c.OnHold) text += $"\n\n#{c.Id:00} held: R / J / F";
+            text += "\n\n<color=#FFFFFFAA>Hold Tab + drag: lasso\nCtrl+click add to group\nG all in view   X clear</color>";
+            if (ViewRigSwitch.VrActive) text = "<b>VR MODE</b>  (F7 desktop)\nB or both buttons: binoculars\nQ: read the tablet\nHold E: call / action menu\nLeft click: lock\n\n" + text;
 
             var content = new GUIContent(text);
             Vector2 size = style.CalcSize(content);

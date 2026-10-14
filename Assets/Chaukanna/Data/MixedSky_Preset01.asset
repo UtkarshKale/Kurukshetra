@@ -25,6 +25,7 @@ MonoBehaviour:
   spawnRingRadius: 1000
   spawnWindowStart: 3
   spawnWindowEnd: 240
+  siteProfile: {fileID: 11400000, guid: 59bd517d71d8b1c43ba577b8b82e336c, type: 2}
   definitions:
   - {fileID: 11400000, guid: 70ac62e8e2325584a890414d2940eac2, type: 2}
   - {fileID: 11400000, guid: f311dae02271f1e41916b3ad447f2a92, type: 2}

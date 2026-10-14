@@ -64,7 +64,7 @@ namespace Chaukanna.Player
             else if (spawner == null) Allowed = allowMovement;
 
             var kb = Keyboard.current;
-            if (!Allowed || kb == null || ContactRegistry.InputBlocked || Cursor.lockState != CursorLockMode.Locked) return;
+            if (!Allowed || ViewRigSwitch.VrActive || kb == null || ContactRegistry.InputBlocked || Cursor.lockState != CursorLockMode.Locked) return;
 
             float forward = (kb.wKey.isPressed ? 1f : 0f) - (kb.sKey.isPressed ? 1f : 0f);
             float right = (kb.dKey.isPressed ? 1f : 0f) - (kb.aKey.isPressed ? 1f : 0f);

@@ -17,6 +17,12 @@ namespace Chaukanna.Trainer
             "    Used for the birds.\n\n" +
             "<b>XCharts</b> by monitor1394 and contributors. MIT licence (github.com/XCharts-Team/XCharts).\n" +
             "    Used for the charts on the score dashboard.\n\n" +
+            "<b>Real-world elevation</b>: Terrain Tiles, Mapzen / AWS Open Data. Sources include SRTM, GMTED2010, ETOPO1, NED and others\n" +
+            "    (github.com/tilezen/joerd/blob/master/docs/attribution.md). Used when the trainer downloads a real place.\n\n" +
+            "<b>Map and place search</b>: © OpenStreetMap contributors (openstreetmap.org/copyright, ODbL); search by Nominatim.\n" +
+            "    Used on the trainer menu's map to pick a place. Map labels over satellite: © CARTO.\n\n" +
+            "<b>Satellite pictures</b>: Sentinel-2 cloudless 2016 - s2maps.eu by EOX IT Services GmbH\n" +
+            "    (contains modified Copernicus Sentinel data 2016 & 2017), CC BY 4.0. On the map and draped on downloaded terrain.\n\n" +
             "<b>AllSky Free</b> sky boxes. Unity Asset Store EULA; see the asset's own folder for its publisher.\n" +
             "    Used for the day, dusk and night skies.\n\n" +
             "<b>IN THE PROJECT, NOT USED YET</b>\n\n" +

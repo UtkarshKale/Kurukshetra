@@ -238,17 +238,20 @@ namespace Chaukanna.Trainer
 
             // Sensors and ROE.
             GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Site: " + Working.site.ToString().ToUpper(), button, GUILayout.Height(row))) Working.site = (SiteType)(((int)Working.site + 1) % 3);
             if (GUILayout.Button("Sensors: " + (Working.sensorsDegraded ? "DEGRADED" : "OK"), button, GUILayout.Height(row))) Working.sensorsDegraded = !Working.sensorsDegraded;
-            if (GUILayout.Button("ROE at start: " + (Working.roeAtStart == RoeCard.UnderAttack ? "UNDER ATTACK" : "WEAPONS HOLD"), button, GUILayout.Height(row)))
-                Working.roeAtStart = Working.roeAtStart == RoeCard.UnderAttack ? RoeCard.WeaponsHold : RoeCard.UnderAttack;
+            if (GUILayout.Button("ROE at start: " + RoeCards.Short(Working.roeAtStart), button, GUILayout.Height(row))) Working.roeAtStart = RoeCards.Next(Working.roeAtStart);
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("ROE flip: " + (Working.roeFlip ? "ON, to UNDER ATTACK" : "OFF"), button, GUILayout.Height(row)))
+            string flipMode = !Working.roeFlip ? "OFF" : Working.roeFlipRandom ? "RANDOM" : "SET TIME";
+            if (GUILayout.Button("Card change: " + flipMode, button, GUILayout.Height(row)))
             {
-                Working.roeFlip = !Working.roeFlip;
-                Working.roeFlipTo = RoeCard.UnderAttack;
+                if (!Working.roeFlip) { Working.roeFlip = true; Working.roeFlipRandom = false; }
+                else if (!Working.roeFlipRandom) Working.roeFlipRandom = true;
+                else { Working.roeFlip = false; Working.roeFlipRandom = false; }
             }
-            Working.roeFlipTime = Stepper("Flip at s", Mathf.RoundToInt(Working.roeFlipTime), 10, row);
+            if (Working.roeFlip && GUILayout.Button("to " + RoeCards.Short(Working.roeFlipTo), button, GUILayout.Height(row))) Working.roeFlipTo = RoeCards.Next(Working.roeFlipTo);
+            if (Working.roeFlip && !Working.roeFlipRandom) Working.roeFlipTime = Stepper("At s", Mathf.RoundToInt(Working.roeFlipTime), 10, row);
             GUILayout.EndHorizontal();
 
             // Conditions and difficulty: each button steps to the next value.
@@ -259,7 +262,26 @@ namespace Chaukanna.Trainer
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Soldier: " + (Working.allowMovement ? "CAN MOVE" : "FIXED AT POST"), button, GUILayout.Height(row))) Working.allowMovement = !Working.allowMovement;
-            Working.moveRadius = Stepper("Radius m", Mathf.RoundToInt(Working.moveRadius), 10, row, 0, 2000);
+            if (GUILayout.Button("VR: " + (Working.vrMode ? "ON" : "OFF"), button, GUILayout.Width(70f), GUILayout.Height(row)))
+            {
+                // One click: switches the player's view now, and keeps it for the next START.
+                Working.vrMode = !Working.vrMode;
+                var view = playerCamera != null ? playerCamera.GetComponent<Chaukanna.Player.ViewRigSwitch>() : null;
+                if (view != null) view.Set(Working.vrMode);
+            }
+            Working.moveRadius = Stepper("Radius m", Mathf.RoundToInt(Working.moveRadius), 10, row);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            Working.swarmSize = Stepper("Swarm", Working.swarmSize, 8, row);
+            Working.swarmTime = Stepper("Swarm at s", Mathf.RoundToInt(Working.swarmTime), 10, row);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            Working.birdFlocks = Stepper("Flocks", Working.birdFlocks, 1, row);
+            Working.flockSize = Stepper("Flock size", Working.flockSize, 2, row, 1);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            Working.blendInPercent = Stepper("Blend-in %", Mathf.RoundToInt(Working.blendInPercent), 5, row, -1, 100);
+            GUILayout.Label(Working.blendInPercent < 0f ? "hostiles posing as own drones: set by difficulty" : "of hostiles pose as own drones", small, GUILayout.Height(row));
             GUILayout.EndHorizontal();
 
             // After a run: a suggestion only. The trainer decides.
@@ -272,6 +294,8 @@ namespace Chaukanna.Trainer
                 GUILayout.EndHorizontal();
             }
             Working.Validate();
+            string warning = Working.Warning();
+            if (warning.Length > 0) GUILayout.Label("<color=#FFB040>" + warning + "</color>", label);
 
             // Start and status.
             GUILayout.BeginHorizontal();
@@ -299,15 +323,18 @@ namespace Chaukanna.Trainer
             float feedH = feedLines * (small.fontSize + 5f) + 8f;
             float top = pad + controlsBottom + 10f;
             float mapSize = Mathf.Max(80f, Mathf.Min(w - pad * 2f - 150f, h - top - feedH - pad * 2f));
-            DrawMap(new Rect(pad, top, mapSize, mapSize));
+            var mapRect = new Rect(pad, top, mapSize, mapSize);
+            MapLassoInput(mapRect);
+            DrawMap(mapRect);
             DrawLegend(pad + mapSize + 10f, top);
+            DrawMapSelection(pad + mapSize + 10f, top + 8f * 22f + 14f, row);
             DrawFeed(new Rect(pad, h - feedH - pad, w - pad * 2f, feedH));
 
             GUI.matrix = saved;
         }
 
         // Label, a box to type the value into, and - / + buttons.
-        int Stepper(string name, int value, int step, float row, int min = 0, int max = 1000000)
+        int Stepper(string name, int value, int step, float row, int min = 0, int max = int.MaxValue)
         {
             if (field == null) field = new GUIStyle(GUI.skin.textField);
             field.fontSize = fontSize;
@@ -342,12 +369,16 @@ namespace Chaukanna.Trainer
             Fill(r, new Color(0.1f, 0.13f, 0.16f, 1f));
             GUI.BeginGroup(r);
 
-            float radius = Mathf.Max(1f, spawner.ActiveRadius);
-            float scale = r.width * 0.5f / (radius * 1.08f);
-            Vector2 centre = new Vector2(r.width * 0.5f, r.height * 0.5f);
-            Vector3 origin = spawner.transform.position;
-            float sectorYaw = spawner.transform.eulerAngles.y;
+            var frame = Frame(r);
+            float radius = frame.radius, scale = frame.scale, sectorYaw = frame.yaw;
+            Vector2 centre = frame.centre;
+            Vector3 origin = frame.origin;
             var line = new Color(1f, 1f, 1f, 0.35f);
+
+            // Site objects (walls, buildings, trees) as small grey marks; the trainer's lasso picks them too.
+            SiteObjects(siteScratch);
+            foreach (var t in siteScratch) Dot(ToMap(frame, t.position), 2f, new Color(0.75f, 0.72f, 0.65f, 0.45f));
+            foreach (var t in mapSite) if (t != null) Dot(ToMap(frame, t.position), 5f, new Color(1f, 0.85f, 0.25f, 0.9f));
 
             // Spawn ring and sector edges.
             for (int i = 0; i < 90; i++) Dot(centre + Polar(i * 4f, radius * scale), 1.5f, line);
@@ -376,16 +407,154 @@ namespace Chaukanna.Trainer
                 Vector3 d = Quaternion.Euler(0f, -sectorYaw, 0f) * (live[i].transform.position - origin);
                 Vector2 p = centre + new Vector2(d.x, -d.z) * scale;
                 if (live[i].Data.firstLockTime >= 0f && !live[i].Resolved) Dot(p, 10f, new Color(1f, 1f, 1f, 0.5f));   // has been locked
+                // A blend-in hostile: magenta frame while it is still acting friendly, solid once it has broken off.
+                if (live[i].Deceptive) Dot(p, live[i].AnomalyShown ? 13f : 11f, new Color(1f, 0.2f, 0.9f, live[i].AnomalyShown ? 1f : 0.7f));
+                if (mapContacts.Contains(live[i])) Dot(p, 12f, new Color(1f, 0.85f, 0.25f, 0.95f));   // in the trainer's lasso selection
                 Dot(p, 6f, Colour(live[i].TruthClass));
             }
+
+            if (mapDrawing && mapLoop.Count >= 3)
+            {
+                var area = new Rect(0f, 0f, r.width, r.height);
+                if (mapFillDirty || mapFill == null) { Chaukanna.Player.LassoMath.Fill(ref mapFill, ref mapFillPixels, mapLoop, area, 3); mapFillDirty = false; }
+                var old = GUI.color;
+                GUI.color = new Color(1f, 0.85f, 0.25f, 0.15f);
+                GUI.DrawTexture(area, mapFill);
+                GUI.color = old;
+            }
+            if (mapDrawing) Chaukanna.Player.LassoMath.DrawLoop(mapLoop, new Color(1f, 0.85f, 0.25f), 1f);
             GUI.EndGroup();
+        }
+
+        // Trainer lasso on the truth map: drag a loop round contacts and site objects to select them together (Shift adds,
+        // Ctrl removes, a click picks one). This is the truth view, so there is no visibility filter here.
+        // Prototype: select, count and delete. Bulk move, change class and set path are listed in TODO.
+        public readonly List<Contact> mapContacts = new List<Contact>();
+        public readonly List<Transform> mapSite = new List<Transform>();
+        readonly List<Transform> siteScratch = new List<Transform>();
+        readonly List<Vector2> mapLoop = new List<Vector2>();   // map-local GUI pixels
+        bool mapDrawing, mapFillDirty;
+        Texture2D mapFill;
+        Color32[] mapFillPixels;
+
+        public struct MapFrame { public Vector2 centre; public float scale, radius, yaw; public Vector3 origin; }
+
+        public MapFrame Frame(Rect r)
+        {
+            float radius = Mathf.Max(1f, spawner.ActiveRadius);
+            return new MapFrame
+            {
+                radius = radius,
+                scale = r.width * 0.5f / (radius * 1.08f),
+                centre = new Vector2(r.width * 0.5f, r.height * 0.5f),
+                origin = spawner.transform.position,
+                yaw = spawner.transform.eulerAngles.y,
+            };
+        }
+
+        public static Vector2 ToMap(MapFrame f, Vector3 world)
+        {
+            Vector3 d = Quaternion.Euler(0f, -f.yaw, 0f) * (world - f.origin);
+            return f.centre + new Vector2(d.x, -d.z) * f.scale;
+        }
+
+        // The selectable parts of the generated site: everything under its Cantonment and Fields groups (not the watchtower).
+        public void SiteObjects(List<Transform> into)
+        {
+            into.Clear();
+            var root = spawner != null ? spawner.SiteRoot : null;
+            if (root == null) return;
+            foreach (Transform group in root.transform)
+                if (group.name == "Cantonment" || group.name == "Fields")
+                    foreach (Transform t in group) into.Add(t);
+        }
+
+        void MapLassoInput(Rect r)
+        {
+            var e = Event.current;
+            Vector2 local = e.mousePosition - r.position;
+            switch (e.type)
+            {
+                case EventType.MouseDown:
+                    if (e.button != 0 || !r.Contains(e.mousePosition)) return;
+                    mapDrawing = true;
+                    mapLoop.Clear();
+                    mapLoop.Add(local);
+                    mapFillDirty = true;
+                    e.Use();
+                    break;
+                case EventType.MouseDrag:
+                    if (!mapDrawing) return;
+                    if (Chaukanna.Player.LassoMath.AddPoint(mapLoop, local, 3f)) mapFillDirty = true;
+                    e.Use();
+                    break;
+                case EventType.MouseUp:
+                    if (!mapDrawing) return;
+                    mapDrawing = false;
+                    MapLassoFinish(r, mapLoop, Chaukanna.Player.LassoMath.ModeFrom(e.shift, e.control));
+                    mapLoop.Clear();
+                    e.Use();
+                    break;
+            }
+        }
+
+        // Applies a loop (map-local pixels) to the trainer's selection. Public for the self-test.
+        public void MapLassoFinish(Rect r, List<Vector2> loop, Chaukanna.Player.LassoMode mode)
+        {
+            var frame = Frame(r);
+            var contacts = new List<Contact>();
+            var site = new List<Transform>();
+            SiteObjects(siteScratch);
+            if (loop.Count >= 3 && Chaukanna.Player.LassoMath.Area(loop) >= 36f)
+            {
+                foreach (var c in ContactRegistry.Live) if (c != null && Chaukanna.Player.LassoMath.Inside(ToMap(frame, c.transform.position), loop)) contacts.Add(c);
+                foreach (var t in siteScratch) if (Chaukanna.Player.LassoMath.Inside(ToMap(frame, t.position), loop)) site.Add(t);
+            }
+            else if (loop.Count > 0)
+            {
+                // A click: the nearest contact, or failing that the nearest site object, within 8 px.
+                Vector2 at = loop[loop.Count - 1];
+                Contact bestC = null; Transform bestT = null;
+                float best = 8f;
+                foreach (var c in ContactRegistry.Live) { float d = c != null ? Vector2.Distance(ToMap(frame, c.transform.position), at) : 1e9f; if (d <= best) { best = d; bestC = c; } }
+                if (bestC == null) { best = 8f; foreach (var t in siteScratch) { float d = Vector2.Distance(ToMap(frame, t.position), at); if (d <= best) { best = d; bestT = t; } } }
+                if (bestC != null) contacts.Add(bestC);
+                if (bestT != null) site.Add(bestT);
+            }
+            Chaukanna.Player.LassoMath.Apply(mapContacts, contacts, mode);
+            Chaukanna.Player.LassoMath.Apply(mapSite, site, mode);
+        }
+
+        // Count readout and the bulk actions, beside the legend.
+        void DrawMapSelection(float x, float y, float row)
+        {
+            mapContacts.RemoveAll(c => c == null);
+            mapSite.RemoveAll(t => t == null);
+            GUI.Label(new Rect(x, y, 150f, 22f), "MAP LASSO", small);
+            GUI.Label(new Rect(x, y + 20f, 150f, 22f), "drag on the map", small);
+            GUI.Label(new Rect(x, y + 40f, 150f, 22f), "Shift add  Ctrl remove", small);
+            GUI.Label(new Rect(x, y + 64f, 150f, 22f), $"{mapContacts.Count} contacts", small);
+            GUI.Label(new Rect(x, y + 84f, 150f, 22f), $"{mapSite.Count} site objects", small);
+            if (mapContacts.Count + mapSite.Count == 0) return;
+            if (GUI.Button(new Rect(x, y + 110f, 140f, row), "DELETE", button)) DeleteMapSelection();
+            if (GUI.Button(new Rect(x, y + 114f + row, 140f, row), "CLEAR", button)) { mapContacts.Clear(); mapSite.Clear(); }
+        }
+
+        public void DeleteMapSelection()
+        {
+            int contacts = 0, site = 0;
+            foreach (var c in mapContacts) if (c != null) { c.Despawn(Contact.RemovedByTrainer); contacts++; }
+            foreach (var t in mapSite) if (t != null) { Destroy(t.gameObject); site++; }
+            mapContacts.Clear();
+            mapSite.Clear();
+            ContactRegistry.Note($"Trainer removed {contacts} contacts and {site} site objects");
         }
 
         void DrawLegend(float x, float y)
         {
             if (Event.current.type != EventType.Repaint) return;
-            string[] names = { "Hostile", "Own ISR", "Civilian", "Bird", "Post", "View cone" };
-            Color[] colours = { hostileColour, ownColour, civilianColour, birdColour, Color.white, new Color(0.4f, 1f, 0.5f) };
+            string[] names = { "Hostile", "Own ISR", "Civilian", "Bird", "Blend-in hostile", "Post", "View cone" };
+            Color[] colours = { hostileColour, ownColour, civilianColour, birdColour, new Color(1f, 0.2f, 0.9f), Color.white, new Color(0.4f, 1f, 0.5f) };
             for (int i = 0; i < names.Length; i++)
             {
                 Fill(new Rect(x, y + i * 22f + 6f, 10f, 10f), colours[i]);

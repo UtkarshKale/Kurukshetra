@@ -8,15 +8,18 @@ namespace Chaukanna.Scenario
         public ContactClass contactClass;
         public string displayName;
 
-        [Tooltip("Optional. If empty, a placeholder is built from primitives using the silhouette below.")]
+        [Header("Models: drag prefabs here")]
+        [Tooltip("The model for this class. Drag any prefab or model from the Project panel. Only if this and Variants are both empty is a grey placeholder built from the silhouette below.")]
         public GameObject prefab;
         [Tooltip("Other looks for this class (different drone or bird types). Each contact picks one from the scenario seed, so the same seed shows the same mix. Empty = always the prefab above.")]
         public System.Collections.Generic.List<GameObject> variants = new System.Collections.Generic.List<GameObject>();
+        [Header("Placeholder (used only when no model is set)")]
         public Silhouette silhouette;
         [Tooltip("Placeholder identification cue. A design decision: this is what makes look-alike classes separable through binoculars.")]
         public Cue cue;
 
-        [Tooltip("Approximate span in metres (uniform scale of the placeholder).")]
+        [Header("Size and flight")]
+        [Tooltip("Span in metres. Models are scaled to this automatically.")]
         public float size = 1f;
 
         public FlightBehaviour behaviour;

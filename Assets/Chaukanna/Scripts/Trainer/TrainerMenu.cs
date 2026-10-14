@@ -47,6 +47,17 @@ namespace Chaukanna.Trainer
         GUIStyle label, button, title, small, field;
         Vector2 scroll;
 
+        // Real place: picked on the OpenStreetMap map, elevation downloaded from the AWS Terrain Tiles.
+        public MapPicker Map { get; private set; }
+        bool showMap;
+        string searchText = "", areaName = "Area";
+        public bool Downloading { get; private set; }
+        public bool WithSatellite = true;      // also download a satellite picture to colour the terrain
+        float downloadProgress;
+        string downloadStep = "";
+        List<string> areas = new List<string>();
+        float areasCheckedAt = -100f;
+
         static readonly string[] TabNames = { "1  TERRAIN", "2  SCENARIO", "3  MAP", "4  LOBBY", "CREDITS" };
         static readonly string[] ModeNames = { "Real world\naccurate", "Real world\n+ subtle detail", "Real world\n+ major variations", "Pure\nprocedural", "Custom\nhybrid" };
 
@@ -58,6 +69,8 @@ namespace Chaukanna.Trainer
             demPath = Terrain.demPath ?? "";
             Scenario = presets.Count > 0 && presets[0] != null ? presets[0].config.Clone().Validate() : new ScenarioConfig();
             Players.Add(new PlayerSlot { name = "Player 1", isLocal = true });
+            bool haveCentre = Terrain.centreLatitude != 0.0 || Terrain.centreLongitude != 0.0;
+            Map = new MapPicker(this, haveCentre ? Terrain.centreLatitude : 32.6875, haveCentre ? Terrain.centreLongitude : 74.8375, 12);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             SessionSetup.Clear();       // back in the menu: the previous session is over
@@ -67,6 +80,7 @@ namespace Chaukanna.Trainer
         {
             if (preview != null) Destroy(preview);
             if (Terrain != null) Destroy(Terrain);
+            Map?.Destroy();
         }
 
         // --- Actions ---
@@ -133,6 +147,94 @@ namespace Chaukanna.Trainer
                 Message = e.Message;
                 return false;
             }
+        }
+
+        // Downloads the elevation for a square of side 2 x radius around (lat, lon), its satellite picture, and a coarse
+        // surround four times as wide for the horizon, then switches the terrain to it.
+        public void DownloadArea(string name, double latitude, double longitude, float radiusMetres)
+        {
+            if (Downloading) return;
+            var req = new AreaRequest { name = name, latitude = latitude, longitude = longitude, radiusMetres = Mathf.Max(100f, radiusMetres) };
+            StartCoroutine(DownloadAll(req));
+        }
+
+        System.Collections.IEnumerator DownloadAll(AreaRequest req)
+        {
+            Downloading = true;
+            downloadProgress = 0f;
+            System.Action<float, string> step(string part, float from, float span) => (f, what) => { downloadProgress = from + span * f; downloadStep = part + ": " + what; };
+
+            AreaDownloadResult area = null;
+            yield return ElevationDownloader.Download(req, step("Elevation", 0f, 0.4f), r => area = r);
+            if (area == null || !area.ok) { Downloading = false; areasCheckedAt = -100f; Message = area?.error ?? "Download failed."; downloadStep = "Failed"; yield break; }
+            string notes = area.summary;
+
+            if (WithSatellite)
+            {
+                ImageryDownloadResult picture = null;
+                yield return ImageryDownloader.Download(req, ImageryDownloader.PathFor(area.rawPath), step("Satellite", 0.4f, 0.3f), r => picture = r);
+                notes += "\n" + (picture != null && picture.ok ? picture.summary : picture?.error);
+            }
+
+            // The surround: the same place, four times as wide, coarser. Only used for the view to the horizon.
+            var around = new AreaRequest { name = System.IO.Path.GetFileNameWithoutExtension(area.rawPath) + ElevationDownloader.SurroundSuffix, folder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(area.rawPath)),
+                latitude = req.latitude, longitude = req.longitude, radiusMetres = req.radiusMetres * ElevationDownloader.SurroundFactor };
+            AreaDownloadResult surround = null;
+            yield return ElevationDownloader.Download(around, step("Surround", 0.7f, 0.15f), r => surround = r);
+            if (surround != null && surround.ok && WithSatellite)
+                yield return ImageryDownloader.Download(around, ImageryDownloader.PathFor(surround.rawPath), step("Surround picture", 0.85f, 0.15f), r => { });
+            notes += surround != null && surround.ok ? $"\nSurround for the horizon: {around.SideMetres / 1000f:F0} km square." : "\nNo surround (" + surround?.error + ")";
+
+            Downloading = false;
+            areasCheckedAt = -100f;
+            downloadStep = "Done";
+            if (UseArea(area.projectRelativePath.Length > 0 ? area.projectRelativePath : area.rawPath))
+            {
+                Terrain.provenance = notes;
+                Message = notes;
+            }
+        }
+
+        // The coarse surround and its picture, when the area has one.
+        public ElevationGrid SurroundDem { get; private set; }
+        public Imagery SurroundPicture { get; private set; }
+        // Uses an elevation file downloaded before (works with no network). The terrain area becomes the file's area.
+        public bool UseArea(string rawPath)
+        {
+            demPath = rawPath;
+            if (Terrain.mode == TerrainMode.PureProcedural) SetTerrainMode(TerrainMode.RealWorldAccurate);
+            Terrain.useFileCentre = true;
+            Terrain.licenceAndAttribution = ElevationDownloader.Attribution;
+            if (!LoadDem()) return false;
+            Terrain.sizeMetres = Mathf.Floor((float)Math.Min(Dem.WidthMetres, Dem.HeightMetres));
+            Terrain.centreLatitude = Dem.CentreLatitude;
+            Terrain.centreLongitude = Dem.CentreLongitude;
+            Map.SetPick(Dem.CentreLatitude, Dem.CentreLongitude);
+            // Its surround for the horizon, if there is one.
+            SurroundDem = null;
+            if (SurroundPicture != null && SurroundPicture.texture != null) Destroy(SurroundPicture.texture);
+            SurroundPicture = null;
+            string surround = ElevationDownloader.SurroundPath(System.IO.Path.IsPathRooted(rawPath) ? rawPath : System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, "..", rawPath)));
+            if (System.IO.File.Exists(surround))
+            {
+                try
+                {
+                    SurroundDem = DemReader.Load(surround);
+                    string sp = ImageryDownloader.PathFor(surround);
+                    if (System.IO.File.Exists(sp)) SurroundPicture = ImageryReader.Load(sp);
+                }
+                catch (DemException e) { Message = "Surround not used: " + e.Message; SurroundDem = null; }
+            }
+
+            // Its satellite picture, if one was downloaded with it.
+            string picture = ImageryDownloader.PathFor(rawPath);
+            if (System.IO.File.Exists(System.IO.Path.IsPathRooted(picture) ? picture : System.IO.Path.Combine(Application.dataPath, "..", picture)))
+            {
+                LoadImagery(System.IO.Path.IsPathRooted(picture) ? picture : System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, "..", picture)));
+                if (Terrain.imageryBlend > 0.9f) Terrain.imageryBlend = 0.6f;    // leave room for the ground materials close up
+            }
+            previewStale = true;
+            return true;
         }
 
         public void SetTerrainMode(TerrainMode mode)
@@ -202,13 +304,15 @@ namespace Chaukanna.Trainer
             SessionSetup.terrain.name = "Session terrain";
             SessionSetup.dem = Dem;
             SessionSetup.imagery = Picture;
+            SessionSetup.surroundDem = Terrain.UsesDem ? SurroundDem : null;
+            SessionSetup.surroundImagery = Terrain.UsesDem ? SurroundPicture : null;
             SessionSetup.scenario = Scenario.Clone().Validate();
             SessionSetup.difficultyIndex = difficultyIndex;
             foreach (var p in Players) SessionSetup.players.Add(new PlayerSlot { name = p.name, post = p.post, ready = p.ready, isLocal = p.isLocal });
             SessionSetup.spawnPoints.AddRange(SpawnPoints);
             SessionSetup.menuScenePath = menuScenePath;
             SessionSetup.Ready = true;
-            SessionSetup.Load(fieldScenePath);
+            SessionSetup.LoadWithScreen(fieldScenePath);
             return true;
         }
 
@@ -272,6 +376,8 @@ namespace Chaukanna.Trainer
             scroll = GUILayout.BeginScrollView(scroll);
             const float row = 26f;
 
+            RealPlace(row);
+            GUILayout.Space(6f);
             GUILayout.Label("<b>Mode</b>", label);
             int mode = GUILayout.SelectionGrid((int)Terrain.mode, ModeNames, 3, button, GUILayout.Height(row * 3.2f));
             if (mode != (int)Terrain.mode) SetTerrainMode((TerrainMode)mode);
@@ -303,7 +409,7 @@ namespace Chaukanna.Trainer
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            int area = Stepper("Area m", Mathf.RoundToInt(Terrain.sizeMetres), 500, row, 2000, 20000);
+            int area = Stepper("Area m", Mathf.RoundToInt(Terrain.sizeMetres), 500, row, 100);
             if (area != Mathf.RoundToInt(Terrain.sizeMetres)) { Terrain.sizeMetres = area; previewStale = true; }
             GUILayout.Label("  Detail", label, GUILayout.Width(60f));
             foreach (int r in new[] { 257, 513, 1025 })
@@ -322,6 +428,16 @@ namespace Chaukanna.Trainer
             }
             else GUILayout.Label("Accurate mode uses the elevation file untouched: no noise, no pads under the posts.", small);
 
+            // Ground materials: which biome's rules place rock, scree, soil, grass, snow and sand.
+            if (Terrain.surfaceKit != null)
+            {
+                GUILayout.Space(6f);
+                GUILayout.Label("<b>Ground materials</b>  (rock, scree, soil, grass, snow, sand)", label);
+                string[] biomes = { "Auto", "High desert\n(Ladakh)", "Plains\n(Jammu)", "Desert\n(Rajasthan)", "Temperate\nhills" };
+                int b = GUILayout.SelectionGrid((int)Terrain.biome, biomes, 5, button, GUILayout.Height(row * 2f));
+                if (b != (int)Terrain.biome) { Terrain.biome = (SurfaceBiome)b; previewStale = true; }
+            }
+
             GUILayout.Space(6f);
             GUILayout.Label("<b>Ground picture</b>  (optional PNG / JPG, full path; a .json beside it places it by coordinates)", label);
             GUILayout.BeginHorizontal();
@@ -337,11 +453,69 @@ namespace Chaukanna.Trainer
             GUILayout.EndScrollView();
             GUILayout.EndArea();
 
-            float size = Mathf.Min(body.height, body.width - leftW - 20f);
-            var map = new Rect(body.x + leftW + 20f, body.y, size, size);
+            // Right side: the OpenStreetMap picker or the height preview.
+            float size = Mathf.Min(body.height - 36f, body.width - leftW - 20f);
+            float rx = body.x + leftW + 20f;
+            if (GUI.Toggle(new Rect(rx, body.y, 150f, 30f), showMap, "Map: pick a place", button)) showMap = true;
+            if (GUI.Toggle(new Rect(rx + 156f, body.y, 150f, 30f), !showMap, "Height preview", button)) showMap = false;
+            var map = new Rect(rx, body.y + 36f, size, size);
+            if (showMap)
+            {
+                Map.Draw(map, small);
+                return;
+            }
             Fill(map, new Color(0.1f, 0.12f, 0.15f));
             if (preview != null) GUI.DrawTexture(map, preview);
             GUI.Label(new Rect(map.x + 8f, map.y + 4f, map.width - 16f, 40f), preview == null ? "No preview yet. Press Generate preview." : previewStale ? "<color=#FFB040>Settings changed since this preview.</color>" : "North is up.", small);
+        }
+
+        // Search, typed position and radius, download, and the areas already downloaded.
+        void RealPlace(float row)
+        {
+            GUILayout.Label("<b>Real place</b>  (search or click on the map on the right, then download it)", label);
+            if (!showMap && GUILayout.Button("Open the map to search and pick a place", button, GUILayout.Height(row))) showMap = true;
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Lat", label, GUILayout.Width(28f), GUILayout.Height(row));
+            double lat = NumberEntry.FieldDouble("menu.lat", Map.PickLatitude, 5, field, GUILayout.Width(92f), GUILayout.Height(row));
+            GUILayout.Label(" Lon", label, GUILayout.Width(34f), GUILayout.Height(row));
+            double lon = NumberEntry.FieldDouble("menu.lon", Map.PickLongitude, 5, field, GUILayout.Width(92f), GUILayout.Height(row));
+            if (lat != Map.PickLatitude || lon != Map.PickLongitude) { Map.SetPick(lat, lon); Map.CentreOn(lat, lon); }
+            Map.RadiusMetres = Stepper("Radius m", Mathf.RoundToInt(Map.RadiusMetres), 250, row, 100);
+            GUILayout.EndHorizontal();
+
+            // What the download will fetch, and whether the terrain can hold that detail.
+            var req = new AreaRequest { name = areaName, latitude = Map.PickLatitude, longitude = Map.PickLongitude, radiusMetres = Map.RadiusMetres };
+            int zoom = req.Zoom(out int tileCount);
+            double mpp = WebMercator.MetresPerPixel(req.latitude, zoom);
+            string note = $"Area {req.SideMetres / 1000f:F1} km square. Source tiles: zoom {zoom}, {tileCount} tiles, about {mpp:F0} m per pixel (the data itself is about 30 m in most places).";
+            if (req.SideMetres / (Terrain.GlobalResolution - 1) > 30f) note += $"\n<color=#FFB040>The terrain samples only every {req.SideMetres / (Terrain.GlobalResolution - 1):F0} m at this size: pick Detail 1025 or more tiles to keep the detail.</color>";
+            GUILayout.Label(note, small);
+
+            WithSatellite = GUILayout.Toggle(WithSatellite, "  Also download a satellite picture (Sentinel-2, 10 m) to colour the ground", GUILayout.Height(row));
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Name", label, GUILayout.Width(44f), GUILayout.Height(row));
+            areaName = GUILayout.TextField(areaName, 40, field, GUILayout.Width(150f), GUILayout.Height(row));
+            using (new GUIEnabledScope(!Downloading))
+                if (GUILayout.Button(Downloading ? $"Downloading {downloadProgress * 100f:F0} %" : "<b>Download terrain</b>", button, GUILayout.Height(row)))
+                    DownloadArea(areaName, Map.PickLatitude, Map.PickLongitude, Map.RadiusMetres);
+            GUILayout.EndHorizontal();
+            if (Downloading || downloadStep.Length > 0) GUILayout.Label(downloadStep + (Map.Status.Length > 0 ? "   " + Map.Status : ""), small);
+            else if (Map.Status.Length > 0) GUILayout.Label(Map.Status, small);
+
+            // Areas already downloaded: these work with no network at all.
+            if (Time.realtimeSinceStartup - areasCheckedAt > 5f) { areas = ElevationDownloader.DownloadedAreas(); areasCheckedAt = Time.realtimeSinceStartup; }
+            if (areas.Count > 0)
+            {
+                GUILayout.Label("Downloaded before (no internet needed):", small);
+                foreach (var a in areas)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label(System.IO.Path.GetFileNameWithoutExtension(a), label, GUILayout.Height(row - 4f));
+                    if (GUILayout.Button("Use", button, GUILayout.Width(60f), GUILayout.Height(row - 4f))) UseArea(ElevationDownloader.ProjectRelative(a));
+                    GUILayout.EndHorizontal();
+                }
+            }
         }
 
         float Slider(string name, float value, float min, float max)
@@ -385,6 +559,26 @@ namespace Chaukanna.Trainer
             Scenario.duration = Stepper("Duration s", Mathf.RoundToInt(Scenario.duration), 30, row);
             Scenario.spawnRingRadius = Stepper("Ring m", Mathf.RoundToInt(Scenario.spawnRingRadius), 100, row);
             GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            Scenario.spawnWindowStart = Stepper("Spawn from s", Mathf.RoundToInt(Scenario.spawnWindowStart), 5, row);
+            Scenario.spawnWindowEnd = Stepper("Spawn until s", Mathf.RoundToInt(Scenario.spawnWindowEnd), 30, row);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            Scenario.sectorArcDegrees = Stepper("Arc deg", Mathf.RoundToInt(Scenario.sectorArcDegrees), 10, row, 1, 360);
+            Scenario.speedMultiplier = Stepper("Speed %", Mathf.RoundToInt(Scenario.speedMultiplier * 100f), 10, row, 1) / 100f;
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            Scenario.swarmSize = Stepper("Swarm size", Scenario.swarmSize, 8, row);
+            Scenario.swarmTime = Stepper("Swarm at s", Mathf.RoundToInt(Scenario.swarmTime), 10, row);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            Scenario.birdFlocks = Stepper("Bird flocks", Scenario.birdFlocks, 1, row);
+            Scenario.flockSize = Stepper("Flock size", Scenario.flockSize, 2, row, 1);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            Scenario.blendInPercent = Stepper("Blend-in %", Mathf.RoundToInt(Scenario.blendInPercent), 5, row, -1, 100);
+            GUILayout.Label(Scenario.blendInPercent < 0f ? "Hostiles posing as own drones: -1 = set by the difficulty level (none on Recruit, 10 % Trained, 30 % Expert)." : "of the hostiles fly an own-drone patrol to blend in, then break off for the post.", small, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
 
             GUILayout.Space(6f);
             GUILayout.BeginHorizontal();
@@ -393,28 +587,42 @@ namespace Chaukanna.Trainer
             if (difficulties.Count > 0 && GUILayout.Button("Difficulty: " + (Difficulty != null ? Difficulty.displayName.ToUpper() : "-"), button, GUILayout.Height(row))) difficultyIndex = (difficultyIndex + 1) % difficulties.Count;
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Site: " + Scenario.site.ToString().ToUpper(), button, GUILayout.Height(row))) Scenario.site = (SiteType)(((int)Scenario.site + 1) % 3);
             if (GUILayout.Button("Sensors: " + (Scenario.sensorsDegraded ? "DEGRADED" : "OK"), button, GUILayout.Height(row))) Scenario.sensorsDegraded = !Scenario.sensorsDegraded;
-            if (GUILayout.Button("ROE at start: " + (Scenario.roeAtStart == RoeCard.UnderAttack ? "UNDER ATTACK" : "WEAPONS HOLD"), button, GUILayout.Height(row)))
-                Scenario.roeAtStart = Scenario.roeAtStart == RoeCard.UnderAttack ? RoeCard.WeaponsHold : RoeCard.UnderAttack;
+            if (GUILayout.Button("ROE at start: " + RoeCards.Short(Scenario.roeAtStart), button, GUILayout.Height(row))) Scenario.roeAtStart = RoeCards.Next(Scenario.roeAtStart);
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("ROE flip: " + (Scenario.roeFlip ? "ON, to UNDER ATTACK" : "OFF"), button, GUILayout.Height(row))) { Scenario.roeFlip = !Scenario.roeFlip; Scenario.roeFlipTo = RoeCard.UnderAttack; }
-            Scenario.roeFlipTime = Stepper("Flip at s", Mathf.RoundToInt(Scenario.roeFlipTime), 10, row);
+            // Card change: off, at a set time, or at a time drawn from the seed.
+            string flipMode = !Scenario.roeFlip ? "OFF" : Scenario.roeFlipRandom ? "RANDOM TIME" : "AT A SET TIME";
+            if (GUILayout.Button("Card change: " + flipMode, button, GUILayout.Height(row)))
+            {
+                if (!Scenario.roeFlip) { Scenario.roeFlip = true; Scenario.roeFlipRandom = false; }
+                else if (!Scenario.roeFlipRandom) Scenario.roeFlipRandom = true;
+                else { Scenario.roeFlip = false; Scenario.roeFlipRandom = false; }
+            }
+            if (Scenario.roeFlip && GUILayout.Button("to " + RoeCards.Short(Scenario.roeFlipTo), button, GUILayout.Height(row))) Scenario.roeFlipTo = RoeCards.Next(Scenario.roeFlipTo);
+            if (Scenario.roeFlip && !Scenario.roeFlipRandom) Scenario.roeFlipTime = Stepper("Change at s", Mathf.RoundToInt(Scenario.roeFlipTime), 10, row);
             GUILayout.EndHorizontal();
             // Soldier: fixed at the post, or free to walk within a radius.
             GUILayout.Space(6f);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Soldier movement: " + (Scenario.allowMovement ? "ALLOWED (W A S D, Shift to run)" : "FIXED AT POST"), button, GUILayout.Width(330f), GUILayout.Height(row))) Scenario.allowMovement = !Scenario.allowMovement;
+            var vrColour = GUI.backgroundColor;
+            if (Scenario.vrMode) GUI.backgroundColor = new Color(0.3f, 0.75f, 1f);
+            if (GUILayout.Button("<b>VR MODE: " + (Scenario.vrMode ? "ON" : "OFF") + "</b>", button, GUILayout.Width(150f), GUILayout.Height(row))) Scenario.vrMode = !Scenario.vrMode;
+            GUI.backgroundColor = vrColour;
             GUI.enabled = Scenario.allowMovement;
-            Scenario.moveRadius = Stepper("Radius m", Mathf.RoundToInt(Scenario.moveRadius), 10, row, 0, 2000);
+            Scenario.moveRadius = Stepper("Radius m", Mathf.RoundToInt(Scenario.moveRadius), 10, row);
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            Scenario.walkSpeed = Stepper("Walk m/s", Mathf.RoundToInt(Scenario.walkSpeed), 1, row, 1, 15);
-            Scenario.runSpeed = Stepper("Run m/s", Mathf.RoundToInt(Scenario.runSpeed), 1, row, 1, 20);
+            Scenario.walkSpeed = Stepper("Walk m/s", Mathf.RoundToInt(Scenario.walkSpeed), 1, row, 1);
+            Scenario.runSpeed = Stepper("Run m/s", Mathf.RoundToInt(Scenario.runSpeed), 1, row, 1);
             GUILayout.EndHorizontal();
             GUI.enabled = true;
 
             Scenario.Validate();
+            string warning = Scenario.Warning();
+            if (warning.Length > 0) GUILayout.Label("<color=#FFB040>" + warning + "</color>", label);
             GUILayout.Space(8f);
             GUILayout.Label("Type a number into any box and press Enter (or click elsewhere), or use - / +. Difficulty is applied on top of these numbers when the run starts. Drone spawn points and player posts are set on the Map tab.", small);
             GUILayout.EndArea();
@@ -423,7 +631,7 @@ namespace Chaukanna.Trainer
         DifficultyProfile Difficulty => difficulties.Count > 0 ? difficulties[Mathf.Clamp(difficultyIndex, 0, difficulties.Count - 1)] : null;
 
         // Label, a box to type the value into, and - / + buttons.
-        int Stepper(string name, int value, int step, float row, int min = 0, int max = 1000000)
+        int Stepper(string name, int value, int step, float row, int min = 0, int max = int.MaxValue)
         {
             return NumberEntry.Stepper("menu." + name, name, value, step, min, max, label, field, button, row, 110f);
         }
@@ -480,7 +688,7 @@ namespace Chaukanna.Trainer
             for (int i = 0; i < Players.Count; i++)
                 if (GUILayout.Toggle(selectedPlayer == i, $"{Players[i].name}{(Players[i].isLocal ? " (this machine)" : "")}   at {Players[i].post.x:F0} E, {Players[i].post.y:F0} N", button, GUILayout.Height(row))) selectedPlayer = i;
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Add player", button, GUILayout.Height(row)) && Players.Count < 8)
+            if (GUILayout.Button("Add player", button, GUILayout.Height(row)))
             {
                 Players.Add(new PlayerSlot { name = "Player " + (Players.Count + 1), post = new Vector2(150f * Players.Count, 0f) });
                 selectedPlayer = Players.Count - 1;

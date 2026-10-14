@@ -80,6 +80,8 @@ MonoBehaviour:
   sourceReliefScale: 1
   modificationBlend: 1
   modificationMask: {fileID: 0}
+  surfaceKit: {fileID: 11400000, guid: 926e5d6143176684a944438205ae5391, type: 2}
+  biome: 0
   surfaceRules:
   - label: Sand (low, flat)
     layer: {fileID: 8574412962073106934, guid: 3e48236266e0a2742a8acd60a59828ef, type: 2}
@@ -90,6 +92,16 @@ MonoBehaviour:
     heightBlend: 15
     slopeBlend: 6
     weight: 1
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
   - label: Grass (gentle)
     layer: {fileID: 8574412962073106934, guid: 0d240bc6454ee5b4d9338531dfe27209, type: 2}
     minHeight: 10
@@ -99,6 +111,16 @@ MonoBehaviour:
     heightBlend: 15
     slopeBlend: 6
     weight: 1
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
   - label: Dirt (moderate slope)
     layer: {fileID: 8574412962073106934, guid: ce4468c939b5ab34080df2872cf8ee2c, type: 2}
     minHeight: 0
@@ -108,6 +130,16 @@ MonoBehaviour:
     heightBlend: 15
     slopeBlend: 6
     weight: 1
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
   - label: Rock (steep)
     layer: {fileID: 8574412962073106934, guid: fc45b28e9d7cff34abf88c4d2a237629, type: 2}
     minHeight: 0
@@ -117,6 +149,16 @@ MonoBehaviour:
     heightBlend: 15
     slopeBlend: 6
     weight: 1.5
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
   - label: Snow (high)
     layer: {fileID: 8574412962073106934, guid: 2f9843d931435e240ad2f5cf4f283b5f, type: 2}
     minHeight: 1100
@@ -126,3 +168,15 @@ MonoBehaviour:
     heightBlend: 80
     slopeBlend: 6
     weight: 1
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
+  imageryPath: 
+  imageryBlend: 1

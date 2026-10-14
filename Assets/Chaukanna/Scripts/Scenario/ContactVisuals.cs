@@ -26,27 +26,31 @@ namespace Chaukanna.Scenario
         public const string RotorPrefix = "Rotor";
 
         // Which look a contact gets. All looks of a class are the same size for detection; only the shape differs.
-        public static GameObject PickPrefab(ContactDefinition def, int variantSeed)
+        // A non-empty override list (the spawner's "Models" lists) replaces the definition's own prefab and variants.
+        public static GameObject PickPrefab(ContactDefinition def, int variantSeed, System.Collections.Generic.List<GameObject> overrideModels = null)
         {
-            if (def.variants != null && def.variants.Count > 0)
+            var choices = new System.Collections.Generic.List<GameObject>();
+            if (overrideModels != null)
+                foreach (var m in overrideModels) if (m != null) choices.Add(m);
+            if (choices.Count == 0)
             {
-                // The main prefab counts as one of the choices.
-                int choices = def.variants.Count + (def.prefab != null ? 1 : 0);
-                int pick = (variantSeed & 0x7FFFFFFF) % choices;
-                if (pick < def.variants.Count && def.variants[pick] != null) return def.variants[pick];
+                if (def.variants != null)
+                    foreach (var m in def.variants) if (m != null) choices.Add(m);
+                if (def.prefab != null) choices.Add(def.prefab);
             }
-            return def.prefab;
+            return choices.Count == 0 ? null : choices[(variantSeed & 0x7FFFFFFF) % choices.Count];
         }
 
         // Returns the root. Every material on the contact is replaced by its own copy, so tinting one contact (F1 debug)
         // never touches another contact or the asset.
-        public static GameObject Build(ContactDefinition def, out Material[] materials, out Transform wingL, out Transform wingR, int variantSeed = 0)
+        public static GameObject Build(ContactDefinition def, out Material[] materials, out Transform wingL, out Transform wingR, int variantSeed = 0,
+            System.Collections.Generic.List<GameObject> overrideModels = null)
         {
-            GameObject prefab = PickPrefab(def, variantSeed);
-            GameObject root = prefab != null ? Object.Instantiate(prefab) : BuildPlaceholder(def.silhouette, def.cue);
+            GameObject prefab = PickPrefab(def, variantSeed, overrideModels);
+            GameObject root = prefab != null ? Fit(Object.Instantiate(prefab)) : BuildPlaceholder(def.silhouette, def.cue);
             root.transform.localScale = Vector3.one * def.size;
-            wingL = root.transform.Find(WingLeftName);
-            wingR = root.transform.Find(WingRightName);
+            wingL = FindDeep(root.transform, WingLeftName);
+            wingR = FindDeep(root.transform, WingRightName);
 
             var copies = new System.Collections.Generic.Dictionary<Material, Material>();
             foreach (var r in root.GetComponentsInChildren<Renderer>())
@@ -65,6 +69,32 @@ namespace Chaukanna.Scenario
             return root;
         }
 
+        // Any model can be dragged in, whatever size it was made at: if it is not already about one unit across, it is put
+        // under a new root, centred and scaled to one unit, so the definition's Size (metres) means the same for every model.
+        static GameObject Fit(GameObject model)
+        {
+            model.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var renderers = model.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return model;
+            Bounds b = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
+            float span = Mathf.Max(b.size.x, b.size.z);
+            if (span <= 0.0001f || (span >= 0.6f && span <= 1.8f)) return model;
+
+            var root = new GameObject();
+            model.transform.SetParent(root.transform, false);
+            float k = 1f / span;
+            model.transform.localScale *= k;
+            model.transform.localPosition = -b.center * k;
+            return root;
+        }
+
+        static Transform FindDeep(Transform root, string name)
+        {
+            foreach (var t in root.GetComponentsInChildren<Transform>())
+                if (t.name == name) return t;
+            return null;
+        }
         // Rotor parts of a model (objects whose name starts with "Rotor"), for spinning.
         public static Transform[] FindRotors(GameObject root)
         {

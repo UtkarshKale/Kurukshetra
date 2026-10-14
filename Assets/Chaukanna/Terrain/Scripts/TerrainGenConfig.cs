@@ -104,6 +104,21 @@ namespace Chaukanna.TerrainGen
         public float slopeBlend = 6f;
         [Tooltip("Relative strength where several rules overlap.")]
         public float weight = 1f;
+
+        [Header("Extra conditions (neutral by default)")]
+        [Tooltip("On: the height limits are metres above sea level (e.g. a snow line). Off: above the area's lowest point.")]
+        public bool absoluteHeight;
+        [Tooltip("Where water would gather, 0 = dry ridge or open slope, 1 = valley floor or stream bed (from flow accumulation).")]
+        public float minWetness = 0f, maxWetness = 1f;
+        public float wetnessBlend = 0.15f;
+        [Tooltip("Shape: negative = ridge or crest, positive = gully or hollow.")]
+        public float minCurvature = -100f, maxCurvature = 100f;
+        public float curvatureBlend = 0.02f;
+        [Tooltip("Positive favours north-facing slopes (snow lies longer), negative favours south-facing.")]
+        [Range(-1f, 1f)] public float northBias;
+        [Tooltip("Breaks up hard edges and repetition with noise, 0 = none.")]
+        [Range(0f, 1f)] public float breakup;
+        public float breakupScaleMetres = 40f;
     }
 
     // Everything needed to rebuild a terrain. Nothing essential lives in the editor window.
@@ -161,6 +176,10 @@ namespace Chaukanna.TerrainGen
         public Texture2D modificationMask;
 
         [Header("Layer C: surface")]
+        [Tooltip("Ground materials (rock, scree, soil, grass, snow, sand). When set, the surface is painted from the biome below and the rules list is not used.")]
+        public TerrainSurfaceKit surfaceKit;
+        [Tooltip("How the kit's materials are placed. Auto picks from the elevation (high desert above ~2500 m, plains when low and flat).")]
+        public SurfaceBiome biome = SurfaceBiome.Auto;
         public List<SurfaceRule> surfaceRules = new List<SurfaceRule>();
         [Tooltip("Optional true-colour picture of the ground (PNG or JPG, north up) with a .json giving its bounds in degrees. It only colours the terrain; it never changes heights.")]
         public string imageryPath = "";

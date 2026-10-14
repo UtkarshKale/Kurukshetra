@@ -30,31 +30,46 @@ namespace Chaukanna.Charts
         }
 
         Canvas canvas;
+        Camera chartCamera;
+        RenderTexture target;
         RectTransform panel;
         LineChart scoreChart, detectionChart, accuracyChart;
         BarChart countsChart, classChart, binsChart;
         Vector4 rect;
         bool built;
 
+        // The charts are drawn by their own camera into a texture, and the dashboard paints that texture like any other
+        // picture. (A canvas drawn straight to the screen always ends up UNDER the trainer's immediate-mode panels,
+        // which is why the charts could not be seen before.)
+        public Texture Picture => target;
+
         void Build()
         {
             if (built) return;
             built = true;
 
+            // Far below the world and looking at nothing but its own canvas, so no other camera sees the charts and
+            // this camera sees nothing else.
+            var cameraGo = new GameObject("ScoreChartsCamera");
+            cameraGo.transform.SetParent(transform, false);
+            cameraGo.transform.position = new Vector3(0f, -20000f, 0f);
+            chartCamera = cameraGo.AddComponent<Camera>();
+            chartCamera.orthographic = true;
+            chartCamera.nearClipPlane = 0.1f;
+            chartCamera.farClipPlane = 30f;
+            chartCamera.clearFlags = CameraClearFlags.SolidColor;
+            chartCamera.backgroundColor = new Color(0.05f, 0.06f, 0.08f, 1f);
+            chartCamera.depth = -50f;
+            chartCamera.allowHDR = false;
+            chartCamera.allowMSAA = false;
+
             var canvasGo = new GameObject("ScoreChartsCanvas", typeof(RectTransform));
             canvasGo.transform.SetParent(transform, false);
             canvas = canvasGo.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 500;
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            canvas.worldCamera = chartCamera;
+            canvas.planeDistance = 10f;
             canvasGo.AddComponent<CanvasScaler>();
-            canvasGo.AddComponent<GraphicRaycaster>();
-
-            // Charts show values on hover; that needs an event system, and this project uses the new Input System.
-            if (FindAnyObjectByType<EventSystem>() == null)
-            {
-                var es = new GameObject("EventSystem", typeof(EventSystem), typeof(UnityEngine.InputSystem.UI.InputSystemUIInputModule));
-                es.transform.SetParent(transform, false);
-            }
 
             var panelGo = new GameObject("Panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(canvasGo.transform, false);
@@ -64,12 +79,51 @@ namespace Chaukanna.Charts
             panel.pivot = new Vector2(0f, 1f);
 
             scoreChart = Make<LineChart>("Score % by session");
-            detectionChart = Make<LineChart>("Average detection time (s) by session");
-            accuracyChart = Make<LineChart>("Classification accuracy and engagement decisions (%)");
+            detectionChart = Make<LineChart>("Detection time (s) by session");
+            accuracyChart = Make<LineChart>("Classification / engagement %");
             countsChart = Make<BarChart>("This run: what went wrong");
             classChart = Make<BarChart>("This run: calls by true class");
             binsChart = Make<BarChart>("This run: time to detect each contact");
             Layout();
+        }
+
+        void EnsureTarget()
+        {
+            int w = Mathf.Clamp(Mathf.RoundToInt(rect.z), 64, 8192), h = Mathf.Clamp(Mathf.RoundToInt(rect.w), 64, 8192);
+            if (target != null && target.width == w && target.height == h) return;
+            if (target != null) { chartCamera.targetTexture = null; target.Release(); Destroy(target); }
+            target = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { name = "ScoreCharts", antiAliasing = 4 };
+            chartCamera.targetTexture = target;
+        }
+
+        void OnDestroy()
+        {
+            if (target != null) { if (chartCamera != null) chartCamera.targetTexture = null; target.Release(); Destroy(target); }
+        }
+        static Theme ownTheme;
+
+        // The charts wear a private copy of the dark theme.
+        // They must NOT call chart.UpdateTheme(Dark): that rewrites XCharts' shared Default theme asset in place, after
+        // which XCharts cannot find a theme called "Default" any more and every chart made afterwards fails to build
+        // (only the first chart of the first run appears, and none on later runs until Unity is restarted).
+        static Theme OwnTheme()
+        {
+            // Put the shared theme right again if that has already happened in this Editor session.
+            var shared = Resources.Load<Theme>("XCTheme-Default");
+            if (shared != null && shared.themeType != ThemeType.Default)
+            {
+                Theme.ResetToDefaultTheme(shared);
+                XCThemeMgr.ReloadThemeList();
+            }
+            if (ownTheme == null)
+            {
+                var source = XCThemeMgr.GetTheme(ThemeType.Default);
+                ownTheme = source != null ? source.CloneTheme() : ScriptableObject.CreateInstance<Theme>();
+                Theme.ResetToDarkTheme(ownTheme);
+                ownTheme.name = "ChaukannaChartsTheme";
+                ownTheme.hideFlags = HideFlags.DontSave;
+            }
+            return ownTheme;
         }
 
         T Make<T>(string title) where T : BaseChart
@@ -79,9 +133,10 @@ namespace Chaukanna.Charts
             var rt = go.GetComponent<RectTransform>();
             rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
+            var own = OwnTheme();       // also makes sure XCharts can find its Default theme before the chart wakes up
             var chart = go.AddComponent<T>();
             chart.Init();
-            chart.UpdateTheme(ThemeType.Dark);
+            chart.theme.sharedTheme = own;
             chart.EnsureChartComponent<Title>().text = title;
             chart.RemoveData();
             return chart;
@@ -91,7 +146,8 @@ namespace Chaukanna.Charts
         void Layout()
         {
             if (!built) return;
-            panel.anchoredPosition = new Vector2(rect.x, -rect.y);
+            EnsureTarget();
+            panel.anchoredPosition = Vector2.zero;
             panel.sizeDelta = new Vector2(rect.z, rect.w);
             BaseChart[] charts = { scoreChart, detectionChart, accuracyChart, countsChart, classChart, binsChart };
             int columns = rect.z >= 900f ? 3 : rect.z >= 560f ? 2 : 1;
@@ -108,7 +164,7 @@ namespace Chaukanna.Charts
 
         // --- Messages from the dashboard ---
 
-        // x, y from the top-left of the window, then width and height, all in screen pixels.
+        // Width and height (z, w) in screen pixels: the size of the picture. x and y are not used any more, the dashboard places the picture.
         public void SetRectPixels(Vector4 pixels)
         {
             if (pixels == rect && built) return;
@@ -121,6 +177,7 @@ namespace Chaukanna.Charts
         {
             if (visible) Build();
             if (canvas != null) canvas.enabled = visible;
+            if (chartCamera != null) chartCamera.enabled = visible;      // nothing is rendered while the tab is closed
         }
 
         public void SetJson(string json)

@@ -60,6 +60,34 @@ namespace Chaukanna.Trainer
             return value;
         }
 
+        // A decimal number (latitude, longitude). Same typing rules as Field; shown with `decimals` places.
+        public static double FieldDouble(string id, double value, int decimals, GUIStyle style, params GUILayoutOption[] options)
+        {
+            GUI.SetNextControlName(id);
+            bool focused = GUI.GetNameOfFocusedControl() == id;
+            string shown = value.ToString("F" + decimals, System.Globalization.CultureInfo.InvariantCulture);
+            string text = focused && buffers.TryGetValue(id, out string typed) ? typed : shown;
+            var e = Event.current;
+            if (focused && e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+            {
+                value = ParseDouble(text, value);
+                buffers.Remove(id);
+                GUI.FocusControl(null);
+                e.Use();
+                text = value.ToString("F" + decimals, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            string edited = GUILayout.TextField(text, 16, style, options);
+            if (focused) { buffers[id] = edited; focusedFrame = Time.frameCount; }
+            else if (buffers.TryGetValue(id, out string pending)) { value = ParseDouble(pending, value); buffers.Remove(id); }
+            return value;
+        }
+
+        public static double ParseDouble(string text, double current)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return current;
+            return double.TryParse(text.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && !double.IsNaN(d) && !double.IsInfinity(d) ? d : current;
+        }
+
         // Label, typed field and - / + buttons on one line.
         public static int Stepper(string id, string name, int value, int step, int min, int max, GUIStyle label, GUIStyle field, GUIStyle button, float row, float labelWidth = 104f)
         {

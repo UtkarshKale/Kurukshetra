@@ -25,6 +25,7 @@ namespace Chaukanna.Scenario
         public static string Difficulty = "";
         public static float NightVisionSeconds;
         public static bool AllowMovement;
+        public static string DisplayTier = "desktop";   // "desktop", "vr-sim", or "mixed" if the view was switched mid-run
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         public static void Reset()
@@ -34,6 +35,7 @@ namespace Chaukanna.Scenario
             Difficulty = "";
             NightVisionSeconds = 0f;
             AllowMovement = false;
+            DisplayTier = "desktop";
         }
     }
 
@@ -47,13 +49,30 @@ namespace Chaukanna.Scenario
         [Header("Run")]
         public int seed = 1001;
         public float duration = 300f;
-        [Range(0.1f, 5f)] public float speedMultiplier = 1f;
+        public float speedMultiplier = 1f;
 
         [Header("Mix")]
         public int hostileCount = 3;
         public int friendlyCount = 2;
         public int civilianCount = 2;
         public int birdCount = 6;
+        [Tooltip("Share of the hostiles (percent) that fly an own-drone patrol to blend in, then break off for the post. -1 = take it from the difficulty level.")]
+        public float blendInPercent = -1f;
+
+        [Header("Site")]
+        [Tooltip("None = open ground as before. Rural = fields and a canal in front of the post, the cantonment behind. Urban = the post at the cantonment edge, drones come in over the buildings.")]
+        public SiteType site;
+
+        [Header("Swarm and flocks")]
+        [Tooltip("Hostile drones arriving together as one swarm from one bearing (8 or 24 in the spec). 0 = no swarm.")]
+        public int swarmSize;
+        [Tooltip("Seconds into the run when the swarm appears.")]
+        public float swarmTime = 60f;
+        [Tooltip("Bearing the swarm comes from, degrees from the centre of the sector (negative = left). Above 360 = picked from the seed.")]
+        public float swarmBearing = 999f;
+        [Tooltip("Bird flocks crossing the sector, each flying together.")]
+        public int birdFlocks;
+        public int flockSize = 8;
 
         [Header("Geometry")]
         public float sectorArcDegrees = 120f;
@@ -67,6 +86,8 @@ namespace Chaukanna.Scenario
         public RoeCard roeAtStart = RoeCard.WeaponsHold;
         public bool roeFlip;
         public float roeFlipTime = 120f;
+        [Tooltip("On: the change happens at a time drawn from the seed (30 to 70 % of the run) instead of Flip at.")]
+        public bool roeFlipRandom;
         public RoeCard roeFlipTo = RoeCard.UnderAttack;
 
         [Header("Conditions")]
@@ -76,6 +97,10 @@ namespace Chaukanna.Scenario
         public float detectionSizeMultiplier = 1f;
         [Tooltip("Name of the difficulty level applied to this config; empty = none.")]
         public string difficulty = "";
+
+        [Header("View")]
+        [Tooltip("On: the run starts in VR mode (seated soldier, hands, sensor tablet, binoculars by raising both hands). Movement is off in VR.")]
+        public bool vrMode;
 
         [Header("Soldier")]
         [Tooltip("On: the soldier can walk (W A S D, Shift to run). Off: fixed at the post, look only.")]
@@ -95,28 +120,50 @@ namespace Chaukanna.Scenario
             return (ScenarioConfig)MemberwiseClone();
         }
 
-        // Clamp everything to sane ranges. Returns this for chaining.
+        // Only what cannot physically work is corrected (negative counts, zero length, a window outside the run).
+        // There are no upper limits: the trainer may ask for as many contacts, seconds or metres as they wish.
+        // Returns this for chaining.
         public ScenarioConfig Validate()
         {
-            duration = Mathf.Clamp(duration, 30f, 1800f);
-            speedMultiplier = Mathf.Clamp(speedMultiplier, 0.1f, 5f);
-            hostileCount = Mathf.Clamp(hostileCount, 0, 50);
-            friendlyCount = Mathf.Clamp(friendlyCount, 0, 50);
-            civilianCount = Mathf.Clamp(civilianCount, 0, 50);
-            birdCount = Mathf.Clamp(birdCount, 0, 100);
-            sectorArcDegrees = Mathf.Clamp(sectorArcDegrees, 10f, 360f);
-            spawnRingRadius = Mathf.Clamp(spawnRingRadius, 200f, 3000f);
+            duration = Mathf.Max(duration, 1f);
+            speedMultiplier = Mathf.Max(speedMultiplier, 0.01f);
+            hostileCount = Mathf.Max(hostileCount, 0);
+            friendlyCount = Mathf.Max(friendlyCount, 0);
+            civilianCount = Mathf.Max(civilianCount, 0);
+            birdCount = Mathf.Max(birdCount, 0);
+            swarmSize = Mathf.Max(swarmSize, 0);
+            birdFlocks = Mathf.Max(birdFlocks, 0);
+            flockSize = Mathf.Max(flockSize, 1);
+            swarmTime = Mathf.Clamp(swarmTime, 0f, duration);
+            blendInPercent = Mathf.Clamp(blendInPercent, -1f, 100f);        // a share: cannot pass 100 %
+            sectorArcDegrees = Mathf.Clamp(sectorArcDegrees, 1f, 360f);     // a circle has 360 degrees
+            spawnRingRadius = Mathf.Max(spawnRingRadius, 10f);
             spawnWindowStart = Mathf.Clamp(spawnWindowStart, 0f, duration);
             spawnWindowEnd = Mathf.Clamp(spawnWindowEnd, spawnWindowStart, duration);
             roeFlipTime = Mathf.Clamp(roeFlipTime, 0f, duration);
             if (aiErrorOverride > 1f) aiErrorOverride = 1f;
-            detectionSizeMultiplier = Mathf.Clamp(detectionSizeMultiplier, 0.25f, 4f);
-            moveRadius = Mathf.Clamp(moveRadius, 0f, 2000f);
-            walkSpeed = Mathf.Clamp(walkSpeed, 0.5f, 15f);
-            runSpeed = Mathf.Clamp(runSpeed, walkSpeed, 20f);
+            detectionSizeMultiplier = Mathf.Max(detectionSizeMultiplier, 0.01f);
+            moveRadius = Mathf.Max(moveRadius, 0f);
+            walkSpeed = Mathf.Max(walkSpeed, 0.5f);
+            runSpeed = Mathf.Max(runSpeed, walkSpeed);
             return this;
         }
 
+        public int TotalContacts => hostileCount + friendlyCount + civilianCount + birdCount + swarmSize + birdFlocks * flockSize;
+
+        // Values above these still run; the trainer is only told they may be slow or hard to see.
+        public const int ManyContacts = 300;
+        public const float FarRing = 4000f;
+
+        // Empty when nothing needs saying. Never blocks START.
+        public string Warning()
+        {
+            string s = "";
+            if (TotalContacts > ManyContacts) s += $"{TotalContacts} contacts in one run may slow the simulation down (above about {ManyContacts}).  ";
+            if (spawnRingRadius > FarRing) s += $"At {spawnRingRadius:F0} m small drones start out too far to see, even through binoculars.  ";
+            if (spawnWindowEnd < duration * 0.5f && TotalContacts > 0) s += $"All contacts appear in the first {spawnWindowEnd:F0} s of a {duration:F0} s run (raise \"Spawn until s\").  ";
+            return s.Trim();
+        }
         public static ScenarioConfig FromPreset(ScenarioPreset p)
         {
             return new ScenarioConfig

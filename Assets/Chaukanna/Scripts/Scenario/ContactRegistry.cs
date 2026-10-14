@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Chaukanna.Scenario
 {
-    public enum ContactEventType { Spawn, Despawn, FirstInView, Lock, Unlock, Classify, Action, AiHint }
+    public enum ContactEventType { Spawn, Despawn, FirstInView, Lock, Unlock, Classify, Action, AiHint, Anomaly }
 
     // One row per contact for the AAR. Outlives the contact's GameObject. Times are scenario seconds; negative = never.
     public class ContactRecord
@@ -34,6 +34,66 @@ namespace Chaukanna.Scenario
         public int shots;                           // Engage only
         public bool engageHit;
 
+        // Changing one's mind. A "revision" is a change made after a final action had already been taken.
+        public PlayerCall firstCall = PlayerCall.None;
+        public int callChanges;                     // every change of call, before or after deciding
+        public int callRevisions;                   // ...of which made after a final action
+        public PlayerCall callBeforeChange = PlayerCall.None;   // the call that the latest change replaced
+        public bool lastCallChangeWasRevision;
+        public bool callChangeInformed;             // the anomaly had appeared between the replaced call and the new one
+        public int actionRevisions;                 // a final action replaced by another
+        public int uninformedActionRevisions;       // ...with nothing new to go on (these cost points)
+        public bool actionLocked;                   // it physically happened (shots fired, drone jammed): cannot be replaced
+        public bool group;                          // at least one decision was made on several contacts at once
+
+        // Swarm triage: which swarm it belonged to, and how near to the post it was among the swarm when first acted on (0 = nearest).
+        public int swarmId = -1;
+        public int swarmRank = -1;
+
+        // Evidence and conditions at decision time (for the process node and N2's light rule).
+        public bool opticsVerified;                 // seen through the binoculars (zoomed in) while in view
+        public int callLight = -1;                  // TimeOfDay when the latest call was made; -1 = unknown
+
+        // A hostile flying an own-drone patrol to blend in. The anomaly is the moment it gives itself away.
+        public bool deceptive;
+        public float anomalyTime = -1f;
+        public string anomalyCue;
+
+        // Every call, action and anomaly in order, as text, for the session file and the dashboard.
+        public List<string> history = new List<string>();
+
+        public void Log(string what)
+        {
+            history.Add($"{ContactRegistry.ScenarioTime:F1}s {what}");
+        }
+
+        // Ground range to the defended post over time (x = scenario s, y = metres), sampled by the spawner. The scoring's
+        // decision clock reads the moment a contact first came within its class's release range from this.
+        public List<Vector2> rangeTrack = new List<Vector2>();
+        public float closestRange = -1f;
+        // Where it was and whether it was on the player's screen, at the same samples: the AAR replay is built from this
+        // logged state, not re-run from the seed.
+        public List<TrackPoint> track = new List<TrackPoint>();
+
+        public void SampleRange(float time, Vector3 position, Vector3 post)
+        {
+            float range = Vector2.Distance(new Vector2(position.x, position.z), new Vector2(post.x, post.z));
+            rangeTrack.Add(new Vector2(time, range));
+            if (closestRange < 0f || range < closestRange) closestRange = range;
+        }
+
+        public void SampleTrack(float time, Vector3 position, bool inView)
+        {
+            track.Add(new TrackPoint { t = time, x = position.x, y = position.y, z = position.z, inView = inView });
+        }
+
+        // First sampled time within `range` metres of the post; -1 = never.
+        public float FirstWithin(float range)
+        {
+            foreach (var s in rangeTrack) if (s.y <= range) return s.x;
+            return -1f;
+        }
+
         // A decision has been made. This is what scoring looks at.
         public bool Actioned => action != PlayerAction.None;
         // Nothing more can be done. An Engage that has only missed so far is not resolved: the player may fire again.
@@ -41,6 +101,33 @@ namespace Chaukanna.Scenario
         public bool Resolved => Actioned && action != PlayerAction.Hold && (action != PlayerAction.Engage || engageHit);
         public bool OnHold => action == PlayerAction.Hold;
         public bool Decided => Actioned && !OnHold;   // committed to something other than Hold
+    }
+
+    [System.Serializable]
+    public struct TrackPoint
+    {
+        public float t, x, y, z;
+        public bool inView;     // inside the player's view and passing the detection test at this sample
+    }
+
+    // The run as logged for the replay: the post, the sector, and where the player was looking, twice a second.
+    public static class RunLog
+    {
+        public static Vector3 post;
+        public static float sectorYaw, spawnRadius;
+        public static readonly List<ViewPoint> view = new List<ViewPoint>();
+
+        public static void Clear()
+        {
+            view.Clear();
+        }
+    }
+
+    [System.Serializable]
+    public struct ViewPoint
+    {
+        public float t, yaw, pitch, fov;    // fov = horizontal degrees
+        public float x, z;                  // where the soldier stood
     }
 
     public struct ContactEvent
@@ -71,6 +158,8 @@ namespace Chaukanna.Scenario
         public static bool TruthColours;
         public static RoeCard CurrentRoe;           // set by the ROE banner
         public static float RoeSince;               // scenario time the current card came into force
+        public static readonly List<RoeChange> RoeChanges = new List<RoeChange>();   // every change of card this run
+        public static RoeCard RoeAtStart;                                             // card at the start of this run
         public static bool InputBlocked;            // true while the trainer's AAR overlay is open; player controls ignore input
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -80,6 +169,8 @@ namespace Chaukanna.Scenario
             Events.Clear();
             Records.Clear();
             Feed.Clear();
+            RoeChanges.Clear();
+            RunLog.Clear();
             ScenarioTime = 0f;
             TruthColours = false;
         }

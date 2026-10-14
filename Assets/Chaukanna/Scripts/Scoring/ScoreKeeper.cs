@@ -14,11 +14,14 @@ namespace Chaukanna.Scoring
         public ScoringRules rules;
         [Tooltip("Write each session to <persistentDataPath>/sessions/ for the dashboard's trend charts.")]
         public bool saveSessionJson = true;
+        [Tooltip("Write the after-action review as one static HTML file to <persistentDataPath>/reports/ when a run ends.")]
+        public bool saveHtmlReport = true;
         [Tooltip("End-of-run line text size at 720p; scales with screen height.")]
         public int titleFontSize = 28;
 
         public SessionResult Last { get; private set; }   // null until the run has ended
         public string LastSavedPath { get; private set; }
+        public string LastReportPath { get; private set; }
         public int SavedCount { get; private set; }       // goes up each time a session file is written
         public static string SessionsFolder => Path.Combine(Application.persistentDataPath, "sessions");
 
@@ -39,7 +42,7 @@ namespace Chaukanna.Scoring
             if (live == null || Time.unscaledTime >= nextLiveTime)
             {
                 nextLiveTime = Time.unscaledTime + 0.5f;
-                live = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed);
+                live = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart);
                 StampConditions(live);
             }
             return live;
@@ -54,6 +57,7 @@ namespace Chaukanna.Scoring
                 run = spawner.RunNumber;
                 Last = null;
                 live = null;
+                LastReportPath = null;
             }
             if (!spawner.Finished) return;
 
@@ -66,12 +70,19 @@ namespace Chaukanna.Scoring
 
         void Finish()
         {
-            Last = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed);
+            Last = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart);
             Last.timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             StampConditions(Last);
             Debug.Log($"[Score] Conditions: {Last.timeOfDay}, {Last.visibility}, night vision {Last.nightVisionPercent:F0}% of the run. Difficulty: {(Last.difficulty.Length > 0 ? Last.difficulty : "none")}");
             foreach (var line in ScoreCalculator.Describe(Last).Split('\n'))
                 if (line.Trim().Length > 0) Debug.Log(line.TrimEnd());
+
+            LastReportPath = null;
+            if (saveHtmlReport)
+            {
+                LastReportPath = HtmlReport.Save(Last, ContactRegistry.Records, "Player 1");
+                if (LastReportPath != null) Debug.Log("[Report] AAR written to " + LastReportPath);
+            }
 
             if (!saveSessionJson) return;
             try
@@ -88,12 +99,33 @@ namespace Chaukanna.Scoring
             }
         }
 
+        // The HTML report for the finished run (written now if it was not yet), or a snapshot of the run so far.
+        public string ExportReport()
+        {
+            if (Last != null && !string.IsNullOrEmpty(LastReportPath) && File.Exists(LastReportPath)) return LastReportPath;
+            var s = Current();
+            if (s == null) return null;
+            if (string.IsNullOrEmpty(s.timestamp)) s.timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + (Last == null ? " (run in progress)" : "");
+            string path = HtmlReport.Save(s, ContactRegistry.Records, "Player 1");
+            if (Last != null) LastReportPath = path;
+            return path;
+        }
+
+        // Writes the finished session again, e.g. after the VR comfort answers were added to it.
+        public void SaveAgain()
+        {
+            if (Last == null || string.IsNullOrEmpty(LastSavedPath)) return;
+            try { File.WriteAllText(LastSavedPath, JsonUtility.ToJson(Last, true)); }
+            catch (Exception e) { Debug.LogWarning("[Score] Could not update session: " + e.Message); }
+        }
+
         void StampConditions(SessionResult s)
         {
             s.timeOfDay = RunConditions.Time.ToString();
             s.visibility = RunConditions.Visibility.ToString();
             s.difficulty = RunConditions.Difficulty ?? "";
             s.allowMovement = RunConditions.AllowMovement;
+            s.displayTier = RunConditions.DisplayTier ?? "desktop";
             s.nightVisionPercent = spawner.ScenarioTime > 0f ? Mathf.Clamp(100f * RunConditions.NightVisionSeconds / spawner.ScenarioTime, 0f, 100f) : 0f;
         }
 
