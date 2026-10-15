@@ -7,6 +7,7 @@ SCOPE SOURCE: module-1-demo.md (the agreed Module 1 demo; the user rejected the 
 First restructured 2026-10-14 against the solution doc (solution-v2-council.md: §2 PS coverage table R1a-R9, §11.1 M1 scope, §12 demo script). No item was deleted; items were moved and tagged. New items from the gap check are numbered N1 and up.
 Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo moments in §12: (1) cold open, night, own drone engaged, "your call vs the sound call"; (2) the card flip mid-mission; (3) night 24-swarm with a wrong AI cue. Shot 5b is the VR sentry.
 
+## ORDER OF WORK (user, 2026-10-16: learner model + adaptive difficulty, prevalence + Quiet Watch, Range drill + true-size display, Scenario Director + editor + proficiency board; then LAN multiplayer; sensor desk stays paused; UI redesign later)
 ## ORDER OF WORK (user, 2026-10-14)
 1. Swarm. DONE 2026-10-15.
 2. Urban / rural. DONE 2026-10-15 (cantonment edge, Site toggle on the menu and F6, "Day Single Quad - Rural"; Night Swarm - Urban uses the urban site).
@@ -24,6 +25,7 @@ Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo momen
    Skipped for now: LAN (waits on the networking choice), real-headset VR (waits on the headset).
 - [x] Module 3: ROE cards A / B / C (2026-10-14).
 ## Demo-critical (a PS line or a key demo moment depends on it)
+- [x] CRIT-1. (FIXED 2026-10-16: every build now gets ChaukannaData/ next to the exe with the map tiles and areas; areas recorded with the trainer PC's paths are found there; the offline message names the cause.) [all] CRITICAL (user, 2026-10-16): after exporting a build and copying it to another PC, the trainer map said "Map offline" and did not work. Investigate after the modules are finished. Things to check: (a) MapPicker sets Offline when a tile request returns ConnectionError, so any failed fetch (no internet, firewall/proxy, TLS or certificates, OSM refusing the request) shows that message; log the actual error. (b) The CARTO labels key lives outside the project in %USERPROFILE%\.chaukanna\carto.key, so it is missing on a new PC. (c) Downloaded areas, tile caches and real-terrain data may point at the dev PC's paths (persistentDataPath vs the project's Assets/Chaukanna/Terrain/RealData, which is not in a build). Fix: make the build self-contained (ship the downloaded areas and a tile cache in StreamingAssets or a data folder next to the exe), fall back to them with no network, and show a clear message naming the real cause.
 - [x] L1. [R3] 3D lasso selection (2026-10-15, user request): hold Tab, drag a loop round drones; Shift add, Ctrl remove; mouse wheel / Alt+wheel set a depth band; only contacts the player can see right now are picked; works through binoculars and in VR mode. Trainer: drag a loop on the F6 truth map round contacts and site objects, count + DELETE + CLEAR. LassoSelfTest 16/16.
 - [ ] L2. Hand-test the lasso (look of the loop and fill, cursor feel with the mouse captured, Tab not clashing with anything, the trainer map lasso).
 - [ ] U1. [R2c] Hand-test urban / rural: look of the town and watchtower, whether buildings hide drones as expected, frame rate with 774 site objects.
@@ -206,3 +208,25 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] A3. Hindi debrief text in the HTML report (browsers shape Devanagari; templated sentences only).
 - [ ] A4. Hand-test the dashboard REPLAY section (play, slider, click a contact) and open an HTML report on another PC.
 - [ ] A5. Replay for older saved sessions: today only the latest run has tracks (they are kept in memory and in its HTML report, not in the session JSON).
+
+## Modules 9-12 (user order 2026-10-16) - BUILT AND TESTED 2026-10-16 (self-tests + live checks; hand tests still open)
+- [x] Module 9: learner model + adaptive difficulty (Scripts/Scoring/LearnerModel.cs, LearnerSelfTest.cs; dashboard LEARNER MODEL section; F6 "Use plan").
+- [x] Module 5: prevalence (Custom / Low / Medium / High) + null missions + Quiet watch (20/45/90 min, 1-4 per hour) + vigilance thirds; realised share vs band (V7). PrevalenceSelfTest.cs.
+- [x] Module 1: Range drill (Scripts/Scenario/RangeDrill.cs): one item at a time in view, 1-5 to call, tiers with exposure and freezes, fluency 10 of 12 within 3 s, ghost times, feeds the learner. Real clips (20 %) not in: need open-licence footage and the owner's yes to download.
+- [x] Module 6: true-size display (Scripts/Player/DisplayCalibration.cs): diagonal, aspect, distance -> vertical FOV and arcmin/px, comparable band 1.0-2.0, binoculars 7x, pan capped at 60 deg/s. RangeSelfTest.cs checks the doc's table.
+- [x] Module 10: Scenario Director (Scripts/Scenario/Director.cs), training only, logged injections, capped easing, sandbagging flag.
+- [x] Module 11: scenario editor form + validator V1-V4, V6-V9 (V5, V10 noted as not checked) + expander + packages on disk (Scripts/Scenario/ScenarioSpec.cs; menu EDITOR tab).
+- [x] Module 12: proficiency board (Scripts/Scoring/ProficiencyBoard.cs; menu BOARD tab): pseudonymous ID + PIN sign-in (salted hash), reference packages only with Director off, n and 95 % interval, not-yet-trained list, duplicate-timing KS check, HTML export with the training-use-only line. PackageSelfTest.cs.
+- [x] LAN multiplayer, first slice (2026-10-16): Netcode for GameObjects 2.13.3 + Unity Transport 2.6.0 (owner's yes). See LAN follow-ups.
+- [ ] Menu SCENARIO tab is now long; part of the deferred UI redesign.
+- [ ] H9. Hand-test modules 9-12 (steps in PROGRESS 2026-10-16): the EDITOR and BOARD tabs, the Range drill HUD and keys, the true-size view, the LEARNER MODEL section, Quiet watch length.
+
+## LAN follow-ups (added 2026-10-16)
+- [ ] N-L1. Hand-test on two PCs on the LAN (steps in PROGRESS 2026-10-16), including the Windows firewall prompt.
+- [x] N-L2. (done 2026-10-16, tested live) Solo mode run end to end over the network (Team mode was tested live; Solo shares the start/end/results path).
+- [x] N-L3. (done 2026-10-16: BACK TO LOBBY (all) on the trainer's F6 panel; tested live) Next run without restarting: today the trainees return to the menu by restarting the app; add a "back to lobby" for everyone.
+- [x] N-L4. (done 2026-10-16: a trainee PC without the area gets it from the trainer over the LAN before starting; Kargil 11.4 MB tested live) Real-terrain areas: send the area files to trainees (or a shared folder) instead of requiring the same path on every PC.
+- [ ] N-L5. Pair roles from the doc (sentry reports, commander engages, credit chain) instead of every trainee doing both.
+- [x] N-L6. (done 2026-10-16: banner; Team run ends and is saved, Solo carries on) Host drops: trainees should keep their result and show "host lost" instead of just stopping.
+- [x] FIX-1. Pink terrain in the built game (2026-10-16): built-in materials in Resources; trainee PCs keep their own ground materials. Owner to rebuild and confirm.
+- [x] FIX-2. Replay green lines (2026-10-16): lines are drawn without rotation on scaled GUI (dashboard, trainer map). Owner to re-check on screen.
