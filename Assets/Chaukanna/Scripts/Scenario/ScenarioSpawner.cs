@@ -132,7 +132,7 @@ namespace Chaukanna.Scenario
         // Start (or restart) a run from a trainer config. Pass null to go back to the Inspector / preset values.
         public void StartRun(ScenarioConfig config)
         {
-            TrainerConfig = config != null ? config.Clone().Validate() : null;
+            TrainerConfig = config != null ? config.Clone().Validate().ApplyPrevalence() : null;
             Restart();
         }
 
@@ -218,6 +218,13 @@ namespace Chaukanna.Scenario
             }
 
             RunConditions.Difficulty = TrainerConfig != null ? TrainerConfig.difficulty : "";
+            RunConditions.Prevalence = TrainerConfig != null ? TrainerConfig.prevalence : Prevalence.Custom;
+            RunConditions.QuietWatch = TrainerConfig != null && TrainerConfig.quietWatch;
+            RunConditions.NullMission = TrainerConfig != null && TrainerConfig.nullMission;
+            RunConditions.RangeDrill = TrainerConfig != null && TrainerConfig.rangeDrill;
+            RunConditions.ReferencePackage = TrainerConfig != null && TrainerConfig.referencePackage;
+            RunConditions.DirectorOn = TrainerConfig != null && TrainerConfig.director && !TrainerConfig.referencePackage && !TrainerConfig.rangeDrill;
+            RunConditions.PackageId = TrainerConfig != null ? TrainerConfig.packageId ?? "" : "";
             RunConditions.NightVisionSeconds = 0f;
             RunConditions.AllowMovement = TrainerConfig != null && TrainerConfig.allowMovement;
             // The site around the post: rebuilt each run (the post may have moved, the seed decides the layout).
@@ -244,6 +251,33 @@ namespace Chaukanna.Scenario
             next = 0;
             finished = false;
             BuildPlan();
+            // Range drill: no planned contacts; the drill puts one item at a time in front of the soldier and ends the run itself.
+            var drill = GetComponent<RangeDrill>();
+            if (RunConditions.NetTeamClient)
+            {
+                // LAN team mode on a trainee's PC: the host's sky arrives as proxies; nothing is planned here.
+                plan.Clear();
+                active.duration += 30f;     // the host ends the run; this is only a backstop
+            }
+            if (RunConditions.RangeDrill)
+            {
+                plan.Clear();
+                active.duration = 3600f;
+                if (drill == null) drill = gameObject.AddComponent<RangeDrill>();
+                drill.Begin(this, TrainerConfig);
+            }
+            else if (drill != null) drill.Stop();
+            var director = GetComponent<Director>();
+            if (RunConditions.DirectorOn)
+            {
+                if (director == null) director = gameObject.AddComponent<Director>();
+                director.Begin(this, active.seed);
+            }
+            else
+            {
+                if (director != null) director.Stop();
+                Director.Log.Clear();
+            }
             Debug.Log($"[Scenario] '{active.name}'{source} seed {active.seed}: {plan.Count} contacts planned over {active.duration:F0}s, ring {active.spawnRingRadius:F0} m.");
         }
 
@@ -485,6 +519,18 @@ namespace Chaukanna.Scenario
             list.Add(p);
         }
 
+        // One contact outside the plan (Range drill items). Same build path as a planned contact.
+        public Contact SpawnSingle(ContactClass cls, Vector3 start, Vector3 goal, float speed, int seed, int id) => SpawnSingle(cls, cls, start, goal, speed, seed, id, false);
+
+        public Contact SpawnSingle(ContactClass truth, ContactClass look, Vector3 start, Vector3 goal, float speed, int seed, int id, bool deceptive)
+        {
+            var def = active != null ? active.GetDefinition(truth) : null;
+            var lookDef = active != null ? active.GetDefinition(look) : null;
+            if (def == null || lookDef == null) return null;
+            Spawn(new PlannedSpawn { time = ScenarioTime, def = def, look = lookDef, deceptive = deceptive, start = start, goal = goal, speed = speed, motionSeed = seed }, id);
+            return ContactRegistry.Live.Count > 0 ? ContactRegistry.Live[ContactRegistry.Live.Count - 1] : null;
+        }
+
         void Spawn(PlannedSpawn p, int id)
         {
             var go = ContactVisuals.Build(p.look, out var materials, out var wingL, out var wingR, p.motionSeed / 7, ModelsFor(p.look.contactClass));
@@ -494,6 +540,8 @@ namespace Chaukanna.Scenario
 
             var contact = go.AddComponent<Contact>();
             contact.Initialise(id, p.def, materials, p.deceptive);
+            contact.Data.lookClass = p.look.contactClass;
+            contact.Data.lookSeed = p.motionSeed;
             var motion = go.AddComponent<ContactMotion>();
             motion.Initialise(contact, p.look.behaviour, p.speed, p.goal, p.orbitRadius, p.motionSeed, wingL, wingR);
             if (p.deceptive) motion.SetDeception(p.anomalyDelay, defendedPoint.position + Vector3.up * 10f);

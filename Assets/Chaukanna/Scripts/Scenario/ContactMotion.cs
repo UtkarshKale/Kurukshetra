@@ -47,6 +47,7 @@ namespace Chaukanna.Scenario
             for (int i = 0; i < rotors.Length; i++)
                 if (rotors[i] != null) rotors[i].Rotate(Vector3.up, RotorDegreesPerSecond * (jammed ? 0.25f : 1f) * ((i & 1) == 0 ? 1f : -1f) * dt, Space.World);
             if (jammed) { JammedDescent(dt); return; }
+            if (Frozen) return;
             lateClamp = true;
             if (Group != null) return;          // a swarm or flock member: its group moves it (SwarmGroup.Step)
             if (breakOffAfter >= 0f && age >= breakOffAfter)
@@ -104,6 +105,19 @@ namespace Chaukanna.Scenario
             if (behaviour == FlightBehaviour.Approach && Vector3.Distance(p, goal) < 60f) return;   // let it come down onto the post
             if (p.y < floor) { p.y = floor; transform.position = p; }
         }
+
+        // A straight pass to `target` (Range drill items), whatever the class normally flies like; leaves as "ExitedSector".
+        public void ForceTransit(Vector3 target, float newSpeed)
+        {
+            behaviour = FlightBehaviour.Transit;
+            goal = target;
+            speed = newSpeed;
+            breakOffAfter = -1f;
+            Face(goal - transform.position);
+        }
+
+        // Range drill freeze: the item holds still while frozen.
+        public bool Frozen;
 
         // Link lost: stop and sink slowly to the ground.
         public void Jam()

@@ -34,7 +34,7 @@ namespace Chaukanna.Trainer
         public readonly List<Vector2> SpawnPoints = new List<Vector2>();
         public string Message { get; private set; } = "";
 
-        enum Tab { Terrain, Scenario, Map, Lobby, Credits }
+        enum Tab { Terrain, Scenario, Map, Editor, Board, Lobby, Credits }
         enum MapTool { PlacePost, AddSpawn, RemoveSpawn }
 
         Tab tab;
@@ -58,7 +58,7 @@ namespace Chaukanna.Trainer
         List<string> areas = new List<string>();
         float areasCheckedAt = -100f;
 
-        static readonly string[] TabNames = { "1  TERRAIN", "2  SCENARIO", "3  MAP", "4  LOBBY", "CREDITS" };
+        static readonly string[] TabNames = { "1  TERRAIN", "2  SCENARIO", "3  MAP", "EDITOR", "BOARD", "4  LOBBY", "CREDITS" };
         static readonly string[] ModeNames = { "Real world\naccurate", "Real world\n+ subtle detail", "Real world\n+ major variations", "Pure\nprocedural", "Custom\nhybrid" };
 
         void Awake()
@@ -69,6 +69,7 @@ namespace Chaukanna.Trainer
             demPath = Terrain.demPath ?? "";
             Scenario = presets.Count > 0 && presets[0] != null ? presets[0].config.Clone().Validate() : new ScenarioConfig();
             Players.Add(new PlayerSlot { name = "Player 1", isLocal = true });
+            if (Chaukanna.Net.LanSession.Active) tab = Tab.Lobby;
             bool haveCentre = Terrain.centreLatitude != 0.0 || Terrain.centreLongitude != 0.0;
             Map = new MapPicker(this, haveCentre ? Terrain.centreLatitude : 32.6875, haveCentre ? Terrain.centreLongitude : 74.8375, 12);
             Cursor.lockState = CursorLockMode.None;
@@ -290,6 +291,8 @@ namespace Chaukanna.Trainer
             var problems = Terrain.Validate();
             if (Terrain.UsesDem && problems.Count == 0 && (Dem == null || demLoadedFrom != Terrain.demPath)) problems.Add("Load the elevation file on the Terrain tab first.");
             if (Players.Count == 0) problems.Add("Add at least one player on the Map tab.");
+            if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Host && !Chaukanna.Net.LanSession.Instance.roster.AllReady()) problems.Add("Not every trainee on the Lobby tab is READY.");
+            if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Client && !startingFromHost) problems.Add("Joined to a trainer: the trainer starts the run.");
             return problems;
         }
 
@@ -312,6 +315,26 @@ namespace Chaukanna.Trainer
             SessionSetup.spawnPoints.AddRange(SpawnPoints);
             SessionSetup.menuScenePath = menuScenePath;
             SessionSetup.Ready = true;
+            // LAN host: send the same set-up to every trainee's PC before loading the field here.
+            if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Host)
+            {
+                var packet = new Chaukanna.Net.StartPacket { scenarioJson = JsonUtility.ToJson(Scenario), terrainJson = JsonUtility.ToJson(Terrain), difficulty = difficultyIndex, spawnPoints = new List<Vector2>(SpawnPoints) };
+                // A real-terrain run: list the area's files, so trainees without it can ask for them.
+                string areaFolder = null;
+                if (Terrain.UsesDem)
+                {
+                    string dem = ElevationDownloader.Resolve(Terrain.demPath);
+                    areaFolder = System.IO.Path.GetDirectoryName(dem);
+                    if (System.IO.Directory.Exists(areaFolder))
+                    {
+                        packet.areaName = System.IO.Path.GetFileName(areaFolder);
+                        packet.demFile = System.IO.Path.GetFileName(dem);
+                        foreach (var f in System.IO.Directory.GetFiles(areaFolder))
+                            if (!f.EndsWith(".meta") && !f.EndsWith(".key")) packet.areaFiles.Add(new Chaukanna.Net.AreaFile { name = System.IO.Path.GetFileName(f), size = new System.IO.FileInfo(f).Length });
+                    }
+                }
+                Chaukanna.Net.LanSession.Instance.HostStart(packet, areaFolder);
+            }
             SessionSetup.LoadWithScreen(fieldScenePath);
             return true;
         }
@@ -344,7 +367,7 @@ namespace Chaukanna.Trainer
             const float pad = 14f, barH = 54f;
             Fill(new Rect(0f, 0f, w, barH), new Color(0.09f, 0.11f, 0.14f));
             GUI.Label(new Rect(pad, 8f, 300f, 38f), "CHAUKANNA  TRAINER", title);
-            tab = (Tab)GUI.Toolbar(new Rect(320f, 10f, Mathf.Min(680f, w - 320f - 200f), 34f), (int)tab, TabNames, button);
+            tab = (Tab)GUI.Toolbar(new Rect(320f, 10f, Mathf.Min(900f, w - 320f - 200f), 34f), (int)tab, TabNames, button);
             var problems = StartProblems();
             var old = GUI.backgroundColor;
             GUI.backgroundColor = problems.Count == 0 ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.6f, 0.6f, 0.6f);
@@ -363,6 +386,8 @@ namespace Chaukanna.Trainer
                 case Tab.Terrain: TerrainTab(body); break;
                 case Tab.Scenario: ScenarioTab(body); break;
                 case Tab.Map: MapTab(body); break;
+                case Tab.Editor: EditorTab(body); break;
+                case Tab.Board: BoardTab(body); break;
                 case Tab.Credits: GUI.Label(new Rect(body.x, body.y, Mathf.Min(980f, body.width), body.height), Credits.Text, label); break;
                 default: LobbyTab(body); break;
             }
@@ -528,6 +553,203 @@ namespace Chaukanna.Trainer
             return v;
         }
 
+        // --- Module 11: scenario editor (form + validator). Module 12: proficiency board with sign-in. ---
+
+        ScenarioSpec spec = new ScenarioSpec();
+        List<ScenarioSpec> packages;
+        bool specUnlocked;
+        Vector2 editorScroll, boardScroll;
+        string loginId = "", loginPin = "", loginNote = "", editorNote = "";
+        List<Chaukanna.Scoring.BoardCell> boardCells;
+        List<string> boardNotYet;
+        List<Chaukanna.Scoring.BoardFlag> boardFlags;
+
+        static T Cycle<T>(T value) where T : Enum
+        {
+            var values = (T[])Enum.GetValues(typeof(T));
+            int i = Array.IndexOf(values, value);
+            return values[(i + 1) % values.Length];
+        }
+
+        void EditorTab(Rect body)
+        {
+            if (packages == null) packages = PackageStore.LoadAll();
+            const float row = 26f;
+            // Package list on the left.
+            GUILayout.BeginArea(new Rect(body.x, body.y, 230f, body.height));
+            GUILayout.Label("<b>Packages</b>", label);
+            if (GUILayout.Button("+ New package", button, GUILayout.Height(row))) { spec = new ScenarioSpec(); specUnlocked = true; }
+            foreach (var p in packages)
+                if (GUILayout.Button((p.reference ? "[REF] " : "") + p.name, button, GUILayout.Height(row))) { spec = p.Clone(); specUnlocked = !p.reference; }
+            GUILayout.Label("Saved in " + PackageStore.Folder, small);
+            GUILayout.EndArea();
+
+            // The form.
+            var formRect = new Rect(body.x + 244f, body.y, Mathf.Min(660f, body.width - 244f - 330f), body.height);
+            GUILayout.BeginArea(formRect);
+            editorScroll = GUILayout.BeginScrollView(editorScroll);
+            bool locked = spec.reference && !specUnlocked;
+            if (locked)
+            {
+                GUILayout.Label("<color=#FFB040>Locked reference package. Unlocking it changes the package every soldier is compared on.</color>", small);
+                if (GUILayout.Button("Unlock to edit", button, GUILayout.Height(row))) specUnlocked = true;
+            }
+            GUI.enabled = !locked;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Name", label, GUILayout.Width(110f));
+            spec.name = GUILayout.TextField(spec.name ?? "", 40, field, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            spec.seed = Stepper("Seed", spec.seed, 1, row, int.MinValue, int.MaxValue);
+            spec.durationMinutes = Stepper("Minutes", spec.durationMinutes, 1, row, 1, 120);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Light: " + spec.light, button, GUILayout.Height(row))) spec.light = Cycle(spec.light);
+            if (GUILayout.Button("Weather: " + spec.weather, button, GUILayout.Height(row))) spec.weather = Cycle(spec.weather);
+            if (GUILayout.Button("Site: " + spec.site, button, GUILayout.Height(row))) spec.site = Cycle(spec.site);
+            if (GUILayout.Button("Sensors: " + (spec.sensorsDegraded ? "DEGRADED" : "OK"), button, GUILayout.Height(row))) spec.sensorsDegraded = !spec.sensorsDegraded;
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Card at start: " + RoeCards.Short(spec.roeStart), button, GUILayout.Height(row))) spec.roeStart = RoeCards.Next(spec.roeStart);
+            spec.roeChangeSecond = Stepper("Change at s (-1 none)", spec.roeChangeSecond, 30, row, -1, 7200);
+            if (spec.roeChangeSecond >= 0 && GUILayout.Button("to " + RoeCards.Short(spec.roeAfter), button, GUILayout.Height(row))) spec.roeAfter = RoeCards.Next(spec.roeAfter);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Prevalence: " + spec.prevalence, button, GUILayout.Height(row))) spec.prevalence = Cycle(spec.prevalence);
+            if (spec.prevalence != Prevalence.Custom) spec.prevalenceTotal = Stepper("Contacts", spec.prevalenceTotal, 1, row, 1, 60);
+            GUILayout.EndHorizontal();
+            if (spec.prevalence == Prevalence.Custom)
+            {
+                GUILayout.BeginHorizontal();
+                spec.hostiles = Stepper("Hostile", spec.hostiles, 1, row, 0, 99);
+                spec.ownDrones = Stepper("Own", spec.ownDrones, 1, row, 0, 99);
+                GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal();
+                spec.civilDrones = Stepper("Civil", spec.civilDrones, 1, row, 0, 99);
+                spec.birds = Stepper("Birds", spec.birds, 1, row, 0, 99);
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.BeginHorizontal();
+            spec.swarmSize = Stepper("Swarm", spec.swarmSize, 8, row, 0, 99);
+            if (spec.swarmSize > 0) spec.swarmSecond = Stepper("Swarm at s", spec.swarmSecond, 15, row, 0, 7200);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            spec.birdFlocks = Stepper("Bird flocks", spec.birdFlocks, 1, row, 0, 20);
+            spec.ringMetres = Stepper("Ring m", spec.ringMetres, 100, row, 100, 9000);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Quiet watch: " + (spec.quietWatch ? "ON" : "OFF"), button, GUILayout.Height(row))) spec.quietWatch = !spec.quietWatch;
+            if (spec.quietWatch)
+            {
+                spec.watchMinutes = Stepper("Watch min", spec.watchMinutes, 5, row, 1, 180);
+                spec.contactsPerHour = Stepper("Per hour", spec.contactsPerHour, 1, row, 0, 20);
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Director: " + (spec.director ? "ON (training only)" : "OFF"), button, GUILayout.Height(row))) spec.director = !spec.director;
+            if (GUILayout.Button("Reference package: " + (spec.reference ? "YES" : "NO"), button, GUILayout.Height(row))) spec.reference = !spec.reference;
+            GUILayout.EndHorizontal();
+            if (spec.reference)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Fairness profile id", label, GUILayout.Width(160f));
+                spec.fairnessId = GUILayout.TextField(spec.fairnessId ?? "", 24, field, GUILayout.Height(row));
+                GUILayout.EndHorizontal();
+            }
+            GUI.enabled = true;
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
+
+            // Checks and actions on the right.
+            var right = new Rect(formRect.xMax + 14f, body.y, 316f, body.height);
+            GUILayout.BeginArea(right);
+            var issues = SpecValidator.Validate(spec);
+            bool ok = SpecValidator.Ok(issues);
+            GUILayout.Label(ok ? "<b><color=#60E080>Valid</color></b>" : "<b><color=#FF6050>Not valid</color></b>", label);
+            foreach (var i in issues)
+                GUILayout.Label($"<color=#{(i.blocking ? "FF6050" : "B0B8C0")}>{i.code}</color> {i.message}", small);
+            GUILayout.Space(8f);
+            GUI.enabled = ok;
+            if (GUILayout.Button("Save package", button, GUILayout.Height(row)))
+            {
+                try { PackageStore.Save(spec); packages = PackageStore.LoadAll(); editorNote = "Saved " + spec.name; specUnlocked = !spec.reference; }
+                catch (Exception e) { editorNote = "Could not save: " + e.Message; }
+            }
+            if (GUILayout.Button("Use for START", button, GUILayout.Height(row))) { Scenario = SpecExpander.Expand(spec); editorNote = $"'{spec.name}' is set up; press START."; }
+            GUI.enabled = true;
+            if (GUILayout.Button("Delete package", button, GUILayout.Height(row))) { PackageStore.Delete(spec.name); packages = PackageStore.LoadAll(); editorNote = "Deleted " + spec.name; }
+            if (editorNote.Length > 0) GUILayout.Label(editorNote, small);
+            GUILayout.Label("The form holds only choices and whole numbers; paths, speeds and timings come from the seed. An offline LLM builder that fills this form from a sentence needs your go-ahead for a local model.", small);
+            GUILayout.EndArea();
+        }
+
+        void BoardTab(Rect body)
+        {
+            const float row = 26f;
+            GUILayout.BeginArea(new Rect(body.x, body.y, Mathf.Min(1100f, body.width), body.height));
+            GUILayout.Label("<b><color=#FF7060>" + Chaukanna.Scoring.ProficiencyBoard.Disclaimer + "</color></b>", label);
+
+            // Sign-in: a pseudonymous ID and a PIN. Names never go in; the instructor keeps the ID-to-name list offline.
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Soldier ID", label, GUILayout.Width(90f));
+            loginId = GUILayout.TextField(loginId, 16, field, GUILayout.Width(140f), GUILayout.Height(row));
+            GUILayout.Label("PIN", label, GUILayout.Width(40f));
+            loginPin = GUILayout.PasswordField(loginPin, '*', 8, field, GUILayout.Width(100f), GUILayout.Height(row));
+            if (GUILayout.Button("Sign in", button, GUILayout.Width(90f), GUILayout.Height(row))) SignIn(false);
+            if (GUILayout.Button("Register", button, GUILayout.Width(90f), GUILayout.Height(row))) SignIn(true);
+            if (GUILayout.Button("Sign out", button, GUILayout.Width(90f), GUILayout.Height(row))) { Chaukanna.Scoring.ScoreKeeper.PlayerName = "Player 1"; loginNote = "Signed out."; }
+            GUILayout.EndHorizontal();
+            GUILayout.Label($"Playing as <b>{Chaukanna.Scoring.ScoreKeeper.PlayerName}</b>.  {loginNote}", small);
+
+            if (GUILayout.Button("Refresh board", button, GUILayout.Width(160f), GUILayout.Height(row)) || boardCells == null) RefreshBoard();
+            boardScroll = GUILayout.BeginScrollView(boardScroll);
+            GUILayout.Label("<b>Reference packages only, Director off</b>  (n = sessions; interval = 95 % of the mean, shown from n = 2)", small);
+            if (boardCells.Count == 0) GUILayout.Label("No reference-package sessions yet. Make a package in EDITOR with 'Reference package: YES', then play it.", small);
+            foreach (var c in boardCells)
+                GUILayout.Label($"{c.player,-12}  {c.package,-24}  n {c.n,2}   latest {c.latest,3:F0} %   mean {c.mean,3:F0} %" + (c.low >= 0f ? $" ({c.low:F0}-{c.high:F0})" : " (n too small)") + (c.process >= 0f ? $"   process {c.process:F0}" : ""), label);
+            GUILayout.Space(6f);
+            GUILayout.Label("<b>Not yet trained</b>", label);
+            GUILayout.Label(boardNotYet.Count == 0 ? "Everyone registered has played every reference package." : string.Join("   ", boardNotYet), small);
+            GUILayout.Space(6f);
+            GUILayout.Label("<b>Duplicate-timing check</b> (back-to-back sessions under different IDs with indistinguishable decision timing)", label);
+            if (boardFlags.Count == 0) GUILayout.Label("No flags.", small);
+            foreach (var f in boardFlags) GUILayout.Label($"<color=#FFB040>{f.a} then {f.b} at {f.when}: KS p = {f.p:F2}. Check who played.</color>", small);
+            GUILayout.EndScrollView();
+            if (GUILayout.Button("Export board (HTML)", button, GUILayout.Width(200f), GUILayout.Height(row)))
+            {
+                string path = Chaukanna.Scoring.ProficiencyBoard.SaveHtml(Chaukanna.Scoring.ProficiencyBoard.Html(boardCells, boardNotYet, boardFlags));
+                loginNote = path != null ? "Board saved: " + path : "Could not save the board.";
+                if (path != null) Application.OpenURL("file:///" + path.Replace('\\', '/'));
+            }
+            GUILayout.EndArea();
+        }
+
+        void SignIn(bool register)
+        {
+            string why = Chaukanna.Scoring.Login.SignIn(loginId, loginPin, register);
+            loginPin = "";
+            if (why.Length == 0) { Chaukanna.Scoring.ScoreKeeper.PlayerName = loginId; loginNote = (register ? "Registered and signed in as " : "Signed in as ") + loginId + "."; RefreshBoard(); }
+            else loginNote = why;
+        }
+
+        void RefreshBoard()
+        {
+            var sessions = Chaukanna.Scoring.ProficiencyBoard.LoadSessions();
+            boardCells = Chaukanna.Scoring.ProficiencyBoard.Cells(sessions);
+            var soldiers = new List<string>();
+            foreach (var s in Chaukanna.Scoring.Login.Load().soldiers) soldiers.Add(s.id);
+            var refs = new List<string>();
+            foreach (var p in PackageStore.LoadAll()) if (p.reference) refs.Add(p.name);
+            boardNotYet = Chaukanna.Scoring.ProficiencyBoard.NotYetTrained(soldiers, refs, boardCells);
+            boardFlags = Chaukanna.Scoring.ProficiencyBoard.DuplicateTiming(sessions);
+        }
+
+        static float Next(float[] steps, float value)
+        {
+            for (int i = 0; i < steps.Length; i++) if (steps[i] > value + 0.01f) return steps[i];
+            return steps[0];
+        }
+
         void ScenarioTab(Rect body)
         {
             GUILayout.BeginArea(new Rect(body.x, body.y, Mathf.Min(760f, body.width), body.height));
@@ -590,6 +812,35 @@ namespace Chaukanna.Trainer
             if (GUILayout.Button("Site: " + Scenario.site.ToString().ToUpper(), button, GUILayout.Height(row))) Scenario.site = (SiteType)(((int)Scenario.site + 1) % 3);
             if (GUILayout.Button("Sensors: " + (Scenario.sensorsDegraded ? "DEGRADED" : "OK"), button, GUILayout.Height(row))) Scenario.sensorsDegraded = !Scenario.sensorsDegraded;
             if (GUILayout.Button("ROE at start: " + RoeCards.Short(Scenario.roeAtStart), button, GUILayout.Height(row))) Scenario.roeAtStart = RoeCards.Next(Scenario.roeAtStart);
+            GUILayout.EndHorizontal();
+
+            // Range drill and the true-size display (modules 1 and 6).
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Range drill: " + (Scenario.rangeDrill ? $"ON ({Scenario.drillItems} items)" : "OFF"), button, GUILayout.Height(row))) Scenario.rangeDrill = !Scenario.rangeDrill;
+            if (Scenario.rangeDrill && GUILayout.Button("Items", button, GUILayout.Width(70f), GUILayout.Height(row))) Scenario.drillItems = Scenario.drillItems >= 60 ? 12 : Scenario.drillItems + 12;
+            var ds = Chaukanna.Player.DisplayCalibration.Settings;
+            bool changed = false;
+            if (GUILayout.Button("True size: " + (ds.trueSize ? "ON" : "OFF"), button, GUILayout.Height(row))) { ds.trueSize = !ds.trueSize; changed = true; }
+            if (ds.trueSize)
+            {
+                float[] diags = { 14f, 15.6f, 17.3f, 21.5f, 24f, 27f, 32f };
+                float[] dists = { 45f, 50f, 55f, 60f, 70f, 80f, 100f };
+                if (GUILayout.Button($"{ds.diagonalInches:0.#}\" screen", button, GUILayout.Height(row))) { ds.diagonalInches = Next(diags, ds.diagonalInches); changed = true; }
+                if (GUILayout.Button($"{ds.aspectW:F0}:{ds.aspectH:F0}", button, GUILayout.Height(row))) { if (ds.aspectH == 9f) { ds.aspectW = 16f; ds.aspectH = 10f; } else { ds.aspectW = 16f; ds.aspectH = 9f; } changed = true; }
+                if (GUILayout.Button($"{ds.distanceCm:F0} cm away", button, GUILayout.Height(row))) { ds.distanceCm = Next(dists, ds.distanceCm); changed = true; }
+            }
+            GUILayout.EndHorizontal();
+            if (changed) Chaukanna.Player.DisplayCalibration.Save();
+            GUILayout.Label(Chaukanna.Player.DisplayCalibration.Describe(Camera.main), label, GUILayout.Height(row));
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Prevalence: " + (Scenario.prevalence == Prevalence.Custom ? "CUSTOM COUNTS" : Scenario.prevalence.ToString().ToUpper() + $" ({ScenarioConfig.Share(Scenario.prevalence) * 100f:F0} % of {Scenario.prevalenceTotal})"), button, GUILayout.Height(row))) Scenario.prevalence = (Prevalence)(((int)Scenario.prevalence + 1) % 4);
+            if (Scenario.prevalence != Prevalence.Custom && !Scenario.quietWatch && GUILayout.Button("Contacts: " + Scenario.prevalenceTotal, button, GUILayout.Height(row))) Scenario.prevalenceTotal = Scenario.prevalenceTotal >= 40 ? 6 : Scenario.prevalenceTotal + 6;
+            if (GUILayout.Button("Quiet watch: " + (Scenario.quietWatch ? "ON" : "OFF"), button, GUILayout.Height(row))) Scenario.quietWatch = !Scenario.quietWatch;
+            if (Scenario.quietWatch)
+            {
+                if (GUILayout.Button($"{Scenario.watchMinutes:F0} min", button, GUILayout.Height(row))) Scenario.watchMinutes = Scenario.watchMinutes >= 90f ? 20f : Scenario.watchMinutes >= 45f ? 90f : 45f;
+                if (GUILayout.Button($"{Scenario.contactsPerHour:F0} / hour", button, GUILayout.Height(row))) Scenario.contactsPerHour = Scenario.contactsPerHour >= 4f ? 1f : Scenario.contactsPerHour + 1f;
+            }
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             // Card change: off, at a set time, or at a time drawn from the seed.
@@ -714,30 +965,119 @@ namespace Chaukanna.Trainer
 
         void LobbyTab(Rect body)
         {
-            GUILayout.BeginArea(new Rect(body.x, body.y, Mathf.Min(760f, body.width), body.height));
+            GUILayout.BeginArea(new Rect(body.x, body.y, Mathf.Min(900f, body.width), body.height));
             const float row = 30f;
-            GUILayout.Label("<b>Lobby</b>", label);
-            GUILayout.Label("LAN multiplayer is not built yet: the networking stack has to be chosen first, because it means adding a package. This tab shows how it will work, with the one local player.", small);
-            GUILayout.Space(8f);
-            GUI.enabled = false;
+            var lan = Chaukanna.Net.LanSession.Instance;
+            var role = Chaukanna.Net.LanSession.Current;
+            GUILayout.Label("<b>LAN lobby</b>  (local network only: no internet, no relay; works air-gapped)", label);
             GUILayout.BeginHorizontal();
-            GUILayout.Button("Create lobby (host)", button, GUILayout.Height(row));
-            GUILayout.Button("Join lobby", button, GUILayout.Height(row));
+            GUILayout.Label("Your name / ID", label, GUILayout.Width(130f), GUILayout.Height(row));
+            Chaukanna.Scoring.ScoreKeeper.PlayerName = GUILayout.TextField(Chaukanna.Scoring.ScoreKeeper.PlayerName, 16, field, GUILayout.Width(160f), GUILayout.Height(row));
+            GUILayout.Label("Port", label, GUILayout.Width(40f), GUILayout.Height(row));
+            lanPort = GUILayout.TextField(lanPort, 5, field, GUILayout.Width(70f), GUILayout.Height(row));
             GUILayout.EndHorizontal();
-            GUI.enabled = true;
-            GUILayout.Space(8f);
-            GUILayout.Label("<b>Players</b>", label);
-            foreach (var p in Players)
+            ushort.TryParse(lanPort, out ushort port);
+            if (port == 0) port = Chaukanna.Net.LanSession.DefaultPort;
+
+            if (role == Chaukanna.Net.LanSession.Role.None)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{p.name}{(p.isLocal ? "  (this machine)" : "  (waiting for a network player)")}", label, GUILayout.Width(380f), GUILayout.Height(row));
-                using (new GUIEnabledScope(p.isLocal))
-                    if (GUILayout.Button(p.ready ? "READY" : "Not ready", button, GUILayout.Width(140f), GUILayout.Height(row))) p.ready = !p.ready;
+                if (GUILayout.Button("Host (trainer PC)", button, GUILayout.Width(200f), GUILayout.Height(row))) Chaukanna.Net.LanSession.Ensure().Host(Chaukanna.Scoring.ScoreKeeper.PlayerName, port);
+                GUILayout.Label("or join the trainer at IP", label, GUILayout.Width(190f), GUILayout.Height(row));
+                lanAddress = GUILayout.TextField(lanAddress, 40, field, GUILayout.Width(150f), GUILayout.Height(row));
+                if (GUILayout.Button("Join", button, GUILayout.Width(90f), GUILayout.Height(row))) Chaukanna.Net.LanSession.Ensure().Join(Chaukanna.Scoring.ScoreKeeper.PlayerName, lanAddress, port);
                 GUILayout.EndHorizontal();
             }
-            GUILayout.Space(8f);
-            GUILayout.Label("When networking is in: the trainer hosts, players join over the LAN and press Ready, START sends this terrain, scenario and post list to everyone, and each player is spawned at their post.", small);
+            else
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(role == Chaukanna.Net.LanSession.Role.Host ? $"<b>HOSTING</b> on {Chaukanna.Net.LanSession.LocalAddresses()} port {port}" : "<b>JOINED</b>", label, GUILayout.Height(row));
+                if (GUILayout.Button("Leave", button, GUILayout.Width(100f), GUILayout.Height(row))) lan.Leave();
+                GUILayout.EndHorizontal();
+                if (role == Chaukanna.Net.LanSession.Role.Host)
+                {
+                    GUILayout.BeginHorizontal();
+                    if (GUILayout.Button("Mode: " + (lan.roster.mode == Chaukanna.Net.NetMode.Solo ? "SOLO (each trainee their own sky, same scenario)" : "TEAM (one shared sky run by this PC)"), button, GUILayout.Height(row)))
+                        lan.SetMode(lan.roster.mode == Chaukanna.Net.NetMode.Solo ? Chaukanna.Net.NetMode.Team : Chaukanna.Net.NetMode.Solo);
+                    GUILayout.EndHorizontal();
+                }
+                else
+                {
+                    GUILayout.Label("Mode: " + lan.roster.mode + ". The trainer picks the scenario and presses START; this PC follows.", small);
+                    if (GUILayout.Button(lan.LocalReady ? "READY (click to undo)" : "I'm ready", button, GUILayout.Width(240f), GUILayout.Height(row))) lan.SetReady(!lan.LocalReady);
+                }
+                GUILayout.Space(6f);
+                GUILayout.Label("<b>Seats</b>", label);
+                foreach (var p in lan.roster.players)
+                    GUILayout.Label($"{p.name}{(p.host ? "  (trainer / host)" : "")}   {(p.host ? "" : p.ready ? "<color=#60E080>READY</color>" : "<color=#FFB040>not ready</color>")}   {p.state}", label, GUILayout.Height(row - 4f));
+            }
+            GUILayout.Space(6f);
+            if (lan != null) GUILayout.Label(lan.Status, small);
+            if (lan != null && lan.AreaProgress.Length > 0) GUILayout.Label("<color=#FFD940>" + lan.AreaProgress + "</color>", label);
+            GUILayout.Label("Trainer: press Host, pick SOLO or TEAM, set up the terrain and scenario, then START when every seat is READY. Trainees: type the trainer PC's IP (shown on the host), Join, then press I'm ready. A real-terrain area must be on every PC at the same path; otherwise that PC uses procedural terrain from the same seed. Windows may ask to allow the app through the firewall on the first Host.", small);
             GUILayout.EndArea();
+        }
+
+        string lanPort = "7777", lanAddress = "192.168.1.10";
+        bool startingFromHost;
+
+        // A trainee's PC: the host pressed START. Adopt its terrain, scenario and seats, then load the field like a solo run.
+        void Update()
+        {
+            var lan = Chaukanna.Net.LanSession.Instance;
+            if (lan == null || lan.PendingStart == null) return;
+            var packet = lan.PendingStart;
+            lan.PendingStart = null;
+            // A real-terrain run whose area is not on this PC: fetch it from the trainer first (the start resumes after).
+            if (!Chaukanna.Net.LanSession.HasArea(packet)) { lan.RequestArea(packet); return; }
+            try
+            {
+                // Asset references (ground materials, masks) cannot cross the network: JSON carries the host's instance
+                // ids, which mean nothing here. Keep this PC's own copies of the same assets.
+                var kit = Terrain.surfaceKit;
+                var mask = Terrain.modificationMask;
+                var rules = new List<SurfaceRule>(Terrain.surfaceRules);
+                JsonUtility.FromJsonOverwrite(packet.terrainJson, Terrain);
+                Terrain.surfaceKit = kit;
+                Terrain.modificationMask = mask;
+                Terrain.surfaceRules = rules;
+                Scenario = JsonUtility.FromJson<ScenarioConfig>(packet.scenarioJson);
+                difficultyIndex = packet.difficulty;
+                if (Terrain.UsesDem)
+                {
+                    // The area on this PC: shipped with the build, downloaded here, or just received from the trainer.
+                    string local = !string.IsNullOrEmpty(packet.areaName)
+                        ? ElevationDownloader.Resolve(ElevationDownloader.ProjectAreasPrefix + packet.areaName + "/" + packet.demFile)
+                        : ElevationDownloader.Resolve(Terrain.demPath);
+                    if (System.IO.File.Exists(local) && UseArea(local))
+                    {
+                        // UseArea sets size, centre and blend from the file; the trainer's own settings win.
+                        JsonUtility.FromJsonOverwrite(packet.terrainJson, Terrain);
+                        Terrain.surfaceKit = kit;
+                        Terrain.modificationMask = mask;
+                        Terrain.surfaceRules = rules;
+                        Terrain.demPath = local;
+                        demPath = local;
+                        demLoadedFrom = local;
+                    }
+                    else
+                    {
+                        SetTerrainMode(TerrainMode.PureProcedural);
+                        Message = "The trainer's real-terrain area could not be loaded on this PC: using procedural terrain from the same seed.";
+                    }
+                }
+                Players.Clear();
+                ulong me = Unity.Netcode.NetworkManager.Singleton != null ? Unity.Netcode.NetworkManager.Singleton.LocalClientId : 0;
+                foreach (var p in packet.players) Players.Add(new PlayerSlot { name = p.name, post = p.post, ready = true, isLocal = p.clientId == me });
+                SpawnPoints.Clear();
+                SpawnPoints.AddRange(packet.spawnPoints);
+                lan.EnterField();
+                startingFromHost = true;
+                bool ok = StartSession();
+                startingFromHost = false;
+                if (!ok) Debug.LogWarning("[LAN] Could not start the host's run here: " + Message);
+            }
+            catch (Exception e) { startingFromHost = false; Message = "Could not start the host's run: " + e.Message; Debug.LogException(e); }
         }
 
         struct GUIEnabledScope : IDisposable

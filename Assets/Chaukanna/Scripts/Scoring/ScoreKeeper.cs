@@ -22,6 +22,10 @@ namespace Chaukanna.Scoring
         public SessionResult Last { get; private set; }   // null until the run has ended
         public string LastSavedPath { get; private set; }
         public string LastReportPath { get; private set; }
+        // The soldier's learner model (module 9), refitted after every run and kept between sessions.
+        public LearnerProfile Learner { get; private set; }
+        // The soldier playing: a pseudonymous ID from the proficiency-board login, or "Player 1".
+        public static string PlayerName = "Player 1";
         public int SavedCount { get; private set; }       // goes up each time a session file is written
         public static string SessionsFolder => Path.Combine(Application.persistentDataPath, "sessions");
 
@@ -50,6 +54,7 @@ namespace Chaukanna.Scoring
 
         void Update()
         {
+            if (Learner == null) Learner = LearnerModel.Load(PlayerName);
             if (spawner == null) spawner = FindAnyObjectByType<ScenarioSpawner>();
             if (spawner == null) return;
             if (spawner.RunNumber != run)
@@ -65,7 +70,7 @@ namespace Chaukanna.Scoring
             if (Last == null && ContactRegistry.Live.Count == 0) Finish();
 
             var kb = Keyboard.current;
-            if (Last != null && kb != null && kb.rKey.wasPressedThisFrame && !ContactRegistry.InputBlocked) spawner.Restart();
+            if (Last != null && kb != null && kb.rKey.wasPressedThisFrame && !ContactRegistry.InputBlocked && !Chaukanna.Net.LanSession.Active) spawner.Restart();   // in a LAN session the trainer starts the next run
         }
 
         void Finish()
@@ -77,10 +82,21 @@ namespace Chaukanna.Scoring
             foreach (var line in ScoreCalculator.Describe(Last).Split('\n'))
                 if (line.Trim().Length > 0) Debug.Log(line.TrimEnd());
 
+            // LAN: a trainee's PC sends its finished result to the trainer's dashboard.
+            if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Client) Chaukanna.Net.LanSession.Instance.SendResult(Last, true);
+            // A Range drill keeps its own result (RangeDrill.Last) and feeds the learner itself; nothing else to write.
+            if (RunConditions.RangeDrill) { Learner = LearnerModel.Load(PlayerName); return; }
+            try
+            {
+                Learner = LearnerModel.Update(PlayerName, Last, ContactRegistry.Records, Rules);
+                foreach (var line in LearnerModel.Describe(Learner).Split('\n')) Debug.Log(line);
+            }
+            catch (Exception e) { Debug.LogWarning("[Learner] Update failed: " + e.Message); }
+
             LastReportPath = null;
             if (saveHtmlReport)
             {
-                LastReportPath = HtmlReport.Save(Last, ContactRegistry.Records, "Player 1");
+                LastReportPath = HtmlReport.Save(Last, ContactRegistry.Records, PlayerName);
                 if (LastReportPath != null) Debug.Log("[Report] AAR written to " + LastReportPath);
             }
 
@@ -106,7 +122,7 @@ namespace Chaukanna.Scoring
             var s = Current();
             if (s == null) return null;
             if (string.IsNullOrEmpty(s.timestamp)) s.timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + (Last == null ? " (run in progress)" : "");
-            string path = HtmlReport.Save(s, ContactRegistry.Records, "Player 1");
+            string path = HtmlReport.Save(s, ContactRegistry.Records, PlayerName);
             if (Last != null) LastReportPath = path;
             return path;
         }
@@ -126,6 +142,16 @@ namespace Chaukanna.Scoring
             s.difficulty = RunConditions.Difficulty ?? "";
             s.allowMovement = RunConditions.AllowMovement;
             s.displayTier = RunConditions.DisplayTier ?? "desktop";
+            ScoreCalculator.StampPrevalence(s, RunConditions.Prevalence, RunConditions.QuietWatch, RunConditions.NullMission);
+            s.playerId = PlayerName;
+            s.packageId = RunConditions.PackageId ?? "";
+            s.referencePackage = RunConditions.ReferencePackage;
+            s.directorOn = RunConditions.DirectorOn;
+            s.sandbagFlags = Director.SandbagFlags;
+            s.directorLog.Clear();
+            foreach (var e in Director.Log) s.directorLog.Add($"{e.time:F0}s {e.kind} (intensity {e.intensity}): {e.reason}");
+            s.arcminPerPixel = Chaukanna.Player.DisplayCalibration.CurrentArcminPerPixel(Camera.main);
+            s.displayComparable = Chaukanna.Player.DisplayCalibration.Settings.trueSize && Chaukanna.Player.DisplayCalibration.Comparable(s.arcminPerPixel);
             s.nightVisionPercent = spawner.ScenarioTime > 0f ? Mathf.Clamp(100f * RunConditions.NightVisionSeconds / spawner.ScenarioTime, 0f, 100f) : 0f;
         }
 

@@ -78,7 +78,7 @@ namespace Chaukanna.Trainer
             spawner = FindAnyObjectByType<ScenarioSpawner>();
             keeper = FindAnyObjectByType<ScoreKeeper>();
             trainer = GetComponent<TrainerScreen>();
-            if (Players == null) Players = new LocalPlayerSource(FindAnyObjectByType<ScoreKeeper>(), spawner);
+            if (Players == null) Players = Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Host ? new NetPlayerSource(FindAnyObjectByType<ScoreKeeper>(), spawner) : (IPlayerSource)new LocalPlayerSource(FindAnyObjectByType<ScoreKeeper>(), spawner);
             if (Unit == null) Unit = new SampleUnitStatsSource();
         }
 
@@ -218,6 +218,7 @@ namespace Chaukanna.Trainer
                 float y = Roster(pad, top, leftW);
                 y = Overview(pad, y, leftW, player);
                 y = Quality(pad, y, leftW, player);
+                y = LearnerSection(pad, y, leftW);
                 y = Trends(pad, y, leftW, player, false);
                 y = UnitPanel(pad, y, leftW);
                 float y2 = TreeSection(rightX, top, rightW, player);
@@ -231,6 +232,7 @@ namespace Chaukanna.Trainer
                 float y = Roster(pad, top, w);
                 y = Overview(pad, y, w, player);
                 y = Quality(pad, y, w, player);
+                y = LearnerSection(pad, y, w);
                 y = TreeSection(pad, y, w, player);
                 y = Timeline(pad, y, w, player);
                 y = Replay(pad, y, w, player);
@@ -379,10 +381,53 @@ namespace Chaukanna.Trainer
             GUI.Label(new Rect(x, y, w, 20f), $"Clock misses {Warn(s.clockMisses)}   Correct rejections <b>{s.correctRejections}</b>   Unverified engagements {Warn(s.unverifiedEngagements)}   Search failures {Warn(s.searchFailures)}   Perception failures {Warn(s.perceptionFailures)}", C.Small);
             y += 24f;
 
+            if (s.prevalence != "Custom" || s.quietWatch)
+            {
+                string pv = $"Prevalence <b>{s.prevalence}</b>, realised {(s.realisedHostileShare < 0f ? "-" : (100f * s.realisedHostileShare).ToString("F0") + " %")} hostile" + (s.prevalenceNote.Length > 0 ? $"  <color=#{ColorUtility.ToHtmlStringRGB(C.Warn)}>{s.prevalenceNote}</color>" : "");
+                GUI.Label(new Rect(x, y, w, 20f), pv, C.Small);
+                y += 22f;
+            }
+            if (s.quietWatch)
+            {
+                GUI.Label(new Rect(x, y, w, 20f), "<b>Quiet watch vigilance</b>  " + s.vigilance.summary, C.Small);
+                y += 22f;
+            }
             y = SdtRow(x, y, w, "Report: is there a drone?", s.reportSdt);
             y = SdtRow(x, y, w, "Engage: is it hostile?", s.engageSdt);
             GUI.Label(new Rect(x, y, w, 18f), "Process uses the player's own call, the card and the evidence they had; the result is what happened. Placeholder thresholds.", C.Small);
             return y + 28f;
+        }
+
+        // Module 9: what the learner model has learned about this soldier over all their sessions, and the next run it suggests.
+        float LearnerSection(float x, float y, float w)
+        {
+            var p = keeper != null ? keeper.Learner : null;
+            C.SectionTitle(new Rect(x, y, w, 26f), "LEARNER MODEL (all sessions)");
+            y += 32f;
+            if (p == null || p.observations.Count == 0)
+            {
+                GUI.Label(new Rect(x, y, w, 20f), "No sessions yet. The model starts learning after the first finished run.", C.Small);
+                return y + 28f;
+            }
+            float ability = 1f / (1f + Mathf.Exp(-p.theta));
+            GUI.Label(new Rect(x, y, w, 20f), $"<b>{p.player}</b>   {p.sessions} sessions, {p.observations.Count} graded events.   Ability {p.theta:+0.00;-0.00;0.00} (logit; 0 = average trainee)", C.Label);
+            y += 24f;
+            GUI.Label(new Rect(x, y, w, 18f), "Weakest recognition (predicted right call):", C.Small);
+            y += 20f;
+            foreach (var c in LearnerModel.Weakest(p, 3))
+            {
+                var bar = new Rect(x + 8f, y + 4f, Mathf.Min(160f, w * 0.3f), 10f);
+                C.Fill(bar, C.Panel);
+                C.Fill(new Rect(bar.x, bar.y, bar.width * c.p, bar.height), c.p >= 0.75f ? C.Good : c.p >= 0.5f ? C.Warn : C.Bad);
+                GUI.Label(new Rect(bar.xMax + 8f, y, w - bar.width - 20f, 18f), $"{c.p * 100f:F0} %  {LearnerModel.Pretty(c.cls)}, {c.light}, {LearnerModel.RangeNames[c.rangeBin]}  ({c.seen} seen)", C.Small);
+                y += 20f;
+            }
+            var plan = LearnerModel.Plan(p);
+            GUI.Label(new Rect(x, y + 2f, w - 130f, 36f), plan.text, C.Small);
+            if (trainer != null && GUI.Button(new Rect(x + w - 124f, y, 124f, 24f), "Use for next run")) trainer.ApplyLearnerPlan(plan);
+            y += 40f;
+            GUI.Label(new Rect(x, y, w, 18f), "One logistic model (ability + task + class + light + range), pooled with the other soldiers on this PC. Placeholder priors until there is data.", C.Small);
+            return y + 26f;
         }
 
         // d' (telling them apart) and c (trigger-happy < 0 < hesitant) on a slider, only once there are 20 of each.

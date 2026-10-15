@@ -119,6 +119,15 @@ namespace Chaukanna.Trainer
             return DifficultyAdvisor.Recommend(played, difficulties.Count, finished.ScorePercent, harderAbovePercent, easierBelowPercent);
         }
 
+        // The learner model's suggestion for the next run (module 9): conditions and class mix aimed at 75 % predicted success.
+        public void ApplyLearnerPlan(Chaukanna.Scoring.LearnerPlan plan)
+        {
+            if (plan == null) return;
+            Chaukanna.Scoring.LearnerModel.Apply(plan, Working);
+            if (plan.difficultyStep != 0 && difficulties.Count > 0) SetDifficulty(Mathf.Clamp(difficultyIndex + plan.difficultyStep, 0, difficulties.Count - 1));
+            ContactRegistry.Note("Trainer applied the learner plan: " + plan.text);
+        }
+
         public string DifficultyName(int index)
         {
             return index >= 0 && index < difficulties.Count && difficulties[index] != null ? difficulties[index].displayName : "-";
@@ -243,6 +252,17 @@ namespace Chaukanna.Trainer
             if (GUILayout.Button("ROE at start: " + RoeCards.Short(Working.roeAtStart), button, GUILayout.Height(row))) Working.roeAtStart = RoeCards.Next(Working.roeAtStart);
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Prevalence: " + (Working.prevalence == Prevalence.Custom ? "CUSTOM COUNTS" : Working.prevalence.ToString().ToUpper() + $" ({ScenarioConfig.Share(Working.prevalence) * 100f:F0} % of {Working.prevalenceTotal})"), button, GUILayout.Height(row))) Working.prevalence = (Prevalence)(((int)Working.prevalence + 1) % 4);
+            if (Working.prevalence != Prevalence.Custom && !Working.quietWatch && GUILayout.Button("Contacts: " + Working.prevalenceTotal, button, GUILayout.Height(row))) Working.prevalenceTotal = Working.prevalenceTotal >= 40 ? 6 : Working.prevalenceTotal + 6;
+            if (GUILayout.Button("Quiet watch: " + (Working.quietWatch ? "ON" : "OFF"), button, GUILayout.Height(row))) Working.quietWatch = !Working.quietWatch;
+            if (GUILayout.Button("Range drill: " + (Working.rangeDrill ? "ON" : "OFF"), button, GUILayout.Height(row))) Working.rangeDrill = !Working.rangeDrill;
+            if (Working.quietWatch)
+            {
+                if (GUILayout.Button($"{Working.watchMinutes:F0} min", button, GUILayout.Height(row))) Working.watchMinutes = Working.watchMinutes >= 90f ? 20f : Working.watchMinutes >= 45f ? 90f : 45f;
+                if (GUILayout.Button($"{Working.contactsPerHour:F0} / hour", button, GUILayout.Height(row))) Working.contactsPerHour = Working.contactsPerHour >= 4f ? 1f : Working.contactsPerHour + 1f;
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
             string flipMode = !Working.roeFlip ? "OFF" : Working.roeFlipRandom ? "RANDOM" : "SET TIME";
             if (GUILayout.Button("Card change: " + flipMode, button, GUILayout.Height(row)))
             {
@@ -293,6 +313,15 @@ namespace Chaukanna.Trainer
                 if (recommended != difficultyIndex && GUILayout.Button("Apply", button, GUILayout.Width(80f), GUILayout.Height(row))) SetDifficulty(recommended);
                 GUILayout.EndHorizontal();
             }
+            var learner = scoreKeeper != null ? scoreKeeper.Learner : null;
+            if (learner != null && learner.observations.Count > 0)
+            {
+                var plan = Chaukanna.Scoring.LearnerModel.Plan(learner);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("<b>Learner:</b> " + plan.text, small, GUILayout.Height(row));
+                if (GUILayout.Button("Use plan", button, GUILayout.Width(90f), GUILayout.Height(row))) ApplyLearnerPlan(plan);
+                GUILayout.EndHorizontal();
+            }
             Working.Validate();
             string warning = Working.Warning();
             if (warning.Length > 0) GUILayout.Label("<color=#FFB040>" + warning + "</color>", label);
@@ -301,7 +330,15 @@ namespace Chaukanna.Trainer
             GUILayout.BeginHorizontal();
             var oldColour = GUI.backgroundColor;
             GUI.backgroundColor = new Color(0.3f, 0.9f, 0.4f);
-            if (GUILayout.Button("<b>START</b>", new GUIStyle(button) { richText = true, fontSize = fontSize + 5 }, GUILayout.Width(150f), GUILayout.Height(row * 1.5f))) StartRun();
+            // In a LAN session a restart here would only restart this PC: the trainer sends everyone back to the lobby instead.
+            if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Host)
+            {
+                if (GUILayout.Button("<b>BACK TO LOBBY (all)</b>", new GUIStyle(button) { richText = true, fontSize = fontSize + 1 }, GUILayout.Width(190f), GUILayout.Height(row * 1.5f))) Chaukanna.Net.LanSession.Instance.BackToLobby();
+            }
+            else if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.None)
+            {
+                if (GUILayout.Button("<b>START</b>", new GUIStyle(button) { richText = true, fontSize = fontSize + 5 }, GUILayout.Width(150f), GUILayout.Height(row * 1.5f))) StartRun();
+            }
             GUI.backgroundColor = oldColour;
             // The only way into the score dashboard. It opens in this half; the player's view is untouched unless the trainer expands it.
             if (dashboard != null && GUILayout.Button("SCORE", new GUIStyle(button) { fontSize = fontSize + 2 }, GUILayout.Width(120f), GUILayout.Height(row * 1.5f)))

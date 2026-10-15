@@ -35,8 +35,8 @@ namespace Chaukanna.Player
 
         static Material Unlit(Color colour)
         {
-            var shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
+            var shader = Chaukanna.RuntimeMaterials.Find("Universal Render Pipeline/Unlit");
+            if (shader == null) shader = Chaukanna.RuntimeMaterials.Find("Sprites/Default");
             return new Material(shader) { color = colour };
         }
 

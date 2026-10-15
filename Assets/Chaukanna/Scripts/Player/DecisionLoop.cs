@@ -91,9 +91,31 @@ namespace Chaukanna.Player
             return any;
         }
 
+        // LAN team mode, on the host: a trainee's decision on the shared sky. The host's effectors decide what happens
+        // (whether the jam works, whether the shot hits); the team record gets the call if it had none.
+        public bool RemoteAct(Contact c, PlayerCall call, PlayerAction action, out bool locked, out bool hit, out string result)
+        {
+            locked = hit = false;
+            result = "";
+            if (c == null) return false;
+            if (c.Call == PlayerCall.None && call != PlayerCall.None) c.Classify(call, Vector3.Distance(transform.position, c.transform.position));
+            bool ok = ActOn(c, action, false);
+            locked = c.Data.actionLocked;
+            hit = c.Data.engageHit;
+            result = c.Data.actionResult ?? "";
+            return ok;
+        }
+
         bool ActOn(Contact c, PlayerAction action, bool group)
         {
             if (c.Call == PlayerCall.None) return false;
+            // LAN team mode on a trainee's PC: jams and shots go to the host, which owns the sky; the answer comes back.
+            if (Chaukanna.Net.LanSession.TeamClient && (action == PlayerAction.Jam || action == PlayerAction.Engage))
+            {
+                Chaukanna.Net.LanSession.SendDecision(c, action);
+                if (action == PlayerAction.Jam) return c.Act(action, "sent to the jammer", group, false);
+                return true;    // the shot is recorded when the host says whether it hit
+            }
             // Swarm triage: how near the post this member was, among its swarm, when it was first acted on.
             if (c.Data.swarmId >= 0 && c.Data.swarmRank < 0 && (action == PlayerAction.Jam || action == PlayerAction.Engage))
             {

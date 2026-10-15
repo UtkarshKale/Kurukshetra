@@ -273,7 +273,7 @@ namespace Chaukanna.Trainer
             {
                 var box = new Rect(r.x + 8f, r.y + 8f, r.width - 16f, 40f);
                 if (e.type == EventType.Repaint) Fill(box, new Color(0f, 0f, 0f, 0.75f));
-                GUI.Label(box, "  Map offline: type the latitude and longitude instead, or use an area downloaded before.", small);
+                GUI.Label(box, "  Map offline (" + Status.Replace("Map tiles: ", "") + "): no internet here, or it is blocked. Areas shipped with the build and downloaded before still work; or type the latitude and longitude.", small);
             }
         }
 
@@ -404,6 +404,8 @@ namespace Chaukanna.Trainer
             if (failed.Contains(key) || pending.Contains(key)) return null;
 
             string cache = source.diskCache ? ElevationDownloader.TileCachePath(source.set, z, x, y) : null;
+            // No copy on this PC yet: the tiles shipped with the build, so the map works offline.
+            if (cache != null && !File.Exists(cache) && File.Exists(ElevationDownloader.BundledTilePath(source.set, z, x, y))) cache = ElevationDownloader.BundledTilePath(source.set, z, x, y);
             if (cache != null && File.Exists(cache))
             {
                 tex = new Texture2D(2, 2, source.overlay ? TextureFormat.RGBA32 : TextureFormat.RGB24, false) { wrapMode = TextureWrapMode.Clamp };
@@ -417,6 +419,8 @@ namespace Chaukanna.Trainer
             }
             return null;
         }
+
+        bool offlineLogged;
 
         IEnumerator Fetch(string key, TileSource source, int z, int x, int y, string cache)
         {
@@ -434,6 +438,7 @@ namespace Chaukanna.Trainer
                     failed.Add(key);
                     Offline = request.result == UnityWebRequest.Result.ConnectionError;
                     Status = "Map tiles: " + request.error;
+                    if (Offline && !offlineLogged) { offlineLogged = true; Debug.LogWarning($"[Map] Tile download failed ({request.error}) for {url.Split('?')[0]}. Areas and tiles shipped in {ElevationDownloader.BundledFolder} still work."); }
                     yield break;
                 }
                 Offline = false;

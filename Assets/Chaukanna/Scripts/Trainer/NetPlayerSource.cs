@@ -1,0 +1,45 @@
+using System.Collections.Generic;
+using Chaukanna.Net;
+using Chaukanna.Scenario;
+using Chaukanna.Scoring;
+
+namespace Chaukanna.Trainer
+{
+    // The score dashboard's player list in a LAN session (on the host): this PC's own seat first, then every trainee with
+    // the latest result their PC sent (live every 5 s, final at the end of the run).
+    public class NetPlayerSource : IPlayerSource
+    {
+        readonly LocalPlayerSource local;
+        readonly List<PlayerEntry> entries = new List<PlayerEntry>();
+
+        public NetPlayerSource(ScoreKeeper keeper, ScenarioSpawner spawner)
+        {
+            local = new LocalPlayerSource(keeper, spawner);
+        }
+
+        public int Count => Refresh();
+
+        public PlayerEntry Get(int index)
+        {
+            Refresh();
+            return index >= 0 && index < entries.Count ? entries[index] : null;
+        }
+
+        int Refresh()
+        {
+            entries.Clear();
+            var me = local.Get(0);
+            me.name = ScoreKeeper.PlayerName + " (host)";
+            entries.Add(me);
+            var lan = LanSession.Instance;
+            if (lan == null) return entries.Count;
+            foreach (var p in lan.roster.players)
+            {
+                if (p.host) continue;
+                lan.Results.TryGetValue(p.clientId, out var s);
+                entries.Add(new PlayerEntry { name = p.name, state = string.IsNullOrEmpty(p.state) ? "waiting" : p.state, current = s });
+            }
+            return entries.Count;
+        }
+    }
+}

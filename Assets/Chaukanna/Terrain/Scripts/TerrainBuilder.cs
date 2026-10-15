@@ -134,6 +134,8 @@ namespace Chaukanna.TerrainGen
                 go.transform.localPosition = new Vector3(-half + tx * tileSize, yOffset, -half + tz * tileSize);
                 var terrain = go.GetComponent<Terrain>();
                 terrain.allowAutoConnect = true;
+                // A material that is always in the build (the default terrain shader is left out of a built game: pink).
+                if (Chaukanna.RuntimeMaterials.Terrain != null) terrain.materialTemplate = Chaukanna.RuntimeMaterials.Terrain;
                 grid[tx, tz] = terrain;
                 result.tiles.Add(terrain);
             }

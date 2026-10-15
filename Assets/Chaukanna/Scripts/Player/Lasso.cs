@@ -95,6 +95,21 @@ namespace Chaukanna.Player
             if (len < 0.01f) return;
             var matrix = GUI.matrix;
             var old = GUI.color;
+            // RotateAroundPivot puts the pivot in the wrong place when GUI.matrix is already scaled (the trainer panel and
+            // dashboard scale to the window): the lines came out long, displaced and green across the replay. In that
+            // case draw the line as a row of small squares instead, which needs no rotation.
+            if (!matrix.isIdentity)
+            {
+                GUI.color = c;
+                float step = Mathf.Max(1f, width * 0.75f);
+                for (float t = 0f; t <= len; t += step)
+                {
+                    Vector2 p = a + d * (t / len);
+                    GUI.DrawTexture(new Rect(p.x - width * 0.5f, p.y - width * 0.5f, width, width), Texture2D.whiteTexture);
+                }
+                GUI.color = old;
+                return;
+            }
             GUIUtility.RotateAroundPivot(Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, a);
             GUI.color = c;
             GUI.DrawTexture(new Rect(a.x, a.y - width * 0.5f, len, width), Texture2D.whiteTexture);

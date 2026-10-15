@@ -166,7 +166,7 @@ namespace Chaukanna.TerrainGen
         public static ElevationGrid Load(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) throw new DemException("No elevation file was chosen.");
-            if (!Path.IsPathRooted(path)) path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", path));
+            path = ElevationDownloader.Resolve(path);
             if (!File.Exists(path)) throw new DemException("Elevation file not found: " + path);
             string ext = Path.GetExtension(path).ToLowerInvariant();
             ElevationGrid grid;

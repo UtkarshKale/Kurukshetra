@@ -135,6 +135,37 @@ namespace Chaukanna.TerrainGen
             }
         }
 
+        // --- Data shipped with a build (CRIT-1: "Map offline" on another PC). A post-build step copies the map tile cache and
+        // the downloaded areas into <build>/ChaukannaData/, so a copied build has them with no network and no install.
+        public const string BundleFolderName = "ChaukannaData";
+        public static string BundledFolder => Path.GetFullPath(Path.Combine(Application.dataPath, "..", BundleFolderName));
+        public static string BundledTilePath(string set, int z, int x, int y) => Path.Combine(BundledFolder, "tiles", set, z.ToString(), x.ToString(), y + ".png");
+        public static string BundledAreasFolder => Path.Combine(BundledFolder, "RealData");
+        public const string ProjectAreasPrefix = "Assets/Chaukanna/Terrain/RealData/";
+        // Areas a trainee PC received from the trainer over the LAN (kept out of the project even in the Editor).
+        public static string ReceivedAreasFolder => Path.Combine(Application.persistentDataPath, "ReceivedAreas");
+
+        // Finds a data file wherever it is on this PC: as given, relative to the project (Editor) or the build, and for an
+        // area recorded on the trainer's PC (project path, or an absolute path from another PC), in the bundled copy.
+        public static string Resolve(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return path;
+            string full = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(Application.dataPath, "..", path));
+            if (File.Exists(full)) return full;
+            string norm = path.Replace("\\", "/");
+            int at = norm.IndexOf(ProjectAreasPrefix, StringComparison.OrdinalIgnoreCase);
+            if (at >= 0)
+            {
+                string rest = norm.Substring(at + ProjectAreasPrefix.Length);
+                foreach (var root in new[] { BundledAreasFolder, AreasFolder, ReceivedAreasFolder })
+                {
+                    string candidate = Path.GetFullPath(Path.Combine(root, rest));
+                    if (File.Exists(candidate)) return candidate;
+                }
+            }
+            return full;
+        }
+
         // The coarse surround of an area is <name>_surround.raw beside it, covering SurroundFactor times the side.
         public const string SurroundSuffix = "_surround";
         public const float SurroundFactor = 4f;
@@ -151,9 +182,13 @@ namespace Chaukanna.TerrainGen
         public static List<string> DownloadedAreas()
         {
             var list = new List<string>();
-            if (!Directory.Exists(AreasFolder)) return list;
-            foreach (var json in Directory.GetFiles(AreasFolder, "*.json", SearchOption.AllDirectories))
-                if (File.Exists(Path.ChangeExtension(json, ".raw")) && !json.EndsWith(SurroundSuffix + ".json", StringComparison.OrdinalIgnoreCase)) list.Add(Path.ChangeExtension(json, ".raw"));
+            // This PC's own downloads, plus the areas shipped with the build.
+            foreach (var folder in new[] { AreasFolder, BundledAreasFolder, ReceivedAreasFolder })
+            {
+                if (!Directory.Exists(folder)) continue;
+                foreach (var json in Directory.GetFiles(folder, "*.json", SearchOption.AllDirectories))
+                    if (File.Exists(Path.ChangeExtension(json, ".raw")) && !json.EndsWith(SurroundSuffix + ".json", StringComparison.OrdinalIgnoreCase) && !list.Contains(Path.ChangeExtension(json, ".raw"))) list.Add(Path.ChangeExtension(json, ".raw"));
+            }
             list.Sort(StringComparer.OrdinalIgnoreCase);
             return list;
         }

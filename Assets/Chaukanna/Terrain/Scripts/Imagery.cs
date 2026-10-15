@@ -34,7 +34,7 @@ namespace Chaukanna.TerrainGen
         public static Imagery Load(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) throw new DemException("No imagery file was chosen.");
-            if (!Path.IsPathRooted(path)) path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", path));
+            path = ElevationDownloader.Resolve(path);
             if (!File.Exists(path)) throw new DemException("Imagery file not found: " + path);
             string ext = Path.GetExtension(path).ToLowerInvariant();
             if (ext == ".tif" || ext == ".tiff" || ext == ".jp2")

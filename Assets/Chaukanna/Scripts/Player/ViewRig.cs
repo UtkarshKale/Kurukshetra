@@ -155,9 +155,9 @@ namespace Chaukanna.Player
 
         public static Material Mat(Color c)
         {
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Simple Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            var shader = Chaukanna.RuntimeMaterials.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Chaukanna.RuntimeMaterials.Find("Universal Render Pipeline/Simple Lit");
+            if (shader == null) shader = Chaukanna.RuntimeMaterials.Find("Standard");
             var m = new Material(shader) { color = c };
             if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.15f);
             return m;

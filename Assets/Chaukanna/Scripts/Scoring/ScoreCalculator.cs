@@ -144,6 +144,35 @@ namespace Chaukanna.Scoring
         public int clockMisses, correctRejections, unverifiedEngagements;
         public int searchFailures, perceptionFailures;   // never brought into view / in view but never marked before the deadline
         public SdtResult reportSdt = new SdtResult(), engageSdt = new SdtResult();
+
+        // Prevalence (module 5): what was asked for and what the run really had (doc V7), and Quiet-watch vigilance.
+        // Who and what (module 12) and the Director (module 10): only reference packages with the Director off go on the board.
+        public string playerId = "";
+        public string packageId = "";
+        public bool referencePackage, directorOn;
+        public int sandbagFlags;
+        public List<string> directorLog = new List<string>();
+        // True-size display (module 6): the angular resolution this run was played at, and whether it is comparable.
+        public float arcminPerPixel = -1f;
+        public bool displayComparable;
+        public string prevalence = "Custom";
+        public float realisedHostileShare = -1f;
+        public string prevalenceNote = "";
+        public bool quietWatch, nullMission;
+        public VigilanceResult vigilance = new VigilanceResult();
+    }
+
+    // Vigilance over a watch (doc §5.4.8): the watch cut into thirds; hit rate (brought into view in time) and N1b
+    // (in view to marked) per third, and their change from the first third to the last. Few contacts per third in one
+    // session, so the trend is shown as "too few to say" until there are at least 2 contacts in every third.
+    [Serializable]
+    public class VigilanceResult
+    {
+        public int[] contacts = new int[3], hits = new int[3];
+        public float[] hitRate = { -1f, -1f, -1f }, n1b = { -1f, -1f, -1f };
+        public float hitChange, n1bChange;          // last third minus first third
+        public bool enough;
+        public string summary = "";
     }
 
     // Signal detection for one kind of decision: hit and false-alarm counts, d' (can tell them apart) and c (trigger-happy
@@ -340,6 +369,7 @@ namespace Chaukanna.Scoring
             }
             if (actioned > 0) s.engagementDecisionScore = 100f * correctActions / actioned;
             RollUp(s, records, rules);
+            PrevalenceAndVigilance(s, records, runEndTime, rules);
             s.swarm = Triage(records, rules);
             if (s.swarm.happened) { s.totalPoints += s.swarm.points; s.maxPoints += s.swarm.maxPoints; }
             if (roeChanges != null && roeChanges.Count > 0)
@@ -349,6 +379,52 @@ namespace Chaukanna.Scoring
                 s.maxPoints += s.cardChange.maxPoints;
             }
             return s;
+        }
+
+        static void PrevalenceAndVigilance(SessionResult s, IList<ContactRecord> records, float runEndTime, RuleSet rules)
+        {
+            int all = 0, hostile = 0;
+            foreach (var r in records) { all++; if (Category(r.truthClass) == ContactCategory.Hostile) hostile++; }
+            s.realisedHostileShare = all > 0 ? (float)hostile / all : -1f;
+
+            var v = s.vigilance = new VigilanceResult();
+            float third = Mathf.Max(1f, runEndTime) / 3f;
+            var n1bSum = new float[3];
+            var n1bCount = new int[3];
+            foreach (var c in s.contacts)
+            {
+                if (!c.scored) continue;
+                int k = Mathf.Clamp((int)(c.spawnTime / third), 0, 2);
+                v.contacts[k]++;
+                if (c.detected && c.detectionSeconds <= rules.mediumSeconds) v.hits[k]++;
+                if (c.n1bSeconds >= 0f) { n1bSum[k] += c.n1bSeconds; n1bCount[k]++; }
+            }
+            v.enough = true;
+            for (int k = 0; k < 3; k++)
+            {
+                if (v.contacts[k] > 0) v.hitRate[k] = (float)v.hits[k] / v.contacts[k];
+                if (n1bCount[k] > 0) v.n1b[k] = n1bSum[k] / n1bCount[k];
+                if (v.contacts[k] < 2) v.enough = false;
+            }
+            v.hitChange = v.hitRate[0] >= 0f && v.hitRate[2] >= 0f ? v.hitRate[2] - v.hitRate[0] : 0f;
+            v.n1bChange = v.n1b[0] >= 0f && v.n1b[2] >= 0f ? v.n1b[2] - v.n1b[0] : 0f;
+            string Rate(int k) => v.hitRate[k] < 0f ? "-" : (100f * v.hitRate[k]).ToString("F0") + " %";
+            v.summary = $"thirds: hits {Rate(0)} / {Rate(1)} / {Rate(2)} ({v.contacts[0]}/{v.contacts[1]}/{v.contacts[2]} contacts)"
+                + (v.enough ? $", change first to last {100f * v.hitChange:+0;-0;0} points, N1b {v.n1bChange:+0.0;-0.0;0.0} s" : ", too few contacts per third to call a trend (pooled over sessions later)");
+        }
+
+        // Called by the keeper once the run's conditions are known: the requested band against what was realised (doc V7).
+        public static void StampPrevalence(SessionResult s, Prevalence requested, bool quietWatch, bool nullMission)
+        {
+            s.prevalence = requested.ToString();
+            s.quietWatch = quietWatch;
+            s.nullMission = nullMission;
+            s.prevalenceNote = "";
+            if (requested == Chaukanna.Scenario.Prevalence.Custom || s.realisedHostileShare < 0f) return;
+            var band = ScenarioConfig.Band(requested);
+            if (nullMission) s.prevalenceNote = "null mission: no hostile this run (planned)";
+            else if (s.realisedHostileShare < band.x || s.realisedHostileShare > band.y)
+                s.prevalenceNote = $"{requested} prevalence requested ({band.x * 100f:F0}-{band.y * 100f:F0} %), realised {s.realisedHostileShare * 100f:F0} %";
         }
 
         public static SwarmTriageResult Triage(IList<ContactRecord> records, RuleSet rules)

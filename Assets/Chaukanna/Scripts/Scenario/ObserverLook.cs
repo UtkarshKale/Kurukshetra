@@ -10,6 +10,8 @@ namespace Chaukanna.Scenario
         public float referenceFov = 60f;    // sensitivity scales with FOV so binoculars stay controllable
         public float minPitch = -20f;
         public float maxPitch = 85f;
+        [Tooltip("Most the view may turn per second (true-size display caps it at 60). 0 = no cap.")]
+        public float maxPanDegreesPerSecond;
 
         float yaw, pitch;
         Camera cam;
@@ -21,6 +23,7 @@ namespace Chaukanna.Scenario
             if (GetComponent<Chaukanna.Player.ObserverMove>() == null) gameObject.AddComponent<Chaukanna.Player.ObserverMove>();
             if (GetComponent<Chaukanna.Player.ViewRigSwitch>() == null) gameObject.AddComponent<Chaukanna.Player.ViewRigSwitch>();
             if (GetComponent<Chaukanna.Player.ContactSensor>() != null && GetComponent<Chaukanna.Player.LassoSelect>() == null) gameObject.AddComponent<Chaukanna.Player.LassoSelect>();
+            Chaukanna.Player.DisplayCalibration.ApplyTo(cam);
             Vector3 e = transform.eulerAngles;
             yaw = e.y;
             pitch = -Mathf.DeltaAngle(0f, e.x);
@@ -41,6 +44,11 @@ namespace Chaukanna.Scenario
 
             Vector2 delta = mouse.delta.ReadValue();
             float s = sensitivity * (cam != null ? cam.fieldOfView / referenceFov : 1f);
+            if (maxPanDegreesPerSecond > 0f && Time.deltaTime > 0f)
+            {
+                float most = maxPanDegreesPerSecond * Time.deltaTime / Mathf.Max(1e-5f, s);
+                delta = Vector2.ClampMagnitude(delta, most);
+            }
             yaw += delta.x * s;
             pitch = Mathf.Clamp(pitch + delta.y * s, minPitch, maxPitch);
             transform.rotation = Quaternion.Euler(-pitch, yaw, 0f);

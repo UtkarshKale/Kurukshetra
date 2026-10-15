@@ -67,6 +67,9 @@ namespace Chaukanna.Scoring
             h.Append($"<p>Clock misses <b>{s.clockMisses}</b> &middot; correct rejections <b>{s.correctRejections}</b> &middot; unverified engagements <b>{s.unverifiedEngagements}</b> &middot; search failures <b>{s.searchFailures}</b> &middot; perception failures <b>{s.perceptionFailures}</b> &middot; missed {s.missed} &middot; false engagements {s.falseEngagements}</p>");
             Sdt(h, "Report: is there a drone?", s.reportSdt);
             Sdt(h, "Engage: is it hostile?", s.engageSdt);
+            if (s.prevalence != "Custom" || s.quietWatch)
+                h.Append("<p><b>Prevalence:</b> ").Append(Esc(s.prevalence)).Append(", realised ").Append(s.realisedHostileShare < 0f ? "-" : F0(100f * s.realisedHostileShare) + " %").Append(" hostile").Append(s.prevalenceNote.Length > 0 ? " &middot; " + Esc(s.prevalenceNote) : "").Append("</p>");
+            if (s.quietWatch) h.Append("<p><b>Quiet watch vigilance:</b> ").Append(Esc(s.vigilance.summary)).Append("</p>");
             if (s.cardChange != null && s.cardChange.happened) h.Append("<p><b>Card change:</b> ").Append(Esc(s.cardChange.summary)).Append("</p>");
             if (s.swarm != null && s.swarm.happened) h.Append("<p><b>Swarm triage:</b> ").Append(Esc(s.swarm.summary)).Append("</p>");
             h.Append("</section>");

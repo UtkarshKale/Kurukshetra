@@ -74,6 +74,10 @@ namespace Chaukanna.Scenario
         // Where it was and whether it was on the player's screen, at the same samples: the AAR replay is built from this
         // logged state, not re-run from the seed.
         public List<TrackPoint> track = new List<TrackPoint>();
+        // What it looks like and the seed its model was picked from (a blend-in hostile looks like an own drone): what a
+        // networked trainee's PC needs to build the same-looking proxy.
+        public ContactClass lookClass;
+        public int lookSeed;
 
         public void SampleRange(float time, Vector3 position, Vector3 post)
         {
