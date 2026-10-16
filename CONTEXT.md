@@ -11,9 +11,9 @@ that memory. Read with CLAUDE.md (rules), TODO.md (queue), PROGRESS.md (history,
   TrainerMenu scene. Spec sources:
   - `Assets/Chaukanna/Docs/solution-v2-council.md`: the solution document (PS coverage R1a-R9, scoring tree §5.4,
     display contract §1.7, demo script §12, data schemas §5.7). Copied into the repo on 2026-10-16.
-  - `module-1-demo.md`: the Module 1 demo scope. NOT in the repo and was never on the dev PC; the project's coordinator
-    summarised it (key demo moments: the ROE card flip between two cards, the AI cue wrong once, the red decision-tree
-    path when an own drone is engaged). Ask the owner for the file if exact wording matters.
+  - `Assets/Chaukanna/Docs/module-1-demo.md`: the agreed Module 1 spec (the demo scene). Key demo moments: the ROE card
+    flip, the AI cue wrong once, the red decision-tree path when an own drone is engaged. Note: much has since been built
+    beyond it (LAN, full scoring, learner model) at the owner's request; its "faked" list is now partly real.
   - `unity-module-plan.md` was REJECTED by the owner as over-engineered. Do not follow it.
 - Hardware target: GTX 1650 to RTX 3050 class laptops/desktops. Quest Link is not supported on a GTX 1650.
 - VR is a core feature: a simulated VR mode (mouse = head, hands, wrist tablet, binoculars by raising both hands) is

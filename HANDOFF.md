@@ -3,6 +3,11 @@
 Written 2026-10-16 from the real state of the dev PC (C:\Users\dhruv\Chanakya). Everything below was checked, not
 assumed, unless it says otherwise.
 
+## 0. Specs in the repo
+- `Assets/Chaukanna/Docs/module-1-demo.md`: the agreed Module 1 spec. The older `unity-module-plan.md` was rejected as
+  over-engineered and is not used.
+- `Assets/Chaukanna/Docs/solution-v2-council.md`: the full solution document.
+
 ## 1. Unity
 - Editor: **6000.6.3f1** (revision 45d8eee7de74), from `ProjectSettings/ProjectVersion.txt`. Install exactly this
   version through Unity Hub (Installs > Install Editor > Archive / "other versions" if it is not listed).
