@@ -2,6 +2,11 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-16 - Handoff to a new PC
+- Wrote CLAUDE.md (rules), AGENTS.md (for any agent), CONTEXT.md (project memory for a fresh session), HANDOFF.md (move steps, tools, what is outside git) from the real repo state; copied solution-v2-council.md into Assets/Chaukanna/Docs/.
+- Checked: fresh clone of GitHub main (e7f703b) into an empty folder: about 1 GB, all 1852 LFS files present (git lfs fsck OK); a headless Unity 6000.6.3f1 import of that clone resolved 66 packages (including the GitHub-hosted com.unity.ides) and compiled with 0 errors. The test clone was deleted afterwards.
+- Tools on the dev PC: Claude Code 2.1.296, plugin effortless 1.71.0 (marketplace HeyCubit/effortless), frontend-design (synced from claude.ai), 35 Unity skills from Unity-Technologies/skills + find-skills, Unity CLI 1.0.0-beta.8, Git 2.55, Git LFS 3.7.1. No MCP servers beyond the claude.ai docs connector. The Claude project memory folder was empty.
+- Not moved by git (see HANDOFF.md): Sonniss audio, nature-pack Blends, keys in %USERPROFILE%\.chaukanna (rotate the CARTO key), the map tile cache, LocalLow saved data, and the deliberately uncommitted settings / area files.
 ## 2026-10-16 - Replay lines, map offline (CRIT-1), LAN: lobby return, Solo, area sync, lost host
 - Replay green lines: GUIUtility.RotateAroundPivot puts the pivot in the wrong place when GUI.matrix is scaled (dashboard and trainer panel), so the view lines came out long and displaced. On a scaled GUI lines are now drawn as rows of small squares. Not seen on screen by me.
 - CRIT-1: a post-build step (Terrain/Scripts/Editor/BundleOfflineData.cs) copies the map tile cache and the downloaded areas into <build>/ChaukannaData/ (test build: 70 MB tiles, 68 MB areas, no key files). The map reads bundled tiles when this PC has none; area paths recorded on another PC are resolved to the bundled copy; the offline notice names the error.

@@ -230,3 +230,8 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [x] N-L6. (done 2026-10-16: banner; Team run ends and is saved, Solo carries on) Host drops: trainees should keep their result and show "host lost" instead of just stopping.
 - [x] FIX-1. Pink terrain in the built game (2026-10-16): built-in materials in Resources; trainee PCs keep their own ground materials. Owner to rebuild and confirm.
 - [x] FIX-2. Replay green lines (2026-10-16): lines are drawn without rotation on scaled GUI (dashboard, trainer map). Owner to re-check on screen.
+
+## Handoff to a new PC (2026-10-16)
+- [x] H-1. CLAUDE.md, AGENTS.md, CONTEXT.md, HANDOFF.md written from the real repo state; solution-v2-council.md copied to Assets/Chaukanna/Docs/.
+- [ ] H-2. Owner: follow HANDOFF.md section 4 on the new PC, rotate the CARTO key, decide whether to commit the deliberately uncommitted files.
+- [ ] H-3. Ask the owner for module-1-demo.md (never on the dev PC) and add it to Assets/Chaukanna/Docs/.
