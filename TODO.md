@@ -3,7 +3,7 @@
 Work top to bottom. One task per session. Tick [x] when done and log it in PROGRESS.md.
 (plan) = needs Opus 5.5 in plan mode first; the rest are Sonnet 5.5 build tasks.
 
-SCOPE SOURCE: module-1-demo.md (the agreed Module 1 demo; the user rejected the bigger module plan as over-engineered). Its key demo moments are (1) the ROE flip between 2 cards, (2) the AI cue being wrong once, (3) the red decision-tree path when the player engages an own drone: all three exist already. module-1-demo.md is not on this PC; the re-sort follows the coordinator's summary of its sections 3-5.
+SCOPE SOURCE: module-1-demo.md (the agreed Module 1 demo; the user rejected the bigger module plan as over-engineered). Its key demo moments are (1) the ROE flip between 2 cards, (2) the AI cue being wrong once, (3) the red decision-tree path when the player engages an own drone: all three exist already. The file is now in Assets/Chaukanna/Docs/module-1-demo.md.
 First restructured 2026-10-14 against the solution doc (solution-v2-council.md: §2 PS coverage table R1a-R9, §11.1 M1 scope, §12 demo script). No item was deleted; items were moved and tagged. New items from the gap check are numbered N1 and up.
 Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo moments in §12: (1) cold open, night, own drone engaged, "your call vs the sound call"; (2) the card flip mid-mission; (3) night 24-swarm with a wrong AI cue. Shot 5b is the VR sentry.
 
