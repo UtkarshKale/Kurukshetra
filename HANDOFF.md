@@ -56,10 +56,9 @@ Not in git (move by hand if you want them):
 | Saved sessions, learner profiles, packages, roster, drills, reports | `C:\Users\dhruv\AppData\LocalLow\DefaultCompany\Chanakya\` | copy the folder to the same place | Only if you want the history and the board data |
 
 Deliberately left uncommitted (they were changed by Unity or by the owner, not by the agent; decide yourself):
-- `ProjectSettings/EditorBuildSettings.asset`, `GraphicsSettings.asset`, `ProjectSettings.asset`,
-  `UnityConnectSettings.asset` and `Assets/Settings/Build Profiles/`: from the owner's build export. The build-scene list
-  in them is TrainerMenu then MixedSky (SampleScene off). If you do not carry them over, set the build scenes again on
-  the new PC: File > Build Profiles > Windows > Scene List: TrainerMenu first, then MixedSky.
+- The build scene list (TrainerMenu, MixedSky) and the Windows build profile were committed on 2026-10-16 (ea33098);
+  Unity Connect was switched back off and not committed. Still uncommitted from the owner's export:
+  `ProjectSettings/GraphicsSettings.asset` and `ProjectSettings/ProjectSettings.asset` (Unity's own re-save; harmless).
 - `Assets/Settings/PC_RPAsset.asset`, `Assets/Settings/UniversalRenderPipelineGlobalSettings.asset`: rewritten by Unity.
 - `Assets/Chaukanna/Terrain/RealData/Area/*` (re-downloaded) and `Assets/Chaukanna/Terrain/RealData/ter/` (a new area).
 - `Assets/_Recovery/` (Unity's scene backup) and an empty `Assets/Resources/` folder: safe to ignore.
