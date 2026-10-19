@@ -58,6 +58,7 @@ namespace Chaukanna.Scoring
             if (Learner == null) Learner = LearnerModel.Load(PlayerName);
             if (spawner == null) spawner = FindAnyObjectByType<ScenarioSpawner>();
             if (spawner == null) return;
+            if (Chaukanna.Replay.BlackBoxRecorder.Instance == null) gameObject.AddComponent<Chaukanna.Replay.BlackBoxRecorder>();
             if (spawner.RunNumber != run)
             {
                 run = spawner.RunNumber;
@@ -79,6 +80,8 @@ namespace Chaukanna.Scoring
             Last = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart, RunConditions.SeatRole, GroupCalls.Records);
             Last.timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             StampConditions(Last);
+            Last.blackBox = Chaukanna.Replay.BlackBoxRecorder.FinishNow() ?? "";
+            if (Chaukanna.Replay.BlackBoxRecorder.Latest != null) Last.voiceFolder = Chaukanna.Replay.BlackBoxRecorder.Latest.voiceFolder ?? "";
             Debug.Log($"[Score] Conditions: {Last.timeOfDay}, {Last.visibility}, night vision {Last.nightVisionPercent:F0}% of the run. Difficulty: {(Last.difficulty.Length > 0 ? Last.difficulty : "none")}");
             foreach (var line in ScoreCalculator.Describe(Last).Split('\n'))
                 if (line.Trim().Length > 0) Debug.Log(line.TrimEnd());

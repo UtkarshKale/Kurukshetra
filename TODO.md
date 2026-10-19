@@ -316,3 +316,5 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] R11b. Full later: Observer seat, voice on busy Wi-Fi test, exact heard-audio rebuild, voice codec upgrade if needed.
 - [x] R12. Phase 5 sound engine prototype (2026-10-20).
 - [ ] R12b. Full sound later: ambient-noise audibility gate (solution-v3 1.16), ground reflection, sound travel delay, real recorded samples option.
+- [x] R13. Phase 6 black box + 3D replay + voice review prototype; green lines fixed (2026-10-20).
+- [ ] R13b. Full replay later: remote seats' locks/actions attributed, per-seat HUD in FOLLOW, sample-exact HEARD audio, HTML replay in 3D.

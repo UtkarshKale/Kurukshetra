@@ -2,9 +2,13 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Phase 6: black box + 3D replay (prototype)
+- Scripts/Replay/: BlackBox (10 Hz seats + contacts, 5 Hz group samples of up to 64 agents, events; blackbox_<time>.bin + .json, linked from the session), Replay3D (from SCORE > 3D REPLAY in the field scene; cameras FOLLOW / CHASE / FREE / TOP; play, speed 0.25-8x, scrub with event ticks, prev/next event, seat select, truth toggle), ReplayVoice (CLEAN and HEARD rebuilt from the heard log; synced to the replay clock). Green-lines fix done (clipped drawing, GuiDraw.cs). About 180-600 KB per minute.
+- Verified: ReplaySelfTest 50 checks, Report and Voice tests; a live 40 s run saved a black box and the 3D replay rendered (top-down and chase pictures). Not verified: the replay bar on screen, FREE camera input, voice playback, exit restore, LAN run with voice.
+- NEXT: phase 7 trees / bushes / buildings, then STOP for the polish pass.
+
 ## 2026-10-20 - Phase 5: sound engine (prototype)
 - Scripts/Audio/: procedural drone motor sound (blade-pass harmonics, detuned rotors, quad / FPV / fixed-wing, RPM from speed, climb, turn; jammed sputter), birds flutter + chirp, 1/r gain + air-absorption low-pass, Unity Doppler/pan; 12 pooled voices for the loudest contacts (same score as the sensor bearing) + up to 4 beds for swarms, flocks and dense sky (no per-agent sources); gunfire, clank, jammer hum. F6: Sound on/off + Volume %. SoundSelfTest 19 checks, SensorSelfTest pass. Not verified: nobody has listened in Play (scratch quad.wav exists).
-- NEXT: phase 6 full replay (black box, 3D, clean + heard voice), then phase 7 trees/bushes/buildings, then STOP for the polish pass.
 
 ## 2026-10-20 - Phase 4: multiplayer fixes + proximity voice (prototype)
 - Net: height range -2048..+2048 m, LAN discovery (UDP 47777, Join buttons; IP fallback), clock ping (median offset), 10 Hz seat poses relayed and stored for the replay (seats on the truth map), late joiners refused. Voice (TEAM only): V nearby (3D, full under 10 m, silent at 60 m), Y radio (band-pass + distortion), mic 16 kHz mono, 30 ms mu-law frames via the host, ~100 ms jitter buffer, REC indicator. Trainer Comms section (lobby + F6, live): range, full-volume range, radio noise, dropout %, muffle Hz, per seat or all, applied on the receiver; clean voice recorded on the host with a 'heard' log for the replay (voice_<time>/ index.json + .mulaw). Files: Net/NetExtras.cs, VoiceCore.cs, VoiceChat.cs, Trainer/CommsPanel.cs.

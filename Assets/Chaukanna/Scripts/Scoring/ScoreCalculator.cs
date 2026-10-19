@@ -113,6 +113,8 @@ namespace Chaukanna.Scoring
         public bool allowMovement;                  // the soldier could walk
         public string displayTier = "desktop";      // desktop, vr-sim or mixed: never pooled with each other
         public string terrainLayers = "";           // trees / grass / buildings: the mode and the data actually used (OSM, satellite estimate, procedural, off)
+        public string blackBox = "";                // path of the black box (.bin) of this run, for the 3D replay
+        public string voiceFolder = "";             // folder of the host's voice recording, if any
         public string mapCredit = "";               // set when OpenStreetMap data was shown
         public int comfortRating = -1;              // VR only: 1-5 from the after-run check, 0 = skipped, -1 = not asked
         public string comfortSickness = "";

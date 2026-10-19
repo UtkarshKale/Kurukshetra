@@ -78,6 +78,7 @@ namespace Chaukanna.Trainer
 
         ScoreKeeper keeper;
         string reportNote = "";
+        bool open3dReplay;
         float replayT;
         bool replayPlaying;
 
@@ -124,6 +125,12 @@ namespace Chaukanna.Trainer
             if (!PlayerView.Split && !Expanded) { Close(); return; }   // the trainer panel was hidden
 
             var kb = Keyboard.current;
+            if (open3dReplay)
+            {
+                open3dReplay = false;
+                if (!Chaukanna.Replay.Replay3D.OpenLatest(keeper, out string why)) reportNote = why;
+                return;
+            }
             if (kb == null) return;
             if (replayPlaying)
             {
@@ -156,15 +163,16 @@ namespace Chaukanna.Trainer
             float headH = narrow ? 76f : 40f;
             C.Fill(new Rect(0f, 0f, region.width, region.height), C.Background);
 
-            Rect closeR, expandR, chartsR, reportR, noteR, titleR;
+            Rect closeR, expandR, chartsR, reportR, noteR, titleR, replayR;
             if (narrow)
             {
-                float gap = 6f, bw = (region.width - pad * 2f - gap * 3f) / 4f;
+                float gap = 6f, bw = (region.width - pad * 2f - gap * 4f) / 5f;
                 titleR = new Rect(pad, 4f, region.width - pad * 2f, 30f);
                 reportR = new Rect(pad, 40f, bw, 30f);
                 chartsR = new Rect(pad + (bw + gap), 40f, bw, 30f);
                 expandR = new Rect(pad + (bw + gap) * 2f, 40f, bw, 30f);
                 closeR = new Rect(pad + (bw + gap) * 3f, 40f, bw, 30f);
+                replayR = new Rect(pad + (bw + gap) * 4f, 40f, bw, 30f);
                 float tw = C.Header.CalcSize(new GUIContent("SCORE DASHBOARD")).x + 12f;
                 noteR = new Rect(pad + tw, 8f, Mathf.Max(0f, region.width - pad * 2f - tw), 22f);
                 titleR.width = tw;
@@ -173,10 +181,11 @@ namespace Chaukanna.Trainer
             {
                 titleR = new Rect(pad, 4f, region.width - 260f, headH - 8f);
                 reportR = new Rect(region.width - 492f, 6f, 120f, headH - 12f);
+                replayR = new Rect(region.width - 640f, 6f, 140f, headH - 12f);
                 chartsR = new Rect(region.width - 364f, 6f, 120f, headH - 12f);
                 expandR = new Rect(region.width - 236f, 6f, 120f, headH - 12f);
                 closeR = new Rect(region.width - 108f, 6f, 96f, headH - 12f);
-                noteR = new Rect(pad + 250f, 10f, Mathf.Max(0f, region.width - 760f), 20f);
+                noteR = new Rect(pad + 250f, 10f, Mathf.Max(0f, region.width - 920f), 20f);
             }
             GUI.Label(titleR, "SCORE DASHBOARD", C.Header);
             if (GUI.Button(expandR, Expanded ? "Collapse" : "Expand")) SetExpanded(!Expanded);
@@ -188,6 +197,7 @@ namespace Chaukanna.Trainer
                 reportNote = path != null ? "Report: " + path : "No run to report yet.";
                 if (path != null) Application.OpenURL("file:///" + path.Replace('\\', '/'));
             }
+            if (GUI.Button(replayR, "3D REPLAY")) open3dReplay = true;
             if (reportNote.Length > 0) GUI.Label(noteR, reportNote, C.Small);
             if (GUI.Button(chartsR, ChartsActive ? "Overview" : "Charts"))
             {
@@ -669,6 +679,13 @@ namespace Chaukanna.Trainer
         // their screen. Click a contact for "your call" against "the sound call". Built from the logged tracks of the latest
         // run (an annotated replay, not a re-simulation).
         const float ReplaySpeed = 10f;
+        bool replayFollow;      // centre the replay map on the soldier instead of the post
+
+        static Vector2 ReplayOffset(float wx, float wz, float scale)
+        {
+            Vector3 d = Quaternion.Euler(0f, -RunLog.sectorYaw, 0f) * (new Vector3(wx, 0f, wz) - RunLog.post);
+            return new Vector2(d.x, -d.z) * scale;
+        }
 
         float ReplayEnd()
         {
@@ -699,36 +716,81 @@ namespace Chaukanna.Trainer
 
             float size = Mathf.Min(w, 380f);
             var map = new Rect(x, y, size, size);
-            if (Event.current.type == EventType.Repaint) C.Fill(map, new Color(0.06f, 0.08f, 0.11f, 1f));
+            var local = new Rect(0f, 0f, size, size);       // everything below is drawn inside this group, in map-local coordinates
+            GUI.BeginGroup(map);
+            if (Event.current.type == EventType.Repaint) C.Fill(local, new Color(0.06f, 0.08f, 0.11f, 1f));
             float radius = Mathf.Max(100f, RunLog.spawnRadius), scale = size * 0.5f / (radius * 1.1f);
-            Vector2 centre = map.center;
+            ViewPoint view = default;
+            bool haveView = false;
+            foreach (var v in RunLog.view) { if (v.t <= replayT) { view = v; haveView = true; } else break; }
+            Vector2 centre = local.center;
+            if (replayFollow && haveView) centre = local.center - ReplayOffset(view.x, view.z, scale);
             Quaternion turn = Quaternion.Euler(0f, -RunLog.sectorYaw, 0f);
             System.Func<float, float, Vector2> toMap = (wx, wz) =>
             {
                 Vector3 d = turn * (new Vector3(wx, 0f, wz) - RunLog.post);
                 return centre + new Vector2(d.x, -d.z) * scale;
             };
+            bool repaint = Event.current.type == EventType.Repaint;
 
-            // Where the soldier was looking.
-            ViewPoint view = default;
-            bool haveView = false;
-            foreach (var v in RunLog.view) { if (v.t <= replayT) { view = v; haveView = true; } else break; }
-            if (haveView && Event.current.type == EventType.Repaint)
+            if (repaint)
             {
-                Vector2 eye = toMap(view.x, view.z);
-                foreach (float side in new[] { -0.5f, 0.5f })
+                // Spawn ring.
+                for (int i = 0; i < 72; i++)
                 {
-                    float a = (view.yaw - RunLog.sectorYaw + side * view.fov) * Mathf.Deg2Rad;
-                    Chaukanna.Player.LassoMath.Line(eye, eye + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * radius * scale, 1.5f, new Color(0.4f, 1f, 0.5f, 0.7f));
+                    float a = i * 5f * Mathf.Deg2Rad;
+                    var q = centre + new Vector2(Mathf.Sin(a), -Mathf.Cos(a)) * radius * scale;
+                    if (local.Contains(q)) C.Fill(new Rect(q.x - 0.75f, q.y - 0.75f, 1.5f, 1.5f), new Color(1f, 1f, 1f, 0.25f));
+                }
+                // The soldier's path so far, fading with age.
+                Vector2 prevP = default; bool havePrev = false;
+                foreach (var v in RunLog.view)
+                {
+                    if (v.t > replayT) break;
+                    Vector2 p = toMap(v.x, v.z);
+                    if (havePrev && (p - prevP).sqrMagnitude > 4f)
+                    {
+                        float age = Mathf.Clamp01((replayT - v.t) / 120f);
+                        GuiDraw.Line(prevP, p, 2f, new Color(0.4f, 1f, 0.5f, Mathf.Lerp(0.8f, 0.15f, age)), local);
+                        prevP = p;
+                    }
+                    else if (!havePrev) prevP = p;
+                    havePrev = true;
+                }
+                // Contact trails: the last 10 s of each contact's track, in its class colour.
+                foreach (var rec in ContactRegistry.Records)
+                {
+                    var col = ClassColour(rec.truthClass.ToString()); col.a = 0.35f;
+                    for (int k = 1; k < rec.track.Count; k++)
+                    {
+                        var a = rec.track[k - 1]; var b = rec.track[k];
+                        if (b.t > replayT) break;
+                        if (b.t < replayT - 10f) continue;
+                        GuiDraw.Line(toMap(a.x, a.z), toMap(b.x, b.z), 1.5f, col, local);
+                    }
+                }
+                // Where the soldier is looking: a faint filled wedge (narrow and bright through the binoculars), its edges, and an arrow.
+                if (haveView)
+                {
+                    Vector2 eye = toMap(view.x, view.z);
+                    bool optic = view.fov < 20f;
+                    float yawRel = view.yaw - RunLog.sectorYaw, half = Mathf.Max(0.5f, view.fov * 0.5f);
+                    Color wedge = optic ? new Color(1f, 1f, 0.5f, 0.35f) : new Color(0.4f, 1f, 0.5f, 0.12f);
+                    GuiDraw.Wedge(eye, yawRel, half, radius * scale, wedge, local);
+                    GuiDraw.WedgeEdges(eye, yawRel, half, radius * scale, 1.5f, optic ? new Color(1f, 1f, 0.5f, 0.9f) : new Color(0.4f, 1f, 0.5f, 0.7f), local);
+                    Vector2 tip = eye + GuiDraw.Dir(yawRel) * 11f;
+                    GuiDraw.Line(eye, tip, 3f, Color.white, local);
+                    if (local.Contains(eye)) C.Fill(new Rect(eye.x - 3f, eye.y - 3f, 6f, 6f), new Color(0.4f, 1f, 0.5f, 1f));
                 }
             }
-            if (Event.current.type == EventType.Repaint) C.Fill(new Rect(centre.x - 4f, centre.y - 4f, 8f, 8f), Color.white);
+            Vector2 post = toMap(RunLog.post.x, RunLog.post.z);
+            if (repaint && local.Contains(post)) C.Fill(new Rect(post.x - 4f, post.y - 4f, 8f, 8f), Color.white);
 
             // Contacts at this moment; a click picks the nearest.
             ContactResult focus = Tree.focus >= 0 && Tree.focus < s.contacts.Count ? s.contacts[Tree.focus] : null;
             int clicked = -1;
             float best = 14f;
-            bool click = Event.current.type == EventType.MouseDown && map.Contains(Event.current.mousePosition);
+            bool click = Event.current.type == EventType.MouseDown && local.Contains(Event.current.mousePosition);
             for (int i = 0; i < s.contacts.Count; i++)
             {
                 var c = s.contacts[i];
@@ -736,16 +798,23 @@ namespace Chaukanna.Trainer
                 foreach (var r in ContactRegistry.Records) if (r.id == c.id) { rec = r; break; }
                 if (rec == null || !At(rec.track, replayT, out Vector3 at, out bool inView)) continue;
                 Vector2 p = toMap(at.x, at.z);
-                if (!map.Contains(p)) continue;
-                if (Event.current.type == EventType.Repaint)
+                if (!local.Contains(p)) continue;
+                if (repaint)
                 {
                     if (inView) C.Fill(new Rect(p.x - 7f, p.y - 7f, 14f, 14f), new Color(0.35f, 1f, 0.45f, 0.45f));
                     C.Fill(new Rect(p.x - 3f, p.y - 3f, 6f, 6f), ClassColour(c.truthClass));
                     if (c == focus) { C.Fill(new Rect(p.x - 9f, p.y - 10f, 18f, 1.5f), Color.white); C.Fill(new Rect(p.x - 9f, p.y + 9f, 18f, 1.5f), Color.white); }
-                    if (c.actionTime >= 0f && replayT >= c.actionTime) GUI.Label(new Rect(p.x + 7f, p.y - 16f, 90f, 16f), c.action, C.Small);
+                    // Event pop-ups: a call or action shows for 4 s after it happened.
+                    string pop = null;
+                    if (rec.callTime >= 0f && replayT >= rec.callTime && replayT < rec.callTime + 4f) pop = "called " + rec.call;
+                    if (rec.actionTime >= 0f && replayT >= rec.actionTime && replayT < rec.actionTime + 4f) pop = rec.action + (string.IsNullOrEmpty(rec.actionResult) ? "" : ": " + rec.actionResult);
+                    if (pop == null && c.actionTime >= 0f && replayT >= c.actionTime) pop = c.action;
+                    if (pop != null) GUI.Label(new Rect(p.x + 7f, p.y - 16f, 150f, 16f), pop, C.Small);
                 }
                 if (click) { float d = Vector2.Distance(p, Event.current.mousePosition); if (d < best) { best = d; clicked = i; } }
             }
+            GUI.EndGroup();
+            if (GUI.Button(new Rect(x + size - 74f, y + size - 20f, 72f, 18f), replayFollow ? "Follow: on" : "Follow: off")) replayFollow = !replayFollow;
             if (clicked >= 0) { Tree.focus = clicked; Event.current.Use(); }
 
             // The picked contact's two calls, beside the map (or under it when narrow).
@@ -762,7 +831,7 @@ namespace Chaukanna.Trainer
                 GUI.Label(new Rect(tx, ty + 92f, tw, 40f), "Annotated replay of the logged run, not a re-simulation.", C.Small);
             }
             float bottom = Mathf.Max(y + size, ty + 120f);
-            GUI.Label(new Rect(x, bottom + 2f, w, 18f), "Up = sector centre, white square = the post, green lines = the soldier's view, green halo = on the soldier's screen.", C.Small);
+            GUI.Label(new Rect(x, bottom + 2f, w, 18f), "Up = sector centre, white square = the post, green wedge = the soldier's view (yellow = optic), green trail = their path, halo = on their screen.", C.Small);
             return bottom + 28f;
         }
 
