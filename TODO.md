@@ -310,3 +310,5 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] R9b. Full birds later: flocks on LAN team clients, group calls over LAN, density waves, flap harder when climbing, bird-mimic drone.
 - [ ] POLISH PASS (stop before it; the owner sets its content). Already in it: 2D trainer-view path editor (custom paths for drones, swarms, bird flocks; place and move players), owner 2026-10-19.
 - [ ] Order after birds (owner 2026-10-19): AAR dashboards with real data visualisations + export > multiplayer + proximity voice (trainer can degrade it live) > sound engine (solution-v3 1.16) > full replay (black box, 3D, both voice versions) > trees / bushes / buildings > STOP for the polish pass > VR.
+- [x] R10. Phase 3 AAR cards prototype (2026-10-20).
+- [ ] R10b. Full AAR later: per-card PNG, hover tooltips, officer-checked verdicts and thresholds, unit pack.

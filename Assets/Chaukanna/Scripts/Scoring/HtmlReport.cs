@@ -19,13 +19,13 @@ namespace Chaukanna.Scoring
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
         // Writes the report next to the session files and returns its path (null on failure).
-        public static string Save(SessionResult s, IList<ContactRecord> records, string player)
+        public static string Save(SessionResult s, IList<ContactRecord> records, string player, IList<Chaukanna.Trainer.TrendPoint> trend = null, IList<LearnerModel.Cell> weakest = null)
         {
             try
             {
                 Directory.CreateDirectory(ReportsFolder);
                 string path = Path.Combine(ReportsFolder, $"aar_{DateTime.Now:yyyyMMdd_HHmmss}_seed{s.seed}.html");
-                File.WriteAllText(path, Build(s, records, player), new UTF8Encoding(false));
+                File.WriteAllText(path, Build(s, records, player, trend, weakest), new UTF8Encoding(false));
                 return path;
             }
             catch (Exception e)
@@ -35,11 +35,11 @@ namespace Chaukanna.Scoring
             }
         }
 
-        public static string Build(SessionResult s, IList<ContactRecord> records, string player)
+        public static string Build(SessionResult s, IList<ContactRecord> records, string player, IList<Chaukanna.Trainer.TrendPoint> trend = null, IList<LearnerModel.Cell> weakest = null)
         {
             var h = new StringBuilder(64 * 1024);
             h.Append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-            h.Append("<title>Kurukshetra AAR ").Append(Esc(s.timestamp)).Append("</title><style>").Append(Css).Append("</style></head><body>");
+            h.Append("<title>Kurukshetra AAR ").Append(Esc(s.timestamp)).Append("</title><style>").Append(Css).Append(AarCardsHtml.Css).Append("</style></head><body>");
 
             // Header.
             h.Append("<header><div class=\"disclaimer\">").Append(Disclaimer).Append("</div>");
@@ -57,6 +57,9 @@ namespace Chaukanna.Scoring
             Tile(h, F0(s.engagementDecisionScore) + " %", "Engagement decisions", Grade(s.engagementDecisionScore));
             Tile(h, s.processScore < 0f ? "-" : F0(s.processScore) + " / 100", "Process score (on belief)", s.processScore < 0f ? "" : Grade(s.processScore));
             h.Append("</section>");
+
+            h.Append("<div class=\"actions noprint\"><button type=\"button\" onclick=\"window.print()\">Print / Save as PDF</button><button type=\"button\" id=\"dl-json\">Download data (JSON)</button></div>");
+            AarCardsHtml.Append(h, AarCards.Build(s, trend, weakest));
 
             Debrief(h, s);
 
@@ -96,6 +99,8 @@ namespace Chaukanna.Scoring
 
             h.Append("<footer>").Append(Disclaimer).Append(" Cards A / B / C, release points, deadlines and bands are placeholders, not Indian doctrine; an officer must set them. ")
                 .Append("\"In view\" means on the player's screen and passing the detection test, never \"saw\". The sound call is an annotated replay of the logged run, not a re-simulation. Asset and data credits: see CREDITS.txt next to the game.</footer>");
+            h.Append("<script id=\"session-data\" type=\"application/json\">").Append(JsonUtility.ToJson(s).Replace("</", "<\\/")).Append("</script>");
+            h.Append("<script>").Append(DownloadScript).Append("</script>");
             h.Append("<script>").Append(ReplayScript).Append("</script></body></html>");
             return h.ToString();
         }
@@ -299,7 +304,7 @@ namespace Chaukanna.Scoring
         }
 
         // "HostileFixedWing" -> "Hostile fixed wing".
-        static string Pretty(string name)
+        public static string Pretty(string name)
         {
             if (string.IsNullOrEmpty(name)) return "";
             var sb = new StringBuilder();
@@ -358,6 +363,12 @@ table.conf{width:auto}table.conf td{text-align:center;min-width:44px}td.d{backgr
 .replay{display:flex;gap:16px;flex-wrap:wrap}.replay canvas{background:#0e141b;max-width:100%;height:auto;border:1px solid var(--line);cursor:pointer}.side{flex:1;min-width:240px}.ctl{display:flex;gap:6px;align-items:center}.ctl input{flex:1}#info{margin-top:10px;background:var(--panel);padding:8px;min-height:120px}
 footer{margin-top:24px;border-top:1px solid var(--line);padding-top:8px}
 @media print{.noprint{display:none}body{max-width:none;font-size:10px;padding:0}h2{margin-top:10px}tr.path{display:none}@page{size:A4;margin:10mm}}
+";
+
+        // "Download data (JSON)": the embedded session as a file, made in the page (works from file://, no network).
+        const string DownloadScript = @"
+(function(){var b=document.getElementById('dl-json'),d=document.getElementById('session-data');if(!b||!d)return;
+b.onclick=function(){var blob=new Blob([d.textContent],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kurukshetra_session.json';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},500);};})();
 ";
 
         // Plain JavaScript replay: no libraries, works from a file:// URL with no network.

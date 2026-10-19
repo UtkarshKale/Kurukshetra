@@ -2,6 +2,10 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Phase 3: AAR cards (prototype)
+- 14 cards, weakest problem first (severity 0-100, status good/watch/problem, one-line verdict, n footer), each with a real chart (bars, histogram, confusion heatmap, stacked bars, 2x2 grid, d'/c sliders, clock ticks, timeline, trend line). Dashboard: Cards / Details toggle (Cards default), 1-3 columns by width; exports Open report (HTML), Save card images (PNG per screenful), Export data (JSON + CSV), Open folder. HTML report: same cards as inline SVG, Print / Save as PDF (A4 print CSS, cards never split), Download data (JSON). Files: Scoring/AarCards.cs, AarCardsHtml.cs, Trainer/AarCardsView.cs.
+- Verified: AarCardsSelfTest 23/23, Dashboard and Report tests; the HTML rendered in Edge looks right (checked by picture). Not verified: the IMGUI cards on screen, PNG capture, Open folder. Verdict wording and thresholds are placeholders for an officer to check.
+
 ## 2026-10-20 - Phase 2: birds (prototype)
 - Old bird art unlinked (Contact_Bird.asset prefab/variants cleared; code ignores bird model lists). Code-built bird mesh (kite / pigeon / sparrow, 3 tints, size 0.9-1.1), 9 cached flap poses, flap rate by size (2.5 / 5.5 / 8 Hz), flap-and-glide, banking, per-bird phase. Flocks over 64 run on the swarm engine (7 topological neighbours, Ballerini 2008; StarDisplay-like roost circling; banked-turn limit). Small flocks and single birds flap on the CPU. Crowd birds use the pose buckets. K key: group call Drone swarm / Bird flock / Mixed on a selected group, scored once per group (10 points), on the dashboard and in the HTML report.
 - Verified: BirdSelfTest 38/38 plus swarm, crowd, scoring, report, dashboard tests; live 3000-bird flock to 125 s, no exceptions, group call scored; a picture shows a flock with flapping birds. 3000-bird step 1.24 ms. Not verified: the K strip on screen, pigeon and kite flocks by eye, a build, LAN (proxies do not flap; group calls not sent).

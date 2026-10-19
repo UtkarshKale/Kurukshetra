@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using Chaukanna.Scenario;
 using Chaukanna.Scoring;
 using UnityEngine;
@@ -67,6 +69,12 @@ namespace Chaukanna.Trainer
             if (chartsPanel != null) chartsPanel.SendMessage("SetVisible", visible, SendMessageOptions.DontRequireReceiver);
 
         }
+
+        // Cards (default) or the detailed sections.
+        public bool CardsView = true;
+        readonly AarCardsView cardsView = new AarCardsView();
+        bool capturing;
+        string exportNote = "";
 
         ScoreKeeper keeper;
         string reportNote = "";
@@ -236,11 +244,21 @@ namespace Chaukanna.Trainer
             selected = Mathf.Clamp(selected, 0, Mathf.Max(0, Players.Count - 1));
             var player = Players.Count > 0 ? Players.Get(selected) : null;
             float bottom;
-            if (w >= 900f)
+            if (CardsView)
             {
+                float y = Roster(pad, top, w);
+                y = ViewToggle(pad, y, w);
+                if (player != null && player.current != null) y = ExportBar(pad, y, w, player.current);
+                EnsureTrend(player);
+                y = cardsView.Draw(pad, y, w, player != null ? player.current : null, trend, keeper != null ? keeper.Learner : null);
+                bottom = y;
+            }
+            else if (w >= 900f)
+            {
+                float y = Roster(pad, top, w * 0.42f);
+                y = ViewToggle(pad, y, w * 0.42f);
                 // Wide: overview on the left, per-contact detail on the right.
                 float leftW = w * 0.42f, rightX = pad + leftW + pad, rightW = w - leftW - pad;
-                float y = Roster(pad, top, leftW);
                 y = Overview(pad, y, leftW, player);
                 y = Quality(pad, y, leftW, player);
                 y = LearnerSection(pad, y, leftW);
@@ -255,6 +273,7 @@ namespace Chaukanna.Trainer
             else
             {
                 float y = Roster(pad, top, w);
+                y = ViewToggle(pad, y, w);
                 y = Overview(pad, y, w, player);
                 y = Quality(pad, y, w, player);
                 y = LearnerSection(pad, y, w);
@@ -277,6 +296,108 @@ namespace Chaukanna.Trainer
             }
             GUI.EndGroup();
             GUI.matrix = saved;
+        }
+
+        // --- Cards / Details switch and the exports. ---
+
+        void EnsureTrend(PlayerEntry player)
+        {
+            int real = player != null ? player.history.Count : 0;
+            if (real != trendRealCount)
+            {
+                trendRealCount = real;
+                trend = TrendData.PadWithSamples(player != null ? player.history : new List<TrendPoint>(), TrendData.ChartSessions);
+            }
+        }
+
+        float ViewToggle(float x, float y, float w)
+        {
+            float bw = 110f;
+            var a = new Rect(x, y, bw, 26f);
+            var b = new Rect(x + bw + 6f, y, bw, 26f);
+            C.Fill(CardsView ? a : b, C.Selected);
+            if (GUI.Button(a, "Cards")) CardsView = true;
+            if (GUI.Button(b, "Details")) CardsView = false;
+            GUI.Label(new Rect(x + bw * 2f + 16f, y, Mathf.Max(0f, w - bw * 2f - 16f), 26f), CardsView ? "Weakest problem first" : "The full sections", C.Small);
+            return y + 36f;
+        }
+
+        // Open report, card images, data export, open folder.
+        float ExportBar(float x, float y, float w, SessionResult s)
+        {
+            string[] names = { "Open report (HTML)", "Save card images (PNG)", "Export data (JSON + CSV)", "Open folder" };
+            int perRow = w >= 640f ? 4 : 2;
+            float gap = 6f, bw = (w - gap * (perRow - 1)) / perRow, bh = 28f;
+            for (int i = 0; i < names.Length; i++)
+            {
+                var r = new Rect(x + (i % perRow) * (bw + gap), y + (i / perRow) * (bh + gap), bw, bh);
+                if (!GUI.Button(r, names[i])) continue;
+                if (i == 0)
+                {
+                    string path = keeper != null ? keeper.ExportReport() : null;
+                    exportNote = path != null ? "Report: " + path : "No run to report yet.";
+                    if (path != null) Application.OpenURL("file:///" + path.Replace('\\', '/'));
+                }
+                else if (i == 1) { if (!capturing) StartCoroutine(CaptureCards()); }
+                else if (i == 2)
+                {
+                    var files = AarCards.ExportData(s, HtmlReport.ReportsFolder);
+                    exportNote = files != null ? "Saved: " + files[0] + " and " + files[1] : "Could not write the data files.";
+                }
+                else OpenReportsFolder();
+            }
+            y += Mathf.CeilToInt(names.Length / (float)perRow) * (bh + gap);
+            if (exportNote.Length > 0)
+            {
+                GUI.Label(new Rect(x, y, w, 18f), exportNote, C.Small);
+                y += 20f;
+            }
+            return y + 6f;
+        }
+
+        void OpenReportsFolder()
+        {
+            try
+            {
+                Directory.CreateDirectory(HtmlReport.ReportsFolder);
+                Application.OpenURL("file:///" + HtmlReport.ReportsFolder.Replace('\\', '/'));
+                exportNote = "Folder: " + HtmlReport.ReportsFolder;
+            }
+            catch (System.Exception e) { exportNote = "Could not open the folder: " + e.Message; }
+        }
+
+        // One PNG per screenful of the expanded cards view (the whole window, so the Expanded dashboard is what gets saved).
+        IEnumerator CaptureCards()
+        {
+            capturing = true;
+            bool wasExpanded = Expanded;
+            float oldScroll = scroll;
+            SetExpanded(true);
+            scroll = 0f;
+            yield return null;
+            yield return null;
+            string folder = HtmlReport.ReportsFolder;
+            int saved = 0;
+            string stem = Path.Combine(folder, $"aar_cards_{System.DateTime.Now:yyyyMMdd_HHmmss}");
+            try { Directory.CreateDirectory(folder); } catch (System.Exception) { }
+            int pages = Mathf.Clamp(Mathf.CeilToInt(pageHeight / Mathf.Max(1f, viewHeight)), 1, 8);
+            for (int i = 0; i < pages; i++)
+            {
+                scroll = i * viewHeight * 0.95f;
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                var tex = ScreenCapture.CaptureScreenshotAsTexture();
+                if (tex != null)
+                {
+                    try { File.WriteAllBytes($"{stem}_{i + 1}.png", tex.EncodeToPNG()); saved++; }
+                    catch (System.Exception e) { exportNote = "Could not write the PNG: " + e.Message; }
+                    Destroy(tex);
+                }
+            }
+            if (saved > 0) exportNote = $"Saved {saved} card image(s): {stem}_1.png";
+            scroll = oldScroll;
+            SetExpanded(wasExpanded);
+            capturing = false;
         }
 
         // --- Sections. Each draws at (x, y) with width w and returns the y below it. ---

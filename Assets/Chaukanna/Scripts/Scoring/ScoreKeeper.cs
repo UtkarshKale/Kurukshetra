@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Chaukanna.Scenario;
 using UnityEngine;
@@ -96,7 +97,7 @@ namespace Chaukanna.Scoring
             LastReportPath = null;
             if (saveHtmlReport)
             {
-                LastReportPath = HtmlReport.Save(Last, ContactRegistry.Records, PlayerName);
+                LastReportPath = HtmlReport.Save(Last, ContactRegistry.Records, PlayerName, TrendFor(Last), WeakestFor());
                 if (LastReportPath != null) Debug.Log("[Report] AAR written to " + LastReportPath);
             }
 
@@ -115,6 +116,16 @@ namespace Chaukanna.Scoring
             }
         }
 
+        // Saved sessions plus this one, oldest first, for the report's trend card.
+        List<Chaukanna.Trainer.TrendPoint> TrendFor(SessionResult s)
+        {
+            var list = Chaukanna.Trainer.TrendData.LoadSessions(SessionsFolder, 9);
+            list.Add(Chaukanna.Trainer.TrendData.FromSession(s));
+            return list;
+        }
+
+        List<LearnerModel.Cell> WeakestFor() => Learner != null ? LearnerModel.Weakest(Learner, 3) : null;
+
         // The HTML report for the finished run (written now if it was not yet), or a snapshot of the run so far.
         public string ExportReport()
         {
@@ -122,7 +133,7 @@ namespace Chaukanna.Scoring
             var s = Current();
             if (s == null) return null;
             if (string.IsNullOrEmpty(s.timestamp)) s.timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + (Last == null ? " (run in progress)" : "");
-            string path = HtmlReport.Save(s, ContactRegistry.Records, PlayerName);
+            string path = HtmlReport.Save(s, ContactRegistry.Records, PlayerName, TrendFor(s), WeakestFor());
             if (Last != null) LastReportPath = path;
             return path;
         }
