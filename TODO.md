@@ -312,3 +312,5 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] Order after birds (owner 2026-10-19): AAR dashboards with real data visualisations + export > multiplayer + proximity voice (trainer can degrade it live) > sound engine (solution-v3 1.16) > full replay (black box, 3D, both voice versions) > trees / bushes / buildings > STOP for the polish pass > VR.
 - [x] R10. Phase 3 AAR cards prototype (2026-10-20).
 - [ ] R10b. Full AAR later: per-card PNG, hover tooltips, officer-checked verdicts and thresholds, unit pack.
+- [x] R11. Phase 4 multiplayer + proximity voice prototype (2026-10-20). Two-PC test pending (owner).
+- [ ] R11b. Full later: Observer seat, voice on busy Wi-Fi test, exact heard-audio rebuild, voice codec upgrade if needed.

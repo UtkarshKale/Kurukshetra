@@ -28,11 +28,12 @@ namespace Chaukanna.Net
         // The host's scenario clock as seen from here. On the host it is the scenario clock; on a team client it is the time of the
         // last snapshot plus the seconds since it arrived (a client's own ScenarioTime starts when its field finishes loading, so it
         // is not the host's). The shared crowd runs on it. Valid once the first snapshot has arrived.
-        public static bool HostTimeValid => Instance != null && (Instance.role == Role.Host || Instance.hostTimeValid);
-        public static float HostTime => Instance != null && Instance.role == Role.Client && Instance.hostTimeValid ? ClockFrom(Instance.hostSnapTime, Instance.hostSnapAt, Time.time) : ContactRegistry.ScenarioTime;
+        public static bool HostTimeValid => Instance != null && (Instance.role == Role.Host || Instance.hostTimeValid || Instance.clock.Valid);
+        public static float HostTime => Instance != null && Instance.role == Role.Client && Instance.clock.Valid ? Instance.clock.HostNow(Time.realtimeSinceStartup)
+            : Instance != null && Instance.role == Role.Client && Instance.hostTimeValid ? ClockFrom(Instance.hostSnapTime, Instance.hostSnapAt, Time.time) : ContactRegistry.ScenarioTime;
         public static float ClockFrom(float snapTime, float snapAt, float now) => snapTime + Mathf.Max(0f, now - snapAt);
         // A host scenario time on this PC's own scenario clock (what the records on this PC are written in).
-        public static float HostToLocal(float hostTime) => Instance != null && Instance.role == Role.Client && Instance.hostTimeValid ? hostTime + (ContactRegistry.ScenarioTime - HostTime) : hostTime;
+        public static float HostToLocal(float hostTime) => Instance != null && Instance.role == Role.Client && (Instance.hostTimeValid || Instance.clock.Valid) ? hostTime + (ContactRegistry.ScenarioTime - HostTime) : hostTime;
 
         // Counters for the status line and the live test (host).
         public int ReportsRelayed, RemoteDecisions, CrowdPicksServed;
@@ -58,10 +59,49 @@ namespace Chaukanna.Net
         // This PC lost the trainer's PC during a run.
         public bool HostLost { get; private set; }
 
+        // Every seat's latest pose in world coordinates (host and trainees; ours included), and on the host the whole run's
+        // 10 Hz track per seat (for the black box and the 3D replay later).
+        public readonly Dictionary<ulong, SeatPose> SeatPoses = new Dictionary<ulong, SeatPose>();
+        public readonly Dictionary<ulong, List<PoseMsg>> SeatTracks = new Dictionary<ulong, List<PoseMsg>>();
+        public const int MaxTrackSamples = 108000;      // 3 hours at 10 Hz per seat
+        public int PosesSent, PosesReceived;
+        // Trainee: host clock from ping / pong (the lowest-latency way to know the host's scenario time).
+        public readonly ClockSync clock = new ClockSync();
+        // Trainee Lobby: hosts found by UDP broadcast. Host: answers the broadcasts.
+        public readonly LanDiscovery Discovery = new LanDiscovery();
+        float scanRequestedAt = -10f;
+        ushort hostPort = DefaultPort;
+        public void RequestScan() { scanRequestedAt = Time.unscaledTime; }
+        public bool Scanning => Time.unscaledTime - scanRequestedAt < 1f;
+        public string RefusedMessage { get; private set; } = "";
+        // Trainer comms degradation (range, radio noise, dropout, muffle), all seats plus per-seat overrides; edited in the Lobby and the F6 panel.
+        public readonly CommsSettings Comms = new CommsSettings();
+        public void NoteExternal(string s) => Note(s);
+
+        internal void SendBytes(string msg, ulong to, byte[] bytes, NetworkDelivery delivery)
+        {
+            if (nm == null || !nm.IsListening) return;
+            Send(msg, to, w => { w.WriteValueSafe(bytes.Length); w.WriteBytesSafe(bytes, bytes.Length); }, delivery);
+        }
+
+        internal void SendJsonTo(string msg, ulong to, object payload) => SendJson(msg, to, payload, NetworkDelivery.ReliableSequenced);
+
+        // Metres between two seats as far as this PC knows (the host knows every seat's pose).
+        public float DistanceBetween(ulong a, ulong b)
+        {
+            if (SeatPoses.TryGetValue(a, out var pa) && SeatPoses.TryGetValue(b, out var pb)) return Vector3.Distance(pa.position, pb.position);
+            return 0f;
+        }
+
+        Vector3 RunOrigin(ScenarioSpawner sp) => sp.defendedPoint != null ? sp.defendedPoint.position : sp.transform.position;
+
         Role role;
         NetworkManager nm;
         bool inField;
         ulong LocalId => nm != null ? nm.LocalClientId : 0;
+        public ulong LocalClientId => LocalId;
+        public bool IsHost => role == Role.Host;
+        public bool InField => inField;
 
         public static LanSession Ensure()
         {
@@ -198,6 +238,9 @@ namespace Chaukanna.Net
             roster.players.Clear();
             roster.players.Add(new NetPlayer { clientId = LocalId, name = name, host = true, ready = true, state = "in lobby", role = (int)SeatRole.Commander });
             Note($"Hosting on port {port}. Trainees join with this PC's LAN address ({LocalAddresses()}).");
+            hostPort = port;
+            Discovery.DescribeHost = () => $"{(roster.players.Count > 0 ? roster.players[0].name : "Trainer")}|{hostPort}|{(int)roster.mode}|{(inField ? "run in progress" : "in lobby")}";
+            Discovery.StartResponder();
             return true;
         }
 
@@ -206,6 +249,7 @@ namespace Chaukanna.Net
             if (Active) return false;
             MakeManager(address.Trim(), port, null);
             pendingName = name;
+            RefusedMessage = "";
             nm.OnClientConnectedCallback += OnConnected;
             nm.OnClientDisconnectCallback += OnDisconnected;
             if (!nm.StartClient()) { Note($"Could not start joining {address}:{port}."); return false; }
@@ -225,11 +269,15 @@ namespace Chaukanna.Net
                 nm.OnClientDisconnectCallback -= OnDisconnected;
                 if (nm.IsListening) nm.Shutdown();
             }
+            VoiceChat.End();
+            Discovery.StopResponder();
             role = Role.None;
             inField = false;
             RunConditions.NetTeamClient = false;
             RunConditions.SeatRole = SeatRole.Any;
             hostTimeValid = false;
+            clock.Reset();
+            SeatPoses.Clear();
             roster.players.Clear();
             Results.Clear();
             Note("Left the session.");
@@ -288,6 +336,10 @@ namespace Chaukanna.Net
             else if (role == Role.Client)
             {
                 Note("Disconnected from the host" + (nm != null && !string.IsNullOrEmpty(nm.DisconnectReason) ? ": " + nm.DisconnectReason : "."));
+                RefusedMessage = nm != null ? nm.DisconnectReason ?? "" : "";
+                nm.OnClientConnectedCallback -= OnConnected;
+                nm.OnClientDisconnectCallback -= OnDisconnected;
+                VoiceChat.End();
                 // Lost the trainer's PC mid-run: keep this trainee's result. A Team sky is gone, so that run ends here and is
                 // scored and saved on this PC; a Solo run simply carries on.
                 if (inField)
@@ -338,6 +390,7 @@ namespace Chaukanna.Net
 
         void LeaveField()
         {
+            VoiceChat.End();
             inField = false;
             endSent = false;
             RunConditions.NetTeamClient = false;
@@ -363,12 +416,21 @@ namespace Chaukanna.Net
             warnedDrift = 0f;
             spawnerCache = null;
             Chaukanna.Player.ReportBoard.Clear();
+            clock.Reset();
+            SeatPoses.Clear();
+            SeatTracks.Clear();
+            pingBurst = 4;
+            nextPing = 0f;
+            nextPose = 0f;
+            PosesSent = PosesReceived = 0;
             ReportsRelayed = RemoteDecisions = CrowdPicksServed = ReportsSent = HandledReceived = 0;
             RunConditions.NetTeamClient = role == Role.Client && roster.mode == NetMode.Team;
             // The seat's role applies in a team run only; Solo mode and a single PC are always Any.
             var me = roster.Find(LocalId);
             RunConditions.SeatRole = role != Role.None && roster.mode == NetMode.Team && me != null ? me.Role : SeatRole.Any;
             Note($"Entering the field as {(RunConditions.SeatRole == SeatRole.Any ? "ANY" : NetPlayer.RoleName(RunConditions.SeatRole))} ({roster.mode}).");
+            // Proximity voice is for TEAM runs (one shared place); the host records it for the after-action review.
+            VoiceChat.Begin(this, roster.mode == NetMode.Team);
         }
 
         public void SendResult(Chaukanna.Scoring.SessionResult s, bool final)
@@ -413,6 +475,11 @@ namespace Chaukanna.Net
             m.RegisterNamedMessageHandler(Msg.Report, (from, r) => OnReportMessage(from, Read<ReportMsg>(r)));
             m.RegisterNamedMessageHandler(Msg.CrowdPick, (from, r) => OnCrowdPick(from, Read<CrowdPickMsg>(r)));
             m.RegisterNamedMessageHandler(Msg.Handled, (from, r) => OnHandled(Read<HandledMsg>(r)));
+            m.RegisterNamedMessageHandler(Msg.Voice, (from, r) => VoiceChat.OnMessage(from, r));
+            m.RegisterNamedMessageHandler(Msg.Comms, (from, r) => VoiceChat.OnCommsMessage(r));
+            m.RegisterNamedMessageHandler(Msg.Pose, (from, r) => { r.ReadValueSafe(out int len); var bytes = new byte[len]; r.ReadBytesSafe(ref bytes, len); OnPoseMessage(from, bytes); });
+            m.RegisterNamedMessageHandler(Msg.Ping, (from, r) => { r.ReadValueSafe(out float t0); if (role == Role.Host) Send(Msg.Pong, from, w => { w.WriteValueSafe(t0); w.WriteValueSafe(ContactRegistry.ScenarioTime); }, NetworkDelivery.Unreliable); });
+            m.RegisterNamedMessageHandler(Msg.Pong, (from, r) => { r.ReadValueSafe(out float t0); r.ReadValueSafe(out float hostTime); if (role == Role.Client) clock.AddSample(t0, Time.realtimeSinceStartup, hostTime); });
         }
 
         // A trainee PC: the start packet carries the seat list with the roles the trainer chose.
@@ -429,6 +496,15 @@ namespace Chaukanna.Net
             if (role != Role.Host) return;
             var me = roster.Find(from);
             string name = string.IsNullOrEmpty(p.name) ? "Trainee " + from : p.name;
+            // A run is under way: a late joiner would see a different sky and miss the start packet. Refuse with a reason the
+            // trainee's Lobby shows ("Disconnected from the host: ...").
+            if (inField && me == null)
+            {
+                const string why = "The run has already started. Try again when the trainer brings everyone back to the lobby.";
+                Note($"{name} tried to join during the run and was refused.");
+                if (nm != null) nm.DisconnectClient(from, why);
+                return;
+            }
             if (me == null) roster.players.Add(new NetPlayer { clientId = from, name = name, state = "in lobby", post = new Vector2(150f * roster.players.Count, 0f), role = (int)SeatRole.Sentry });
             else me.name = name;
             Note($"{name} joined.");
@@ -443,7 +519,7 @@ namespace Chaukanna.Net
             if (p != null) p.state = final ? "COMPLETE" : $"RUNNING {(int)s.duration / 60:00}:{(int)s.duration % 60:00}";
         }
 
-        void SendJson(string msg, ulong to, object payload, NetworkDelivery delivery)
+        internal void SendJson(string msg, ulong to, object payload, NetworkDelivery delivery)
         {
             if (nm == null || !nm.IsListening) return;
             string json = JsonUtility.ToJson(payload);
@@ -594,9 +670,11 @@ namespace Chaukanna.Net
 
         void Update()
         {
+            Discovery.Tick(Time.unscaledTime, role == Role.None && Scanning);
             if (role == Role.Client && autoReady && !autoReadySent && nm != null && nm.IsConnectedClient && roster.Find(LocalId) != null) { autoReadySent = true; SetReady(true); }
             if (!inField || nm == null || !nm.IsListening) return;
             EnsureBoard();
+            PoseTick();
             if (role == Role.Host) HostTick();
             else if (role == Role.Client) ClientTick();
         }
@@ -613,6 +691,88 @@ namespace Chaukanna.Net
             boardCam = cam;
         }
 
+        // --- Player poses (10 Hz) and the clock ping.
+
+        float nextPose, nextPing;
+        int pingBurst;
+
+        // Every seat sends its pose to the host ten times a second; the host stores it (the per-seat list the replay will use),
+        // shows it on the truth map and relays it to the other seats (voice needs the speaker's position).
+        void PoseTick()
+        {
+            if (Time.time < nextPose) return;
+            nextPose = Time.time + 0.1f;
+            var sp = Spawner;
+            var cam = Camera.main;
+            if (sp == null || sp.Waiting || cam == null) return;
+            var v = VoiceChat.Instance;
+            byte flags = (byte)(v != null && v.Transmitting ? (v.TxChannel == 1 ? 2 : 1) : 0);
+            Vector3 origin = RunOrigin(sp), p = cam.transform.position;
+            var m = new PoseMsg
+            {
+                seat = (ushort)LocalId,
+                time = HostTimeValid ? HostTime : ContactRegistry.ScenarioTime,
+                rel = new Vector3(p.x - origin.x, p.y, p.z - origin.z),
+                yaw = cam.transform.eulerAngles.y,
+                pitch = -Mathf.DeltaAngle(0f, cam.transform.eulerAngles.x),
+                fov = cam.fieldOfView,
+                flags = flags,
+            };
+            StorePose(m, origin);
+            PosesSent++;
+            var bytes = PoseCodec.Pack(m);
+            if (role == Role.Client) SendBytes(Msg.Pose, NetworkManager.ServerClientId, bytes, NetworkDelivery.UnreliableSequenced);
+            else if (role == Role.Host) RelayPose(bytes, LocalId);
+        }
+
+        void StorePose(PoseMsg m, Vector3 origin)
+        {
+            ulong seat = m.seat;
+            if (!SeatPoses.TryGetValue(seat, out var sp)) { sp = new SeatPose(); SeatPoses[seat] = sp; }
+            sp.position = new Vector3(origin.x + m.rel.x, m.rel.y, origin.z + m.rel.z);
+            sp.yaw = m.yaw; sp.pitch = m.pitch; sp.fov = m.fov; sp.flags = m.flags; sp.time = m.time; sp.receivedAt = Time.time;
+            if (role == Role.Host)
+            {
+                if (!SeatTracks.TryGetValue(seat, out var list)) { list = new List<PoseMsg>(); SeatTracks[seat] = list; }
+                if (list.Count < MaxTrackSamples) list.Add(m);
+            }
+        }
+
+        void RelayPose(byte[] bytes, ulong exceptId)
+        {
+            foreach (var p in roster.players) if (!p.host && p.clientId != exceptId) SendBytes(Msg.Pose, p.clientId, bytes, NetworkDelivery.UnreliableSequenced);
+        }
+
+        void OnPoseMessage(ulong from, byte[] bytes)
+        {
+            if (!inField || !PoseCodec.TryUnpack(bytes, out var m)) return;
+            var sp = Spawner;
+            if (sp == null) return;
+            if (role == Role.Host)
+            {
+                m.seat = (ushort)from;              // the transport says who sent it
+                if (roster.Find(from) == null) return;
+                StorePose(m, RunOrigin(sp));
+                PosesReceived++;
+                RelayPose(PoseCodec.Pack(m), from);
+            }
+            else if (role == Role.Client && m.seat != LocalId)
+            {
+                StorePose(m, RunOrigin(sp));
+                PosesReceived++;
+            }
+        }
+
+        // Trainee: four pings 0.3 s apart when the field starts, then one every 10 s. The host answers with its scenario time.
+        void PingTick()
+        {
+            if (Time.time < nextPing) return;
+            nextPing = Time.time + (pingBurst > 0 ? 0.3f : 10f);
+            if (pingBurst > 0) pingBurst--;
+            float t0 = Time.realtimeSinceStartup;
+            Send(Msg.Ping, NetworkManager.ServerClientId, w => w.WriteValueSafe(t0), NetworkDelivery.Unreliable);
+        }
+
         void HostTick()
         {
             var spawner = Spawner;
@@ -621,7 +781,7 @@ namespace Chaukanna.Net
             if (me != null) me.state = spawner.Finished ? "COMPLETE" : $"RUNNING {(int)spawner.ScenarioTime / 60:00}:{(int)spawner.ScenarioTime % 60:00}";
             if (spawner.Finished)
             {
-                if (!endSent) { endSent = true; foreach (var p in roster.players) if (!p.host) Send(Msg.End, p.clientId, w => { }, NetworkDelivery.ReliableSequenced); }
+                if (!endSent) { endSent = true; if (VoiceChat.Instance != null) VoiceChat.Instance.FinishRecording(); foreach (var p in roster.players) if (!p.host) Send(Msg.End, p.clientId, w => { }, NetworkDelivery.ReliableSequenced); }
                 return;
             }
             endSent = false;
@@ -666,7 +826,7 @@ namespace Chaukanna.Net
             }
         }
 
-        void Send(string msg, ulong to, Action<FastBufferWriter> write, NetworkDelivery delivery)
+        internal void Send(string msg, ulong to, Action<FastBufferWriter> write, NetworkDelivery delivery)
         {
             using (var w = new FastBufferWriter(1400, Allocator.Temp, 1 << 16))
             {
@@ -839,6 +999,7 @@ namespace Chaukanna.Net
         void ClientTick()
         {
             TestBot();
+            PingTick();
             if (pendingPick >= 0 && Time.time - pendingPickAt > 5f) pendingPick = -1;      // the host never promoted it (taken, or out of its sky)
             // Interpolate proxies between the last two snapshots.
             float k = Mathf.Clamp01((Time.time - lastSnapAt) / snapInterval);

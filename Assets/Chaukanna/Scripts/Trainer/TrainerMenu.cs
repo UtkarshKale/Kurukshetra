@@ -1165,6 +1165,18 @@ namespace Chaukanna.Trainer
                 lanAddress = GUILayout.TextField(lanAddress, 40, field, GUILayout.Width(150f), GUILayout.Height(row));
                 if (GUILayout.Button("Join", button, GUILayout.Width(90f), GUILayout.Height(row))) Chaukanna.Net.LanSession.Ensure().Join(Chaukanna.Scoring.ScoreKeeper.PlayerName, lanAddress, port);
                 GUILayout.EndHorizontal();
+                // Hosts that answered the UDP broadcast on this network (typing the IP above still works).
+                var scan = Chaukanna.Net.LanSession.Ensure();
+                scan.RequestScan();
+                if (scan.Discovery.Found.Count == 0) GUILayout.Label("Looking for trainer PCs on this network ...  (none found yet: type the IP instead)", small);
+                foreach (var h in scan.Discovery.Found)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"<b>{h.name}</b>  {h.address}:{h.port}  {h.mode.ToString().ToUpper()}  {h.state}", label, GUILayout.Height(row));
+                    if (GUILayout.Button("Join", button, GUILayout.Width(90f), GUILayout.Height(row))) { lanAddress = h.address; scan.Join(Chaukanna.Scoring.ScoreKeeper.PlayerName, h.address, h.port); }
+                    GUILayout.EndHorizontal();
+                }
+                if (scan.RefusedMessage.Length > 0) GUILayout.Label("<color=#FF8060>Refused by the trainer: " + scan.RefusedMessage + "</color>", label);
             }
             else
             {
@@ -1202,6 +1214,8 @@ namespace Chaukanna.Trainer
                 }
                 if (team && !lan.roster.HasCommander()) GUILayout.Label("<color=#FFB040>No commander: nobody can jam or fire.</color>", label);
                 else if (team) GUILayout.Label("A SENTRY locks, classifies, reports (R) and checks IFF; the COMMANDER sees the reports (list, mini-map, T key) and decides Hold / Jam / Engage. ANY does everything.", small);
+                if (role == Chaukanna.Net.LanSession.Role.Host) { GUILayout.Space(6f); CommsPanel.Draw(label, small, button, 28f, fontSize); }
+                GUILayout.Label("<color=#9FD0FF>Voice is recorded in TEAM runs for the after-action review.</color>  Hold V to talk to people nearby, Y for the radio (the whole team).", small);
             }
             GUILayout.Space(6f);
             if (lan != null) GUILayout.Label(lan.Status, small);

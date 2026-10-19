@@ -358,6 +358,7 @@ namespace Chaukanna.Trainer
             GUILayout.EndHorizontal();
 
             LayersPanel(row);
+            if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Host) CommsPanel.Draw(label, small, button, row, fontSize);
 
             // After a run: a suggestion only. The trainer decides.
             int recommended = scoreKeeper != null && spawner.Finished ? RecommendedLevel(scoreKeeper.Last) : -1;
@@ -544,6 +545,23 @@ namespace Chaukanna.Trainer
                 if (live[i].Deceptive) Dot(p, live[i].AnomalyShown ? 13f : 11f, new Color(1f, 0.2f, 0.9f, live[i].AnomalyShown ? 1f : 0.7f));
                 if (mapContacts.Contains(live[i])) Dot(p, 12f, new Color(1f, 0.85f, 0.25f, 0.95f));   // in the trainer's lasso selection
                 Dot(p, 6f, Colour(live[i].TruthClass));
+            }
+
+            // LAN: every other seat (pose message, 10 Hz): a cyan dot, its view direction and its name; ringed while it talks.
+            var lanSeats = Chaukanna.Net.LanSession.Instance;
+            if (lanSeats != null && lanSeats.IsHost && lanSeats.InField)
+            {
+                foreach (var kv in lanSeats.SeatPoses)
+                {
+                    if (kv.Key == lanSeats.LocalClientId) continue;
+                    Vector2 sp = ToMap(frame, kv.Value.position);
+                    var seatColour = new Color(0.3f, 0.85f, 1f, 0.95f);
+                    Dotted(sp, kv.Value.yaw - sectorYaw, 40f, seatColour);
+                    if ((kv.Value.flags & 3) != 0) Dot(sp, 14f, new Color(1f, 0.3f, 0.3f, 0.8f));
+                    Dot(sp, 8f, seatColour);
+                    var who = lanSeats.roster.Find(kv.Key);
+                    GUI.Label(new Rect(sp.x + 7f, sp.y - 9f, 140f, 18f), who != null ? who.name : "seat " + kv.Key, small);
+                }
             }
 
             if (mapDrawing && mapLoop.Count >= 3)

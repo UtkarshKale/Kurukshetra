@@ -2,6 +2,10 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Phase 4: multiplayer fixes + proximity voice (prototype)
+- Net: height range -2048..+2048 m, LAN discovery (UDP 47777, Join buttons; IP fallback), clock ping (median offset), 10 Hz seat poses relayed and stored for the replay (seats on the truth map), late joiners refused. Voice (TEAM only): V nearby (3D, full under 10 m, silent at 60 m), Y radio (band-pass + distortion), mic 16 kHz mono, 30 ms mu-law frames via the host, ~100 ms jitter buffer, REC indicator. Trainer Comms section (lobby + F6, live): range, full-volume range, radio noise, dropout %, muffle Hz, per seat or all, applied on the receiver; clean voice recorded on the host with a 'heard' log for the replay (voice_<time>/ index.json + .mulaw). Files: Net/NetExtras.cs, VoiceCore.cs, VoiceChat.cs, Trainer/CommsPanel.cs.
+- Verified: VoiceSelfTest 41/41, NetSelfTest 11/11, TeamSelfTest 27/27. Not verified: two PCs, real microphones, playback filters, discovery on a real LAN, UI on screen. ~131 kbit/s per talker, ~1 MB per minute of talk.
+
 ## 2026-10-20 - Phase 3: AAR cards (prototype)
 - 14 cards, weakest problem first (severity 0-100, status good/watch/problem, one-line verdict, n footer), each with a real chart (bars, histogram, confusion heatmap, stacked bars, 2x2 grid, d'/c sliders, clock ticks, timeline, trend line). Dashboard: Cards / Details toggle (Cards default), 1-3 columns by width; exports Open report (HTML), Save card images (PNG per screenful), Export data (JSON + CSV), Open folder. HTML report: same cards as inline SVG, Print / Save as PDF (A4 print CSS, cards never split), Download data (JSON). Files: Scoring/AarCards.cs, AarCardsHtml.cs, Trainer/AarCardsView.cs.
 - Verified: AarCardsSelfTest 23/23, Dashboard and Report tests; the HTML rendered in Edge looks right (checked by picture). Not verified: the IMGUI cards on screen, PNG capture, Open folder. Verdict wording and thresholds are placeholders for an officer to check.

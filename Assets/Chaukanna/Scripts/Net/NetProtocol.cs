@@ -137,7 +137,7 @@ namespace Chaukanna.Net
     }
 
     // One batched snapshot for all contacts (doc §5.6): positions quantised to 16 bits per axis inside an 8 km box around
-    // the post (about 12 cm), height 0-2048 m (about 3 cm), heading in 8 bits.
+    // the post (about 12 cm), height -2048..+2048 m (about 6 cm; mountain areas sit well below and above the post), heading in 8 bits.
     public static class Snapshot
     {
         public const float Half = 4096f, Height = 2048f;
@@ -158,7 +158,7 @@ namespace Chaukanna.Net
                     w.Write(c.id);
                     w.Write(Q(d.x, -Half, Half));
                     w.Write(Q(d.z, -Half, Half));
-                    w.Write(Q(c.position.y, -64f, Height - 64f));
+                    w.Write(Q(c.position.y, -Height, Height));
                     w.Write((byte)Mathf.RoundToInt(Mathf.Repeat(c.yaw, 360f) / 360f * 255f));
                 }
                 return ms.ToArray();
@@ -176,7 +176,7 @@ namespace Chaukanna.Net
                 for (int i = 0; i < n; i++)
                 {
                     int id = r.ReadInt32();
-                    float x = D(r.ReadUInt16(), -Half, Half), z = D(r.ReadUInt16(), -Half, Half), y = D(r.ReadUInt16(), -64f, Height - 64f);
+                    float x = D(r.ReadUInt16(), -Half, Half), z = D(r.ReadUInt16(), -Half, Half), y = D(r.ReadUInt16(), -Height, Height);
                     float yaw = r.ReadByte() / 255f * 360f;
                     into.Add(new SnapContact { id = id, position = new Vector3(origin.x + x, y, origin.z + z), yaw = yaw });
                 }
@@ -197,5 +197,6 @@ namespace Chaukanna.Net
         public const string Spawn = "chk.spawn", Despawn = "chk.despawn", Snap = "chk.snap", Anomaly = "chk.anomaly";
         public const string Decide = "chk.decide", Effect = "chk.effect", Live = "chk.live", Result = "chk.result";
         public const string Report = "chk.report", CrowdPick = "chk.crowdpick", Handled = "chk.handled";
+        public const string Pose = "chk.pose", Ping = "chk.ping", Pong = "chk.pong", Voice = "chk.voice", Comms = "chk.comms";
     }
 }
