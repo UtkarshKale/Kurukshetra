@@ -45,10 +45,11 @@ namespace Chaukanna.Trainer
         Camera playerCamera;
         string viewNote = "";                 // why the headset would not start, shown for a few seconds
         float viewNoteUntil;
-        GUIStyle label, button, title, small, field;
+        GUIStyle label, button, title, small, field, statusStyle;
         bool wasTyping;
         bool applied;   // a trainer config has been started at least once
-        float controlsBottom = 340f;   // measured each repaint so the map starts right under the controls
+        float controlsBottom = 340f;   // height of all the controls in the scroll view, measured each repaint so the box fits them (up to its cap)
+        Vector2 controlsScroll;        // scroll position of the controls box
 
         void Start()
         {
@@ -187,11 +188,12 @@ namespace Chaukanna.Trainer
                 button = new GUIStyle(GUI.skin.button);
                 title = new GUIStyle(label) { fontStyle = FontStyle.Bold };
                 small = new GUIStyle(label) { clipping = TextClipping.Clip };
+                statusStyle = new GUIStyle(small) { wordWrap = true };      // the run status wraps instead of running off the panel
             }
             label.fontSize = button.fontSize = fontSize;
             title.fontSize = fontSize + 5;
-            small.fontSize = fontSize - 2;
-            label.normal.textColor = title.normal.textColor = small.normal.textColor = Color.white;
+            small.fontSize = statusStyle.fontSize = fontSize - 2;
+            label.normal.textColor = title.normal.textColor = small.normal.textColor = statusStyle.normal.textColor = Color.white;
 
             // Lay out in 720p units and scale to the window, like the player HUD.
             float ui = Screen.height / 720f;
@@ -202,9 +204,17 @@ namespace Chaukanna.Trainer
             bool chartsOpen = dashboard != null && dashboard.IsOpen && dashboard.ChartsActive;
             Fill(new Rect(0f, 0f, w, chartsOpen ? ScoreDashboard.TrainerHeaderHeight : h), new Color(0.05f, 0.06f, 0.08f, 1f));
 
-            const float pad = 10f, row = 24f;
-            GUILayout.BeginArea(new Rect(pad, pad, w - pad * 2f, h - pad * 2f));
+            const float pad = 10f, row = 24f, headerH = 30f;
+            float footerH = row * 1.5f + 16f;            // START / SCORE / status: pinned under the scrolling controls, always reachable
+            float feedH = feedLines * (small.fontSize + 5f) + 8f;
+            // The controls scroll inside a box that is at most 55 % of the panel (and always leaves 190 units for the map and its
+            // legend, plus the feed), so on a small window the map and the feed stay visible below instead of being pushed off.
+            float panelH = h - pad * 2f;
+            float controlsMax = Mathf.Max(headerH + footerH + 60f, Mathf.Min(panelH * 0.55f, panelH - feedH - 20f - 190f));
+            float scrollH = Mathf.Clamp(controlsBottom + 4f, 60f, controlsMax - headerH - footerH);
+            float controlsTotal = headerH + scrollH + footerH;
 
+            GUILayout.BeginArea(new Rect(pad, pad, w - pad * 2f, headerH));
             GUILayout.BeginHorizontal();
             GUILayout.Label("TRAINER  (F6 to hide)", title);
             if (!string.IsNullOrEmpty(Chaukanna.Session.SessionSetup.menuScenePath) && GUILayout.Button("Back to menu", button, GUILayout.Width(120f), GUILayout.Height(row)))
@@ -213,19 +223,24 @@ namespace Chaukanna.Trainer
                 Chaukanna.Session.SessionSetup.Load(Chaukanna.Session.SessionSetup.menuScenePath);
             }
             GUILayout.EndHorizontal();
+            GUILayout.EndArea();
 
             // While the score dashboard is open it takes over this half; keep just the button that closes it.
             if (dashboard != null && dashboard.IsOpen)
             {
+                GUILayout.BeginArea(new Rect(pad, pad + headerH, w - pad * 2f, footerH));
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("SCORE (open) - click to close", new GUIStyle(button) { fontSize = fontSize + 2 }, GUILayout.Width(260f), GUILayout.Height(row * 1.5f)))
                     dashboard.Close();
-                GUILayout.Label("  " + Status(), label, GUILayout.Height(row * 1.5f));
+                GUILayout.Label("  " + Status(), statusStyle, GUILayout.Height(footerH - 4f));
                 GUILayout.EndHorizontal();
                 GUILayout.EndArea();
                 GUI.matrix = saved;
                 return;
             }
+
+            GUILayout.BeginArea(new Rect(pad, pad + headerH, w - pad * 2f, scrollH));
+            controlsScroll = GUILayout.BeginScrollView(controlsScroll);
 
             // Presets, two per row.
             for (int i = 0; i < PresetCount; i += 2)
@@ -360,8 +375,13 @@ namespace Chaukanna.Trainer
             Working.Validate();
             string warning = Working.Warning();
             if (warning.Length > 0) GUILayout.Label("<color=#FFB040>" + warning + "</color>", label);
+            // The height of everything above: the box above is sized from it next frame.
+            if (Event.current.type == EventType.Repaint) controlsBottom = GUILayoutUtility.GetLastRect().yMax;
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
 
-            // Start and status.
+            // Start and status, pinned under the scrolling controls.
+            GUILayout.BeginArea(new Rect(pad, pad + headerH + scrollH, w - pad * 2f, footerH));
             GUILayout.BeginHorizontal();
             var oldColour = GUI.backgroundColor;
             GUI.backgroundColor = new Color(0.3f, 0.9f, 0.4f);
@@ -378,9 +398,8 @@ namespace Chaukanna.Trainer
             // The only way into the score dashboard. It opens in this half; the player's view is untouched unless the trainer expands it.
             if (dashboard != null && GUILayout.Button("SCORE", new GUIStyle(button) { fontSize = fontSize + 2 }, GUILayout.Width(120f), GUILayout.Height(row * 1.5f)))
                 dashboard.Open();
-            GUILayout.Label("  " + Status(), label, GUILayout.Height(row * 1.5f));
+            GUILayout.Label("  " + Status(), statusStyle, GUILayout.Height(footerH - 4f));
             GUILayout.EndHorizontal();
-            if (Event.current.type == EventType.Repaint) controlsBottom = GUILayoutUtility.GetLastRect().yMax;
             GUILayout.EndArea();
 
             // While a number box has focus the player's hotkeys are ignored, so typed digits don't classify contacts.
@@ -392,14 +411,18 @@ namespace Chaukanna.Trainer
             }
 
             // Truth map and event feed fill what is left.
-            float feedH = feedLines * (small.fontSize + 5f) + 8f;
-            float top = pad + controlsBottom + 10f;
-            float mapSize = Mathf.Max(80f, Mathf.Min(w - pad * 2f - 150f, h - top - feedH - pad * 2f));
+            float top = pad + controlsTotal + 10f;
+            float avail = Mathf.Max(80f, h - pad - feedH - 10f - top);        // height between the controls and the feed
+            // The legend and the lasso readout (150 wide each) sit stacked beside the map when it is tall, side by side when it is short.
+            bool stacked = avail >= 360f;
+            float roomW = w - pad * 2f - 10f;
+            float mapSize = Mathf.Max(80f, Mathf.Min(avail, stacked ? roomW - 150f : roomW - 305f));
             var mapRect = new Rect(pad, top, mapSize, mapSize);
             MapLassoInput(mapRect);
             DrawMap(mapRect);
             DrawLegend(pad + mapSize + 10f, top);
-            DrawMapSelection(pad + mapSize + 10f, top + 8f * 22f + 14f, row);
+            if (stacked) DrawMapSelection(pad + mapSize + 10f, top + 8f * 22f + 14f, row);
+            else DrawMapSelection(pad + mapSize + 10f + 155f, top + 8f, row);
             DrawFeed(new Rect(pad, h - feedH - pad, w - pad * 2f, feedH));
 
             GUI.matrix = saved;

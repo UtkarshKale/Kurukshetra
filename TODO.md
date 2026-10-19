@@ -300,3 +300,5 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [x] R2. Remove Credits tab; attribution to CREDITS.txt + report footer.
 - [x] H-10. Crowd speed check passes on this PC (27/27); Burst setting on the other PC.
 - [ ] R3. Plan doc plan-round-2026-10-19.md for: realistic drone swarm, realistic flapping bird flocks classifiable as swarms, working multiplayer, AAR cards + export, black-box 3D replay with proximity voice and comms review, procedural trees/bushes/buildings, VR (last). Owner approves before building.
+- [x] R4. Phase 0: trainer windows scroll and fit (2026-10-19). Hand-test at 1920x1080, 1366x768.
+- [ ] R5. Phase 1 drone swarm prototype (thousands of agents: Burst jobs, spatial grid, instanced rendering, stress test with typeable count), then birds, multiplayer, AAR cards, black box, trees/bushes/buildings, VR last. Full-scale versions later.

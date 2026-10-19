@@ -46,6 +46,9 @@ namespace Chaukanna.Trainer
         string demPath = "", demLoadedFrom = "", imageryPath = "";
         GUIStyle label, button, title, small, field;
         Vector2 scroll;
+        // One persistent scroll position per area that can grow taller than the window.
+        Vector2 scenarioScroll, mapPanelScroll, lobbyScroll, editorListScroll, editorChecksScroll, messageScroll;
+        GUIStyle tabStyle;
 
         // Real place: picked on the OpenStreetMap map, elevation downloaded from the AWS Terrain Tiles.
         public MapPicker Map { get; private set; }
@@ -377,8 +380,15 @@ namespace Chaukanna.Trainer
             // Top bar: title, tabs, START.
             const float pad = 14f, barH = 54f;
             Fill(new Rect(0f, 0f, w, barH), new Color(0.09f, 0.11f, 0.14f));
-            GUI.Label(new Rect(pad, 8f, 300f, 38f), "KURUKSHETRA  TRAINER", title);
-            tab = (Tab)GUI.Toolbar(new Rect(320f, 10f, Mathf.Min(900f, w - 320f - 200f), 34f), (int)tab, TabNames, button);
+            // The title takes only the width its text needs; the tab toolbar fills the gap up to START (never under it).
+            const string titleText = "KURUKSHETRA  TRAINER";
+            float titleW = Mathf.Min(300f, Mathf.Ceil(title.CalcSize(new GUIContent(titleText)).x) + 6f);
+            GUI.Label(new Rect(pad, 8f, titleW, 38f), titleText, title);
+            float tabsX = pad + titleW + 12f;
+            float tabsW = Mathf.Min(900f, w - 180f - 14f - tabsX);       // START begins at w - 180
+            if (tabStyle == null) tabStyle = new GUIStyle(button);
+            tabStyle.fontSize = tabsW < 700f ? Mathf.Max(10, fontSize - 3) : fontSize;
+            tab = (Tab)GUI.Toolbar(new Rect(tabsX, 10f, Mathf.Max(200f, tabsW), 34f), (int)tab, TabNames, tabStyle);
             var problems = StartProblems();
             var old = GUI.backgroundColor;
             GUI.backgroundColor = problems.Count == 0 ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.6f, 0.6f, 0.6f);
@@ -389,7 +399,12 @@ namespace Chaukanna.Trainer
             const float msgH = 62f;
             Fill(new Rect(0f, h - msgH, w, msgH), new Color(0.09f, 0.11f, 0.14f));
             string msg = problems.Count > 0 ? "<color=#FFB040>Before START: " + string.Join("  ", problems) + "</color>\n" + Message : Message;
-            GUI.Label(new Rect(pad, h - msgH + 4f, w - pad * 2f, msgH - 8f), msg, small);
+            // A long message scrolls inside the strip instead of running off the bottom of the window.
+            GUILayout.BeginArea(new Rect(pad, h - msgH + 4f, w - pad * 2f, msgH - 8f));
+            messageScroll = GUILayout.BeginScrollView(messageScroll);
+            GUILayout.Label(msg, small);
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
 
             var body = new Rect(pad, barH + pad, w - pad * 2f, h - barH - msgH - pad * 2f);
             switch (tab)
@@ -666,15 +681,17 @@ namespace Chaukanna.Trainer
             const float row = 26f;
             // Package list on the left.
             GUILayout.BeginArea(new Rect(body.x, body.y, 230f, body.height));
+            editorListScroll = GUILayout.BeginScrollView(editorListScroll);
             GUILayout.Label("<b>Packages</b>", label);
             if (GUILayout.Button("+ New package", button, GUILayout.Height(row))) { spec = new ScenarioSpec(); specUnlocked = true; }
             foreach (var p in packages)
                 if (GUILayout.Button((p.reference ? "[REF] " : "") + p.name, button, GUILayout.Height(row))) { spec = p.Clone(); specUnlocked = !p.reference; }
             GUILayout.Label("Saved in " + PackageStore.Folder, small);
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
 
             // The form.
-            var formRect = new Rect(body.x + 244f, body.y, Mathf.Min(660f, body.width - 244f - 330f), body.height);
+            var formRect = new Rect(body.x + 244f, body.y, Mathf.Max(300f, Mathf.Min(660f, body.width - 244f - 330f)), body.height);
             GUILayout.BeginArea(formRect);
             editorScroll = GUILayout.BeginScrollView(editorScroll);
             bool locked = spec.reference && !specUnlocked;
@@ -750,8 +767,9 @@ namespace Chaukanna.Trainer
             GUILayout.EndArea();
 
             // Checks and actions on the right.
-            var right = new Rect(formRect.xMax + 14f, body.y, 316f, body.height);
+            var right = new Rect(formRect.xMax + 14f, body.y, Mathf.Clamp(body.xMax - (formRect.xMax + 14f), 120f, 316f), body.height);
             GUILayout.BeginArea(right);
+            editorChecksScroll = GUILayout.BeginScrollView(editorChecksScroll);
             var issues = SpecValidator.Validate(spec);
             bool ok = SpecValidator.Ok(issues);
             GUILayout.Label(ok ? "<b><color=#60E080>Valid</color></b>" : "<b><color=#FF6050>Not valid</color></b>", label);
@@ -769,6 +787,7 @@ namespace Chaukanna.Trainer
             if (GUILayout.Button("Delete package", button, GUILayout.Height(row))) { PackageStore.Delete(spec.name); packages = PackageStore.LoadAll(); editorNote = "Deleted " + spec.name; }
             if (editorNote.Length > 0) GUILayout.Label(editorNote, small);
             GUILayout.Label("The form holds only choices and whole numbers; paths, speeds and timings come from the seed. An offline LLM builder that fills this form from a sentence needs your go-ahead for a local model.", small);
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
@@ -842,6 +861,7 @@ namespace Chaukanna.Trainer
         void ScenarioTab(Rect body)
         {
             GUILayout.BeginArea(new Rect(body.x, body.y, Mathf.Min(760f, body.width), body.height));
+            scenarioScroll = GUILayout.BeginScrollView(scenarioScroll);
             const float row = 28f;
             GUILayout.Label("<b>Scripted scenarios</b>", label);
             GUILayout.BeginHorizontal();
@@ -983,6 +1003,7 @@ namespace Chaukanna.Trainer
             if (warning.Length > 0) GUILayout.Label("<color=#FFB040>" + warning + "</color>", label);
             GUILayout.Space(8f);
             GUILayout.Label("Type a number into any box and press Enter (or click elsewhere), or use - / +. Difficulty is applied on top of these numbers when the run starts. Drone spawn points and player posts are set on the Map tab.", small);
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
@@ -1026,25 +1047,30 @@ namespace Chaukanna.Trainer
 
             if (e.type == EventType.Repaint)
             {
+                // Drawn inside a clip group so a post or label near the map edge cannot spill into the panel beside it.
+                Func<Vector2, Vector2> toLocal = m => toMap(m) - map.position;
+                GUI.BeginGroup(map);
                 // Default spawn ring around each post when no points are placed.
                 if (SpawnPoints.Count == 0)
                     foreach (var p in Players)
                         for (int i = 0; i < 72; i++)
                         {
                             float a = i * 5f * Mathf.Deg2Rad;
-                            Dot(toMap(p.post + new Vector2(Mathf.Sin(a), Mathf.Cos(a)) * Scenario.spawnRingRadius), 2f, new Color(1f, 0.4f, 0.3f, 0.7f));
+                            Dot(toLocal(p.post + new Vector2(Mathf.Sin(a), Mathf.Cos(a)) * Scenario.spawnRingRadius), 2f, new Color(1f, 0.4f, 0.3f, 0.7f));
                         }
-                foreach (var s in SpawnPoints) Dot(toMap(s), 9f, new Color(1f, 0.3f, 0.25f));
+                foreach (var s in SpawnPoints) Dot(toLocal(s), 9f, new Color(1f, 0.3f, 0.25f));
                 for (int i = 0; i < Players.Count; i++)
                 {
-                    Vector2 at = toMap(Players[i].post);
+                    Vector2 at = toLocal(Players[i].post);
                     Dot(at, i == selectedPlayer ? 15f : 12f, Color.black);
                     Dot(at, i == selectedPlayer ? 11f : 8f, i == selectedPlayer ? new Color(0.4f, 0.8f, 1f) : Color.white);
                     GUI.Label(new Rect(at.x + 9f, at.y - 10f, 140f, 20f), Players[i].name, small);
                 }
+                GUI.EndGroup();
             }
 
             GUILayout.BeginArea(new Rect(map.xMax + 20f, body.y, body.width - size - 20f, body.height));
+            mapPanelScroll = GUILayout.BeginScrollView(mapPanelScroll);
             const float row = 28f;
             GUILayout.Label("<b>Click the map to...</b>", label);
             tool = (MapTool)GUILayout.SelectionGrid((int)tool, new[] { "Place the selected player's post", "Add a drone spawn point", "Remove the nearest spawn point" }, 1, button, GUILayout.Height(row * 3.2f));
@@ -1075,12 +1101,14 @@ namespace Chaukanna.Trainer
 
             GUILayout.Space(8f);
             GUILayout.Label("White square = player post, red = drone spawn. Only Player 1 is played on this machine until LAN multiplayer is added; the other posts are placed and flattened now so they are ready for it.", small);
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
         void LobbyTab(Rect body)
         {
             GUILayout.BeginArea(new Rect(body.x, body.y, Mathf.Min(900f, body.width), body.height));
+            lobbyScroll = GUILayout.BeginScrollView(lobbyScroll);
             const float row = 30f;
             var lan = Chaukanna.Net.LanSession.Instance;
             var role = Chaukanna.Net.LanSession.Current;
@@ -1144,6 +1172,7 @@ namespace Chaukanna.Trainer
             if (lan != null) GUILayout.Label(lan.Status, small);
             if (lan != null && lan.AreaProgress.Length > 0) GUILayout.Label("<color=#FFD940>" + lan.AreaProgress + "</color>", label);
             GUILayout.Label("Trainer: press Host, pick SOLO or TEAM, set up the terrain and scenario, then START when every seat is READY. Trainees: type the trainer PC's IP (shown on the host), Join, then press I'm ready. A real-terrain area must be on every PC at the same path; otherwise that PC uses procedural terrain from the same seed. Windows may ask to allow the app through the firewall on the first Host.", small);
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 

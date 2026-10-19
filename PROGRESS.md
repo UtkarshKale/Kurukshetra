@@ -2,6 +2,9 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-19 - Phase 0: trainer windows fit the view
+- Scroll views added: menu SCENARIO, MAP side panel, LOBBY, EDITOR list and checks, bottom message strip; toolbar fits between title and START at 1366x768. F6 panel: controls scroll, START/SCORE pinned under them, map and feed always visible. Dashboard header goes to two rows when narrow. Compiles; Trainer/Dashboard/Package/MapOffline self-tests pass. NOT seen on screen.
+
 ## 2026-10-19 - Pulled dev/modules-2026-10-19; Kurukshetra name; Credits tab removed
 - Pulled Arpit's branch (9d95535), merged the solution-v3 docs branch (f421ccd) as fbc1cf3. Unity imported the two VR packages; 0 compile errors. All 21 self-tests pass on this PC, including CrowdSelfTest 27/27 (H-10 was a Burst setting on the other PC).
 - Player- and report-visible name is now Kurukshetra (menu header, loading screen, HTML report title and heading, board title). Code namespace, folders, ChaukannaData and .chaukanna unchanged. Left on purpose: the web User-Agent and the terrain generator's metadata source string.

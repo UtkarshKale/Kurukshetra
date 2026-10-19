@@ -141,22 +141,47 @@ namespace Chaukanna.Trainer
                 : new Rect(0f, TrainerHeaderHeight, Screen.width * PlayerView.TrainerFraction / ui, 720f - TrainerHeaderHeight);
 
             GUI.BeginGroup(region);
-            const float pad = 12f, headH = 40f;
+            const float pad = 12f;
+            // Header: title and window buttons. In the trainer half (about 540 units wide) the four buttons would run under the
+            // title, so the header gets two rows there: the title above, the buttons side by side below.
+            bool narrow = region.width < 780f;
+            float headH = narrow ? 76f : 40f;
             C.Fill(new Rect(0f, 0f, region.width, region.height), C.Background);
 
-            // Header: title and window buttons.
-            GUI.Label(new Rect(pad, 4f, region.width - 260f, headH - 8f), "SCORE DASHBOARD", C.Header);
-            if (GUI.Button(new Rect(region.width - 236f, 6f, 120f, headH - 12f), Expanded ? "Collapse" : "Expand")) SetExpanded(!Expanded);
-            if (GUI.Button(new Rect(region.width - 108f, 6f, 96f, headH - 12f), "Close")) Close();
-            if (keeper != null && GUI.Button(new Rect(region.width - 492f, 6f, 120f, headH - 12f), "HTML report"))
+            Rect closeR, expandR, chartsR, reportR, noteR, titleR;
+            if (narrow)
+            {
+                float gap = 6f, bw = (region.width - pad * 2f - gap * 3f) / 4f;
+                titleR = new Rect(pad, 4f, region.width - pad * 2f, 30f);
+                reportR = new Rect(pad, 40f, bw, 30f);
+                chartsR = new Rect(pad + (bw + gap), 40f, bw, 30f);
+                expandR = new Rect(pad + (bw + gap) * 2f, 40f, bw, 30f);
+                closeR = new Rect(pad + (bw + gap) * 3f, 40f, bw, 30f);
+                float tw = C.Header.CalcSize(new GUIContent("SCORE DASHBOARD")).x + 12f;
+                noteR = new Rect(pad + tw, 8f, Mathf.Max(0f, region.width - pad * 2f - tw), 22f);
+                titleR.width = tw;
+            }
+            else
+            {
+                titleR = new Rect(pad, 4f, region.width - 260f, headH - 8f);
+                reportR = new Rect(region.width - 492f, 6f, 120f, headH - 12f);
+                chartsR = new Rect(region.width - 364f, 6f, 120f, headH - 12f);
+                expandR = new Rect(region.width - 236f, 6f, 120f, headH - 12f);
+                closeR = new Rect(region.width - 108f, 6f, 96f, headH - 12f);
+                noteR = new Rect(pad + 250f, 10f, Mathf.Max(0f, region.width - 760f), 20f);
+            }
+            GUI.Label(titleR, "SCORE DASHBOARD", C.Header);
+            if (GUI.Button(expandR, Expanded ? "Collapse" : "Expand")) SetExpanded(!Expanded);
+            if (GUI.Button(closeR, "Close")) Close();
+            if (keeper != null && GUI.Button(reportR, "HTML report"))
             {
                 // The whole AAR as one file that opens in any browser; written at the end of every run, or now as a snapshot.
                 string path = keeper.ExportReport();
                 reportNote = path != null ? "Report: " + path : "No run to report yet.";
                 if (path != null) Application.OpenURL("file:///" + path.Replace('\\', '/'));
             }
-            if (reportNote.Length > 0) GUI.Label(new Rect(pad + 250f, 10f, Mathf.Max(0f, region.width - 760f), 20f), reportNote, C.Small);
-            if (GUI.Button(new Rect(region.width - 364f, 6f, 120f, headH - 12f), ChartsActive ? "Overview" : "Charts"))
+            if (reportNote.Length > 0) GUI.Label(noteR, reportNote, C.Small);
+            if (GUI.Button(chartsR, ChartsActive ? "Overview" : "Charts"))
             {
                 ChartsActive = !ChartsActive;
                 nextChartSend = 0f;
