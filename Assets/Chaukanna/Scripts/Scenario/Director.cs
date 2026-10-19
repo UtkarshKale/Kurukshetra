@@ -52,6 +52,7 @@ namespace Chaukanna.Scenario
             intensity = 1;
             downMoves = 0;
             nextCheck = checkSeconds;
+            nextId = Mathf.Max(500, owner.FirstFreeId);      // clear of the crowd track numbers
             holdUntil = -1f;
             Running = true;
             enabled = true;

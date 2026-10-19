@@ -7,8 +7,8 @@ using UnityEngine.InputSystem;
 namespace Chaukanna.Player
 {
     // How the soldier sees the field. Desktop = the screen view as before. VR = a seated soldier with hands, a sensor
-    // tablet in the left hand and binoculars raised with both hands. Today VR is a desktop simulator driven by the mouse;
-    // a headset rig (OpenXR) will be another implementation of this same interface, so nothing else has to change.
+    // tablet in the left hand and binoculars raised with both hands. VrSimViewRig is a desktop simulator driven by the mouse;
+    // OpenXrViewRig is the real headset. Both are implementations of this same interface, so nothing else has to change.
     public interface IViewRig
     {
         string Tier { get; }                 // recorded with every session: runs on different tiers are never pooled
@@ -67,8 +67,8 @@ namespace Chaukanna.Player
 
             rig = new GameObject("VrSimRig").transform;
             rig.SetParent(head.transform, false);
-            leftHand = BuildHand("LeftHand", -1f);
-            rightHand = BuildHand("RightHand", 1f);
+            leftHand = BuildHand(rig, "LeftHand", -1f, glove, sleeve);
+            rightHand = BuildHand(rig, "RightHand", 1f, glove, sleeve);
             Tablet = HandTablet.Build(leftHand, head.GetComponent<SensorController>(), head.GetComponent<ContactSensor>(), body, bezel);
             Tablet.transform.localPosition = new Vector3(0.05f, 0.078f, 0.03f);       // held in the palm, screen to the eye
             leftRenderers = leftHand.GetComponentsInChildren<Renderer>();
@@ -119,11 +119,11 @@ namespace Chaukanna.Player
             return new Vector3(Mathf.Sin(t * 0.9f + phase) * 0.0015f, Mathf.Sin(t * 1.3f + phase) * 0.002f, 0f);
         }
 
-        // Gloved hand and sleeve from primitives. side -1 = left.
-        Transform BuildHand(string name, float side)
+        // Gloved hand and sleeve from primitives. side -1 = left. Shared with the headset rig so both VR modes look the same.
+        public static Transform BuildHand(Transform parent, string name, float side, Material glove, Material sleeve)
         {
             var hand = new GameObject(name).transform;
-            hand.SetParent(rig, false);
+            hand.SetParent(parent, false);
             Rig.Part(PrimitiveType.Cube, hand, new Vector3(0f, 0f, 0f), new Vector3(0.085f, 0.03f, 0.1f), glove);                        // palm
             for (int i = 0; i < 4; i++)
                 Rig.Part(PrimitiveType.Cube, hand, new Vector3(-0.03f + i * 0.02f, 0.012f, 0.062f), new Vector3(0.017f, 0.022f, 0.035f), glove);   // fingers curled forward
@@ -164,29 +164,41 @@ namespace Chaukanna.Player
         }
     }
 
-    // One-click switch between the desktop view and VR mode. Sits on the observer camera (added automatically).
-    // F7 toggles in the field; the trainer's VR MODE setting applies at the start of each run.
+    public enum ViewMode { Desktop = 0, VrSim = 1, Headset = 2 }
+
+    // One-click switch between the desktop view, the VR simulator and the real headset. Sits on the observer camera (added automatically).
+    // F7 cycles Desktop > VR-sim > Headset > Desktop (the headset step only when an OpenXR runtime starts); the trainer's VIEW setting
+    // applies at the start of each run.
     public class ViewRigSwitch : MonoBehaviour
     {
-        public const string TierDesktop = "desktop", TierVrSim = "vr-sim", TierMixed = "mixed";
+        public const string TierDesktop = "desktop", TierVrSim = "vr-sim", TierHeadset = "vr-openxr", TierMixed = "mixed";
 
-        public static bool VrActive { get; private set; }
+        public static ViewMode Mode { get; private set; }
+        public static bool VrActive => Mode != ViewMode.Desktop;      // any VR: the simulator or the headset
+        public static bool HeadsetActive => Mode == ViewMode.Headset;
+        public static string LastRefusal { get; private set; } = "";  // why the headset would not start, last time it was asked
         public static bool LookFrozen { get; private set; }       // radial menu open: the mouse picks, it does not look
         public IViewRig Current { get; private set; } = new DesktopViewRig();
         public VrSimViewRig Vr => Current as VrSimViewRig;
+        public OpenXrViewRig Headset => Current as OpenXrViewRig;
 
         // Which tier a run counts as: what it started on, or "mixed" if the view was switched during it.
-        public static string TierFor(bool vrAtStart, bool switchedDuringRun)
+        public static string TierFor(ViewMode atStart, bool switchedDuringRun)
         {
-            return switchedDuringRun ? TierMixed : vrAtStart ? TierVrSim : TierDesktop;
+            if (switchedDuringRun) return TierMixed;
+            return atStart == ViewMode.Headset ? TierHeadset : atStart == ViewMode.VrSim ? TierVrSim : TierDesktop;
         }
+
+        public static string TierFor(bool vrAtStart, bool switchedDuringRun) => TierFor(vrAtStart ? ViewMode.VrSim : ViewMode.Desktop, switchedDuringRun);
 
         Camera head;
         ScenarioSpawner spawner;
         DecisionLoop decisions;
         ContactSensor contacts;
         int run = -1;
-        bool vrAtStart, switched;
+        ViewMode modeAtStart;
+        bool switched;
+        ViewMode? pendingMode;                 // asked for by the headset pause menu, applied after its Tick
 
         // Radial menu state.
         bool radialOpen;
@@ -206,7 +218,8 @@ namespace Chaukanna.Player
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
-            VrActive = false;
+            Mode = ViewMode.Desktop;
+            LastRefusal = "";
             LookFrozen = false;
             RunConditions.DisplayTier = TierDesktop;
         }
@@ -220,25 +233,57 @@ namespace Chaukanna.Player
 
         public void Toggle() => Set(!VrActive);
 
-        public void Set(bool vr)
+        public void Set(bool vr) => SetMode(vr ? ViewMode.VrSim : ViewMode.Desktop, out _);
+
+        // F7: Desktop > VR-sim > Headset > Desktop. The headset is only offered when a runtime starts; when it does not, the reason is
+        // shown and the cycle carries on to the desktop.
+        public ViewMode NextMode()
         {
+            return Mode == ViewMode.Desktop ? ViewMode.VrSim : Mode == ViewMode.VrSim ? ViewMode.Headset : ViewMode.Desktop;
+        }
+
+        public void Cycle()
+        {
+            var next = NextMode();
+            if (next == ViewMode.Headset && !SetMode(ViewMode.Headset, out _)) next = ViewMode.Desktop;
+            if (next != ViewMode.Headset) SetMode(next, out _);
+        }
+
+        // Changes the view. Returns false (and stays on the rig it had) when the headset cannot start; reason says why.
+        public bool SetMode(ViewMode mode, out string reason)
+        {
+            reason = "";
             if (head == null) head = GetComponent<Camera>();
-            if (vr == (Current is VrSimViewRig) && VrActive == vr) return;
+            if (contacts == null) contacts = GetComponent<ContactSensor>();
+            if (mode == Mode && (mode == ViewMode.Desktop ? Current is DesktopViewRig : mode == ViewMode.VrSim ? Current is VrSimViewRig : Current is OpenXrViewRig)) return true;
+
+            if (mode == ViewMode.Headset)
+            {
+                if (!XrRuntime.TryStart(out reason))
+                {
+                    LastRefusal = reason;
+                    ContactRegistry.Note("View: headset unavailable: " + reason);
+                    if (contacts != null) contacts.Say("HEADSET: " + reason, 7f);
+                    return false;
+                }
+            }
             Current.Exit();
-            Current = vr ? (IViewRig)new VrSimViewRig() : new DesktopViewRig();
-            VrActive = vr;
+            Current = mode == ViewMode.Headset ? (IViewRig)new OpenXrViewRig() : mode == ViewMode.VrSim ? new VrSimViewRig() : new DesktopViewRig();
+            Mode = mode;
             LookFrozen = false;
             radialOpen = false;
             Current.Enter(head);
-            if (spawner != null && !spawner.Waiting && !spawner.Finished && vr != vrAtStart) switched = true;
-            RunConditions.DisplayTier = TierFor(vrAtStart, switched);
-            ContactRegistry.Note("View: " + (vr ? "VR mode (simulator)" : "desktop"));
+            if (spawner != null && !spawner.Waiting && !spawner.Finished && mode != modeAtStart) switched = true;
+            RunConditions.DisplayTier = TierFor(modeAtStart, switched);
+            ContactRegistry.Note("View: " + (mode == ViewMode.Headset ? "headset (OpenXR " + XrRuntime.RuntimeName + ")" : mode == ViewMode.VrSim ? "VR mode (simulator)" : "desktop"));
+            return true;
         }
 
         void OnDestroy()
         {
             Current.Exit();
-            if (VrActive) { VrActive = false; LookFrozen = false; }
+            Mode = ViewMode.Desktop;
+            LookFrozen = false;
         }
 
         void Update()
@@ -248,15 +293,19 @@ namespace Chaukanna.Player
             if (spawner != null && spawner.RunNumber != run)
             {
                 run = spawner.RunNumber;
-                // The trainer's setting decides the view a run starts in.
-                if (spawner.TrainerConfig != null) Set(spawner.TrainerConfig.vrMode);
-                vrAtStart = VrActive;
+                // The trainer's setting decides the view a run starts in. No headset: the simulator is the nearest thing.
+                if (spawner.TrainerConfig != null)
+                {
+                    var want = (ViewMode)spawner.TrainerConfig.EffectiveViewMode;
+                    if (!SetMode(want, out _) && want == ViewMode.Headset) SetMode(ViewMode.VrSim, out _);
+                }
+                modeAtStart = Mode;
                 switched = false;
                 askComfort = false;
                 comfortAnswer = sicknessAnswer = -1;
-                RunConditions.DisplayTier = TierFor(vrAtStart, false);
+                RunConditions.DisplayTier = TierFor(modeAtStart, false);
             }
-            if (spawner != null && spawner.Finished && keeper != null && keeper.Last != null && vrAtStart && !askComfort && comfortAnswer == -1 && keeper.Last.comfortRating < 0)
+            if (spawner != null && spawner.Finished && keeper != null && keeper.Last != null && modeAtStart != ViewMode.Desktop && !askComfort && comfortAnswer == -1 && keeper.Last.comfortRating < 0)
             {
                 askComfort = true;
                 Cursor.lockState = CursorLockMode.None;
@@ -264,7 +313,30 @@ namespace Chaukanna.Player
 
             var kb = Keyboard.current;
             var mouse = Mouse.current;
-            if (kb != null && kb.f7Key.wasPressedThisFrame && !ContactRegistry.InputBlocked) Toggle();
+            if (kb != null && kb.f7Key.wasPressedThisFrame && !ContactRegistry.InputBlocked) Cycle();
+
+            var headsetRig = Headset;
+            if (headsetRig != null)
+            {
+                headsetRig.ComfortActive = askComfort;
+                if (headsetRig.ComfortFinished)
+                {
+                    headsetRig.ComfortFinished = false;
+                    comfortAnswer = headsetRig.ComfortRating;
+                    sicknessAnswer = headsetRig.ComfortSickness;
+                    FinishComfort(comfortAnswer > 0 && sicknessAnswer >= 0);
+                }
+                if (headsetRig.WantsMode.HasValue) { pendingMode = headsetRig.WantsMode; headsetRig.WantsMode = null; }
+                Current.Tick(Time.deltaTime);
+                if (!XrRuntime.Alive) pendingMode = ViewMode.Desktop;      // the runtime went away under us
+                if (pendingMode.HasValue)
+                {
+                    var m = pendingMode.Value;
+                    pendingMode = null;
+                    SetMode(m, out _);
+                }
+                return;
+            }
 
             var vrRig = Vr;
             if (vrRig == null) return;
@@ -324,8 +396,8 @@ namespace Chaukanna.Player
             style.fontSize = Mathf.RoundToInt(17f * ui);
             small.fontSize = Mathf.RoundToInt(14f * ui);
             GUI.BeginGroup(PlayerView.Rect);
-            if (VrActive && radialOpen) DrawRadial(ui);
-            if (askComfort) DrawComfort(ui);
+            if (Vr != null && radialOpen) DrawRadial(ui);
+            if (askComfort && !HeadsetActive) DrawComfort(ui);
             GUI.EndGroup();
         }
 
@@ -363,17 +435,22 @@ namespace Chaukanna.Player
             for (int i = 0; i < 3; i++)
                 if (GUI.Toggle(new Rect(box.x + 12f * ui + i * 96f * ui, box.y + 94f * ui, 90f * ui, 28f * ui), sicknessAnswer == i, sick[i], GUI.skin.button)) sicknessAnswer = i;
             bool done = comfortAnswer > 0 && sicknessAnswer >= 0;
-            if (GUI.Button(new Rect(box.xMax - 110f * ui, box.y + 94f * ui, 98f * ui, 28f * ui), done ? "Save" : "Skip"))
+            if (GUI.Button(new Rect(box.xMax - 110f * ui, box.y + 94f * ui, 98f * ui, 28f * ui), done ? "Save" : "Skip")) FinishComfort(done);
+        }
+
+        public static readonly string[] SicknessNames = { "None", "Mild", "Strong" };
+
+        // Save the two answers on the finished run (or mark them skipped) and stop asking.
+        void FinishComfort(bool done)
+        {
+            askComfort = false;
+            if (keeper != null && keeper.Last != null)
             {
-                askComfort = false;
-                if (keeper != null && keeper.Last != null)
-                {
-                    keeper.Last.comfortRating = done ? comfortAnswer : 0;     // 0 = skipped
-                    keeper.Last.comfortSickness = done ? sick[sicknessAnswer] : "skipped";
-                    keeper.SaveAgain();
-                }
-                if (comfortAnswer < 0) comfortAnswer = 0;
+                keeper.Last.comfortRating = done ? comfortAnswer : 0;     // 0 = skipped
+                keeper.Last.comfortSickness = done ? SicknessNames[Mathf.Clamp(sicknessAnswer, 0, SicknessNames.Length - 1)] : "skipped";
+                keeper.SaveAgain();
             }
+            if (comfortAnswer < 0) comfortAnswer = 0;
         }
 
         static void Fill(Rect r, Color c)

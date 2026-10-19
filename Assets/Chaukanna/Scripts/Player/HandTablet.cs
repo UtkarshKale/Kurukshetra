@@ -18,6 +18,9 @@ namespace Chaukanna.Player
 
         SensorController sensors;
         ContactSensor contacts;
+
+        // Headset: the frame rate (72 is the comfort floor), shown beside the ROE card. 0 = not shown.
+        public float Fps { get; set; }
         Text status, roe, sound, ai, locked, edge;
         readonly Image[] rf = new Image[RfBars];
         RectTransform sweep, blipPivot;
@@ -116,7 +119,7 @@ namespace Chaukanna.Player
             if (sensors == null || contacts == null) return;
             status.text = sensors.StateText;
             status.color = sensors.state == SensorState.Ok ? Phosphor : new Color(1f, 0.75f, 0.25f);
-            roe.text = "ROE " + RoeName(ContactRegistry.CurrentRoe);
+            roe.text = (Fps > 0f ? Mathf.RoundToInt(Fps) + " fps   " : "") + "ROE " + RoeName(ContactRegistry.CurrentRoe);
             roe.color = RoeCards.IsAttack(ContactRegistry.CurrentRoe) ? new Color(1f, 0.4f, 0.3f) : Phosphor;
 
             // Sweep goes back and forth across the fan; purely to make the screen feel alive.

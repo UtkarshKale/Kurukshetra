@@ -43,6 +43,8 @@ namespace Chaukanna.Trainer
         ScoreDashboard dashboard;
         Chaukanna.Scoring.ScoreKeeper scoreKeeper;
         Camera playerCamera;
+        string viewNote = "";                 // why the headset would not start, shown for a few seconds
+        float viewNoteUntil;
         GUIStyle label, button, title, small, field;
         bool wasTyping;
         bool applied;   // a trainer config has been started at least once
@@ -53,6 +55,7 @@ namespace Chaukanna.Trainer
             spawner = FindAnyObjectByType<ScenarioSpawner>();
             playerCamera = Camera.main;
             scoreKeeper = FindAnyObjectByType<Chaukanna.Scoring.ScoreKeeper>();
+            DifficultyProfile.EnsureExtreme(difficulties);      // the Extreme level lives in code too: the scene lists stay untouched
             dashboard = GetComponent<ScoreDashboard>();
             if (dashboard == null) dashboard = gameObject.AddComponent<ScoreDashboard>();
             Working = spawner != null && spawner.preset != null ? ScenarioConfig.FromPreset(spawner.preset) : new ScenarioConfig();
@@ -81,11 +84,14 @@ namespace Chaukanna.Trainer
 
         // --- Actions (also callable from tests) ---
 
-        public int PresetCount => presets.Count + 1;
+        // Asset presets, then the spawner's own preset, then the presets defined in code (BuiltInPresets).
+        readonly List<ScenarioConfig> builtIns = BuiltInPresets.All();
+        public int PresetCount => presets.Count + 1 + builtIns.Count;
 
         public string PresetName(int index)
         {
             if (index < presets.Count) return presets[index] != null ? presets[index].config.presetName : "(missing)";
+            if (index > presets.Count) return builtIns[index - presets.Count - 1].presetName;
             return spawner != null && spawner.preset != null ? spawner.preset.name : "Preset";
         }
 
@@ -94,6 +100,13 @@ namespace Chaukanna.Trainer
             if (index < presets.Count)
             {
                 if (presets[index] != null) Working = presets[index].config.Clone().Validate();
+            }
+            else if (index > presets.Count)
+            {
+                var built = builtIns[index - presets.Count - 1];
+                Working = built.Clone().Validate();
+                int level = BuiltInPresets.DifficultyIndexFor(built, difficulties);
+                if (level >= 0) SetDifficulty(level);
             }
             else if (spawner != null && spawner.preset != null) Working = ScenarioConfig.FromPreset(spawner.preset).Validate();
         }
@@ -282,15 +295,25 @@ namespace Chaukanna.Trainer
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Soldier: " + (Working.allowMovement ? "CAN MOVE" : "FIXED AT POST"), button, GUILayout.Height(row))) Working.allowMovement = !Working.allowMovement;
-            if (GUILayout.Button("VR: " + (Working.vrMode ? "ON" : "OFF"), button, GUILayout.Width(70f), GUILayout.Height(row)))
+            if (GUILayout.Button("VIEW: " + ScenarioConfig.ViewModeLabel(Working.EffectiveViewMode), button, GUILayout.Width(130f), GUILayout.Height(row)))
             {
-                // One click: switches the player's view now, and keeps it for the next START.
-                Working.vrMode = !Working.vrMode;
+                // One click: switches the player's view now (desktop > VR-sim > headset), and keeps it for the next START.
+                // The headset only takes if an OpenXR runtime starts; otherwise the view stays where it was and the reason shows below.
+                int before = Working.EffectiveViewMode, next = (before + 1) % 3;
                 var view = playerCamera != null ? playerCamera.GetComponent<Chaukanna.Player.ViewRigSwitch>() : null;
-                if (view != null) view.Set(Working.vrMode);
+                string why = "";
+                if (view != null && !view.SetMode((Chaukanna.Player.ViewMode)next, out why))
+                {
+                    viewNote = "Headset not available: " + why;
+                    viewNoteUntil = Time.unscaledTime + 8f;
+                    next = (next + 1) % 3;                                      // skip it, carry on to the desktop
+                    view.SetMode((Chaukanna.Player.ViewMode)next, out _);
+                }
+                Working.SetViewMode(next);
             }
             Working.moveRadius = Stepper("Radius m", Mathf.RoundToInt(Working.moveRadius), 10, row);
             GUILayout.EndHorizontal();
+            if (viewNote.Length > 0 && Time.unscaledTime < viewNoteUntil) GUILayout.Label(viewNote, small, GUILayout.Height(row));
             GUILayout.BeginHorizontal();
             Working.swarmSize = Stepper("Swarm", Working.swarmSize, 8, row);
             Working.swarmTime = Stepper("Swarm at s", Mathf.RoundToInt(Working.swarmTime), 10, row);
@@ -303,6 +326,18 @@ namespace Chaukanna.Trainer
             Working.blendInPercent = Stepper("Blend-in %", Mathf.RoundToInt(Working.blendInPercent), 5, row, -1, 100);
             GUILayout.Label(Working.blendInPercent < 0f ? "hostiles posing as own drones: set by difficulty" : "of hostiles pose as own drones", small, GUILayout.Height(row));
             GUILayout.EndHorizontal();
+            // Dense sky: cooperative traffic and birds the soldier must search through, and the IFF / Remote ID aid (I key).
+            GUILayout.BeginHorizontal();
+            Working.crowdCount = Stepper("Crowd", Working.crowdCount, 500, row);
+            Working.crowdRadius = Stepper("Crowd r m", Mathf.RoundToInt(Working.crowdRadius), 500, row);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("IFF aid: " + (Working.iffAid ? "ON" : "OFF"), button, GUILayout.Width(100f), GUILayout.Height(row))) Working.iffAid = !Working.iffAid;
+            Working.friendlyNoIffPercent = Stepper("No-IFF %", Mathf.RoundToInt(Working.friendlyNoIffPercent), 1, row, 0, 100);
+            Working.hostileSpoofPercent = Stepper("Spoof %", Mathf.RoundToInt(Working.hostileSpoofPercent), 5, row, 0, 100);
+            GUILayout.EndHorizontal();
+
+            LayersPanel(row);
 
             // After a run: a suggestion only. The trainer decides.
             int recommended = scoreKeeper != null && spawner.Finished ? RecommendedLevel(scoreKeeper.Last) : -1;
@@ -370,6 +405,38 @@ namespace Chaukanna.Trainer
             GUI.matrix = saved;
         }
 
+        // Trees, grass and buildings of a real-terrain or procedural-terrain run. Each button steps Off > Realistic > Procedural
+        // and rebuilds that layer over the next frames, the others stay as they are.
+        void LayersPanel(float row)
+        {
+            var manager = Chaukanna.TerrainGen.TerrainLayerManager.Current;
+            if (manager == null || manager.Context == null) return;
+            var ctx = manager.Context;
+            var L = ctx.Settings;
+            GUILayout.BeginHorizontal();
+            foreach (Chaukanna.TerrainGen.LayerKind kind in System.Enum.GetValues(typeof(Chaukanna.TerrainGen.LayerKind)))
+            {
+                var shown = L.Effective(kind, ctx.RealTerrain);
+                if (GUILayout.Button(kind + ": " + shown.ToString().ToUpper(), button, GUILayout.Height(row)))
+                {
+                    var next = (Chaukanna.TerrainGen.LayerMode)(((int)shown + 1) % 3);
+                    if (next == Chaukanna.TerrainGen.LayerMode.Realistic && !ctx.RealTerrain) next = Chaukanna.TerrainGen.LayerMode.Off;     // Realistic needs a real place
+                    manager.SetMode(kind, next);
+                }
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            double trees = NumberEntry.FieldDouble("field.treeDensity", L.treeDensity, 0, field ?? (field = new GUIStyle(GUI.skin.textField)), GUILayout.Width(64f), GUILayout.Height(row));
+            GUILayout.Label("trees/ha", label, GUILayout.Width(60f), GUILayout.Height(row));
+            double villages = NumberEntry.FieldDouble("field.villageDensity", L.buildingDensity, 1, field, GUILayout.Width(64f), GUILayout.Height(row));
+            GUILayout.Label("villages/km²", label, GUILayout.Width(86f), GUILayout.Height(row));
+            GUILayout.Label(manager.Busy ? "<color=#FFB040>" + manager.BusyText + "...</color>" : manager.ShortSummary(), small, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            if (System.Math.Abs(trees - L.treeDensity) > 1e-6) { L.treeDensity = (float)System.Math.Max(0.0, trees); manager.Rebuild(Chaukanna.TerrainGen.LayerKind.Trees); }
+            if (System.Math.Abs(villages - L.buildingDensity) > 1e-6) { L.buildingDensity = (float)System.Math.Max(0.0, villages); manager.Rebuild(Chaukanna.TerrainGen.LayerKind.Buildings); }
+            if (manager.Credit.Length > 0) GUILayout.Label(manager.Credit, small, GUILayout.Height(row * 0.8f));
+        }
+
         // Label, a box to type the value into, and - / + buttons.
         int Stepper(string name, int value, int step, float row, int min = 0, int max = int.MaxValue)
         {
@@ -413,6 +480,7 @@ namespace Chaukanna.Trainer
             var line = new Color(1f, 1f, 1f, 0.35f);
 
             // Site objects (walls, buildings, trees) as small grey marks; the trainer's lasso picks them too.
+            DrawCrowd(r, frame);
             SiteObjects(siteScratch);
             foreach (var t in siteScratch) Dot(ToMap(frame, t.position), 2f, new Color(0.75f, 0.72f, 0.65f, 0.45f));
             foreach (var t in mapSite) if (t != null) Dot(ToMap(frame, t.position), 5f, new Color(1f, 0.85f, 0.25f, 0.9f));
@@ -462,6 +530,59 @@ namespace Chaukanna.Trainer
             if (mapDrawing) Chaukanna.Player.LassoMath.DrawLoop(mapLoop, new Color(1f, 0.85f, 0.25f), 1f);
             GUI.EndGroup();
         }
+
+        // The crowd on the truth map: all of it rasterised into one small texture at 4 Hz and drawn with one call (never one IMGUI
+        // call per drone). One dim 2 x 2 dot each, in the class colour.
+        const int CrowdTexSize = 256;
+        Texture2D crowdTex;
+        Color32[] crowdPixels;
+        float crowdTexAt = -1f;
+        public int CrowdDotsDrawn { get; private set; }
+
+        void DrawCrowd(Rect r, MapFrame frame)
+        {
+            var crowd = CrowdSky.Active;
+            if (crowd == null || crowd.Count == 0) return;
+            if (crowdTex == null)
+            {
+                crowdTex = new Texture2D(CrowdTexSize, CrowdTexSize, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+                crowdPixels = new Color32[CrowdTexSize * CrowdTexSize];
+            }
+            if (Time.unscaledTime >= crowdTexAt)
+            {
+                crowdTexAt = Time.unscaledTime + 0.25f;
+                RasterCrowd(crowd, frame, r.width, r.height, crowdPixels, CrowdTexSize);
+                crowdTex.SetPixels32(crowdPixels);
+                crowdTex.Apply(false);
+            }
+            GUI.DrawTexture(new Rect(0f, 0f, r.width, r.height), crowdTex);
+        }
+
+        // Fills `pixels` (size x size, row 0 at the bottom) with the crowd as seen on a map rect of width x height GUI units.
+        public void RasterCrowd(CrowdSky crowd, MapFrame frame, float width, float height, Color32[] pixels, int size)
+        {
+            System.Array.Clear(pixels, 0, pixels.Length);
+            Color32 own = Dim(ownColour), civ = Dim(civilianColour), bird = Dim(birdColour);
+            var rot = Quaternion.Euler(0f, -frame.yaw, 0f);
+            int dots = 0;
+            for (int i = 0; i < crowd.Count; i++)
+            {
+                if (!crowd.IsAlive(i)) continue;
+                Vector3 d = rot * (crowd.PositionOf(i) - frame.origin);
+                float mx = frame.centre.x + d.x * frame.scale, my = frame.centre.y - d.z * frame.scale;
+                int tx = (int)(mx / width * size), ty = (int)((1f - my / height) * size);
+                if (tx < 0 || ty < 1 || tx >= size - 1 || ty >= size) continue;
+                byte cls = crowd.AgentOf(i).cls;
+                Color32 c = cls == (byte)ContactClass.Bird ? bird : cls == (byte)ContactClass.FriendlyISR ? own : civ;
+                pixels[ty * size + tx] = c; pixels[ty * size + tx + 1] = c; pixels[(ty - 1) * size + tx] = c; pixels[(ty - 1) * size + tx + 1] = c;
+                dots++;
+            }
+            CrowdDotsDrawn = dots;
+        }
+
+        static Color32 Dim(Color c) => new Color32((byte)(c.r * 255f), (byte)(c.g * 255f), (byte)(c.b * 255f), 140);
+
+        void OnDestroy() { if (crowdTex != null) Destroy(crowdTex); }
 
         // Trainer lasso on the truth map: drag a loop round contacts and site objects to select them together (Shift adds,
         // Ctrl removes, a click picks one). This is the truth view, so there is no visibility filter here.

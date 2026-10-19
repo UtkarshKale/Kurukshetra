@@ -33,11 +33,14 @@ namespace Chaukanna.Trainer
             entries.Add(me);
             var lan = LanSession.Instance;
             if (lan == null) return entries.Count;
+            bool team = lan.roster.mode == NetMode.Team;
+            var host = lan.roster.players.Find(p => p.host);
+            if (team && host != null) me.role = NetPlayer.RoleName(host.Role);
             foreach (var p in lan.roster.players)
             {
                 if (p.host) continue;
                 lan.Results.TryGetValue(p.clientId, out var s);
-                entries.Add(new PlayerEntry { name = p.name, state = string.IsNullOrEmpty(p.state) ? "waiting" : p.state, current = s });
+                entries.Add(new PlayerEntry { name = p.name, state = string.IsNullOrEmpty(p.state) ? "waiting" : p.state, current = s, role = team ? NetPlayer.RoleName(p.Role) : "" });
             }
             return entries.Count;
         }

@@ -34,7 +34,7 @@ namespace Chaukanna.Trainer
         {
             new[] { "Fast", "Medium", "Slow", "Missed", "Not detectable", "Not scored" },
             new[] { "Right", "Caught deception", "Second guess", "Near miss", "Wrong", "Deceived", "Changed to wrong", "No call" },
-            new[] { "Hold", "Report", "Jam", "Engage", "Clock ran out", "Left alone", "No action" },
+            new[] { "Hold", "Report", "Jam", "Engage", "Clock ran out", "Left alone", "No action", "Handled by team", "Report too late" },
             new[] { "Right action", "Wrong action", "False engagement", "Unresolved" },
             new[] { "Sound, successful", "Sound, unlucky", "Lucky", "Unsound", "Pending", "No decision" },
         };
@@ -42,7 +42,7 @@ namespace Chaukanna.Trainer
         {
             new[] { "Seen fast", "Seen, medium", "Seen late", "Never seen", "Could not be seen", "Not scored (late spawn)" },
             new[] { "Right call", "Caught the deception", "Right on a second guess", "Near miss", "Wrong call", "Deceived by a blend-in", "Changed right to wrong", "No call" },
-            new[] { "Hold", "Report", "Jam", "Engage", "Clock ran out (miss)", "Left alone (correct rejection)", "No action" },
+            new[] { "Hold", "Report", "Jam", "Engage", "Clock ran out (miss)", "Left alone (correct rejection)", "No action", "Handled by a teammate", "Report came too late (upstream)" },
             new[] { "Right action", "Wrong action", "False engagement", "Unresolved" },
             new[] { "Sound call, good result", "Sound call, bad luck", "Unsound call, lucky", "Unsound call", "Result not known yet", "No decision" },
         };
@@ -50,7 +50,7 @@ namespace Chaukanna.Trainer
         {
             new[] { 1, 2, 2, 3, 0, 0 },
             new[] { 1, 1, 2, 2, 3, 3, 3, 0 },
-            new[] { 0, 0, 0, 0, 3, 1, 0 },
+            new[] { 0, 0, 0, 0, 3, 1, 0, 1, 2 },
             new[] { 1, 3, 3, 0 },
             new[] { 1, 2, 2, 3, 0, 0 },
         };

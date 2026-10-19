@@ -205,11 +205,19 @@ namespace Chaukanna.Trainer
             {
                 int wx = ((tx % n) + n) % n;                 // the world wraps east-west
                 var cell = new Rect((float)(tx * WebMercator.TileSize - left), (float)(ty * WebMercator.TileSize - top), WebMercator.TileSize, WebMercator.TileSize);
-                bool drawn = DrawSource(Base(Layer), cell, Zoom, wx, ty, e.type == EventType.Repaint);
-                if (!drawn && e.type == EventType.Repaint) Fill(new Rect(cell.x + 1f, cell.y + 1f, cell.width - 2f, cell.height - 2f), new Color(0.15f, 0.17f, 0.2f));
+                bool paint = e.type == EventType.Repaint;
+                bool drawn = DrawSource(Base(Layer), cell, Zoom, wx, ty, paint);
+                // No tile here (offline, or never cached): an enlarged part of a coarser tile this PC has, then the
+                // satellite pictures of the areas shipped with the build, then an empty cell.
+                if (!drawn) drawn = DrawAncestor(Base(Layer), cell, Zoom, wx, ty, paint);
+                var cellWorld = new Rect(tx * WebMercator.TileSize, ty * WebMercator.TileSize, WebMercator.TileSize, WebMercator.TileSize);
+                if (!drawn && paint) Fill(new Rect(cell.x + 1f, cell.y + 1f, cell.width - 2f, cell.height - 2f), new Color(0.15f, 0.17f, 0.2f));
+                if (!drawn || Layer != MapLayer.Map) OfflineAreas.DrawInto(cell, cellWorld, Zoom, paint && (!drawn || Offline));
                 var over = Overlay(Layer);
                 if (over != null) DrawSource(over, cell, Zoom, wx, ty, e.type == EventType.Repaint);
             }
+
+            if (e.type == EventType.Repaint) DrawAreaMarkers(left, top, r);
 
             if (HasPick && e.type == EventType.Repaint)
             {
@@ -273,9 +281,68 @@ namespace Chaukanna.Trainer
             {
                 var box = new Rect(r.x + 8f, r.y + 8f, r.width - 16f, 40f);
                 if (e.type == EventType.Repaint) Fill(box, new Color(0f, 0f, 0f, 0.75f));
-                GUI.Label(box, "  Map offline (" + Status.Replace("Map tiles: ", "") + "): no internet here, or it is blocked. Areas shipped with the build and downloaded before still work; or type the latitude and longitude.", small);
+                int areas = OfflineAreas.AreaCount;
+                GUI.Label(box, "  Map offline (" + Status.Replace("Map tiles: ", "") + "). " + (areas > 0
+                    ? $"Showing the {areas} area{(areas > 1 ? "s" : "")} shipped with this build (outlined, with their satellite pictures): click inside one to use it, or type the latitude and longitude."
+                    : "No areas are shipped with this build: type the latitude and longitude, or download an area on a PC with internet and rebuild."), small);
             }
         }
+
+        // Outlines and names of the shipped / downloaded areas, so they can be found and picked offline at any zoom.
+        void DrawAreaMarkers(double left, double top, Rect r)
+        {
+            var outline = new Color(0.35f, 0.95f, 1f, 0.85f);
+            foreach (var p in OfflineAreas.All)
+            {
+                if (p.surround) continue;
+                Rect pr = OfflineAreas.PixelRect(p, Zoom);
+                var box = new Rect((float)(pr.x - left), (float)(pr.y - top), pr.width, pr.height);
+                if (box.xMax < 0f || box.yMax < 0f || box.x > r.width || box.y > r.height) continue;
+                if (box.width < 6f) box = new Rect(box.center.x - 3f, box.center.y - 3f, 6f, 6f);    // zoomed far out: a marker
+                Fill(new Rect(box.x, box.y, box.width, 2f), outline);
+                Fill(new Rect(box.x, box.yMax - 2f, box.width, 2f), outline);
+                Fill(new Rect(box.x, box.y, 2f, box.height), outline);
+                Fill(new Rect(box.xMax - 2f, box.y, 2f, box.height), outline);
+                Tag(new Vector2(box.center.x, box.y - 12f), p.area, outline);
+            }
+        }
+
+        // Past what this PC has at the exact zoom: the matching part of the nearest coarser tile it does have (memory or
+        // disk, never the network), enlarged. Up to 8 levels up, so a few low-zoom tiles cover the whole view offline.
+        bool DrawAncestor(TileSource source, Rect cell, int z, int x, int y, bool paint)
+        {
+            int start = Mathf.Min(z, source.maxZoom);
+            for (int up = 1; up <= 8 && start - up >= 0; up++)
+            {
+                int dz = z - (start - up);
+                var tex = TileLocal(source, start - up, x >> dz, y >> dz);
+                if (tex == null) continue;
+                if (!paint) return true;
+                float part = 1f / (1 << dz);
+                int sx = x - ((x >> dz) << dz), sy = y - ((y >> dz) << dz);
+                GUI.DrawTextureWithTexCoords(cell, tex, new Rect(sx * part, 1f - (sy + 1) * part, part, part), source.overlay);
+                return true;
+            }
+            return false;
+        }
+
+        // A tile from memory or the disk caches only.
+        Texture2D TileLocal(TileSource source, int z, int x, int y)
+        {
+            string key = source.set + "/" + z + "/" + x + "/" + y;
+            if (tiles.TryGetValue(key, out var tex)) return tex;
+            if (!source.diskCache || missingLocal.Contains(key)) return null;
+            string cache = ElevationDownloader.TileCachePath(source.set, z, x, y);
+            if (!File.Exists(cache)) cache = ElevationDownloader.BundledTilePath(source.set, z, x, y);
+            if (!File.Exists(cache)) { missingLocal.Add(key); return null; }
+            tex = new Texture2D(2, 2, source.overlay ? TextureFormat.RGBA32 : TextureFormat.RGB24, false) { wrapMode = TextureWrapMode.Clamp };
+            if (tex.LoadImage(File.ReadAllBytes(cache))) { Keep(key, tex); return tex; }
+            UnityEngine.Object.Destroy(tex);
+            missingLocal.Add(key);
+            return null;
+        }
+
+        readonly HashSet<string> missingLocal = new HashSet<string>();
 
         Rect LayersRect(Rect r) => new Rect(r.xMax - 6f - 3f * 118f, r.y + 6f, 3f * 118f, 26f);
         Rect SearchRect(Rect r) => new Rect(r.x + 6f, r.y + 6f, Mathf.Min(330f, r.width - 3f * 118f - 24f), 26f);
@@ -412,6 +479,10 @@ namespace Chaukanna.Trainer
                 if (tex.LoadImage(File.ReadAllBytes(cache))) { Keep(key, tex); return tex; }
                 UnityEngine.Object.Destroy(tex);
             }
+            // Offline: no new requests for a while (each one would wait out its 15 s timeout), then try again, so the map
+            // recovers by itself when the network comes back.
+            if (Offline && Time.realtimeSinceStartup < retryAt) return null;
+            if (Offline && failed.Count > 0 && Time.realtimeSinceStartup >= retryAt) { failed.Clear(); retryAt = Time.realtimeSinceStartup + RetrySeconds; }
             if (active < MaxConcurrent && host != null && host.isActiveAndEnabled)
             {
                 pending.Add(key);
@@ -421,6 +492,8 @@ namespace Chaukanna.Trainer
         }
 
         bool offlineLogged;
+        float retryAt;
+        const float RetrySeconds = 30f;
 
         IEnumerator Fetch(string key, TileSource source, int z, int x, int y, string cache)
         {
@@ -437,6 +510,7 @@ namespace Chaukanna.Trainer
                 {
                     failed.Add(key);
                     Offline = request.result == UnityWebRequest.Result.ConnectionError;
+                    if (Offline) retryAt = Time.realtimeSinceStartup + RetrySeconds;
                     Status = "Map tiles: " + request.error;
                     if (Offline && !offlineLogged) { offlineLogged = true; Debug.LogWarning($"[Map] Tile download failed ({request.error}) for {url.Split('?')[0]}. Areas and tiles shipped in {ElevationDownloader.BundledFolder} still work."); }
                     yield break;

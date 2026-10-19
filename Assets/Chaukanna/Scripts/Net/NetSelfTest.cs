@@ -63,6 +63,16 @@ namespace Chaukanna.Net
             var eff = JsonUtility.FromJson<EffectMsg>(JsonUtility.ToJson(new EffectMsg { id = 7, action = (int)PlayerAction.Engage, hit = true, result = "hit" }));
             Check("effect message: the host's hit comes back to the trainee", eff.hit && eff.action == (int)PlayerAction.Engage && eff.result == "hit");
 
+            // Team clients run the shared sky on the host's clock; the host's loop finds the ids that left in one pass.
+            Check("host clock on a client: last snapshot time 10 s plus 0.5 s since it arrived = 10.5 s (never runs backwards)",
+                Mathf.Approximately(LanSession.ClockFrom(10f, 100f, 100.5f), 10.5f) && Mathf.Approximately(LanSession.ClockFrom(10f, 100f, 99f), 10f));
+            var announcedIds = new HashSet<int> { 1, 2, 3, 4 };
+            var liveIds = new HashSet<int> { 2, 4, 9 };
+            var goneIds = new List<int>();
+            LanSession.FindGone(announcedIds, liveIds, goneIds);
+            goneIds.Sort();
+            Check("ids announced but no longer live (1, 3) come out of one set lookup each", goneIds.Count == 2 && goneIds[0] == 1 && goneIds[1] == 3);
+
             string summary = $"[NetSelfTest] {lines.Count - failures}/{lines.Count} passed\n" + string.Join("\n", lines);
             if (failures == 0) Debug.Log(summary); else Debug.LogError(summary);
             return failures == 0;

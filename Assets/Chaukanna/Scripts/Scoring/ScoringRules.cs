@@ -170,6 +170,10 @@ namespace Chaukanna.Scoring
         [Tooltip("d' and c are shown only with at least this many signal and noise trials.")]
         public int sdtMinimumTrials = 20;
 
+        [Header("Team roles (LAN, doc §5.4.7): the sentry > commander chain")]
+        [Tooltip("A commander's clock miss is waived when the sentry's report reached them later than (deadline minus this many seconds) and they had not locked the contact themselves before it came. Placeholder.")]
+        public float commanderMinSeconds = 8f;
+
         [Header("Swarm triage (prototype)")]
         [Tooltip("Best triage score: 2 for acting on the nearest members first, 1 for letting none reach the post.")]
         public int swarmTriageMaxPoints = 3;

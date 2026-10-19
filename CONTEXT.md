@@ -135,3 +135,52 @@ Run each with `unity command eval_file --file t.cs`, where t.cs is one line such
 - LAN command line for tests: `Chaukanna.exe -chkName S-014 -chkJoin 127.0.0.1 -chkReady [-chkTestBot]`.
 - Built-game pink: runtime-created objects must use `Chaukanna.RuntimeMaterials` (materials in Resources).
 - Netcode: the NetworkManager must be a root object (NGO refuses a nested one); no networked objects are used.
+
+## 10. State on 2026-10-19 (supersedes sections 4 to 8 wherever they differ)
+Written for the hand-over to another team member. Everything below is on branch `dev/modules-2026-10-19` (main is still
+29dba3f). Read CLAUDE.md first; the rules did not change. Model split asked by the user: plan with Opus 5.5 high, build
+with Sonnet 5.5 (subagents). Work went through four plan docs in `Assets/Chaukanna/Docs/`: plan-dense-sky.md,
+plan-multiplayer-roles.md, plan-terrain-layers.md, plan-vr-openxr.md, plan-replay-fix.md. Each is the spec its code was
+built from; change the doc together with the code.
+
+### Built since section 4
+- **Map offline in builds (CRIT-1b)**: the map draws the shipped areas' satellite pictures where tiles are missing,
+  outlines shipped areas, enlarges coarser cached tiles, retries the network every 30 s. Editor menu Chaukanna > Offline
+  map > Prefetch map tiles (downloads only when clicked; NOT run yet, CRIT-1c).
+- **Dense sky (DS-1) and Extreme (DS-2)**: Scripts/Scenario/Crowd/. Thousands of cooperative drones as Burst-job data
+  with closed-form motion (same sky on every PC from the seed), GPU-instanced with two LODs, promoted to a real Contact
+  only when locked or lassoed; I key = IFF / Remote ID challenge (fallible); presets "Crowded Sky - Find the Foe" and
+  "Extreme - Mixed Sky Swarm" (Scripts/Trainer/BuiltInPresets.cs); Difficulty_Extreme. Placeholder numbers (12 % silent
+  friendlies, 30 % spoofing hostiles) need an expert's check.
+- **Multiplayer roles (MP-1)**: SENTRY (search, lock, classify, report, IFF; cannot jam or fire) and COMMANDER (sees
+  reports as list + mini-map + brackets, T slews to the newest, only seat that can Hold / Jam / Engage). Commander delay is
+  its own scored link; first-fault waiver; "engaged on a report alone" lapse; hand-off fratricide flag; two TEAM scoring
+  bugs fixed (host scored for trainees' decisions; teammate's kill counted as a clock miss). Crowd works over the LAN
+  (host promotes, every PC removes the agent). Credits tab hidden (`TrainerMenu.ShowCredits = false`).
+- **Terrain layers (TL-1)**: trees, grass, buildings, each Off / Realistic / Procedural; Realistic = OpenStreetMap
+  (fetched per area into `<area>_layers.json`, ODbL, credit shown) with a satellite-colour estimate for trees and grass;
+  near = detailed, far = cheaper; every asset is a prefab slot in `Resources/Chaukanna/TerrainLayerKit_Default.asset`
+  (placeholders in Prefabs/LayerPlaceholders). Grass is our own GPU-instanced field (Unity detail layers drew nothing).
+  OSM data present for ter, Area, Jammu_AFS (no surround), ladakh, telaviv (no surround); Kargil failed (Overpass 504).
+- **VR (VR-1) PARTLY DONE**: packages com.unity.xr.openxr 1.18.0 and com.unity.xr.interaction.toolkit 3.6.1 installed
+  (user approved), Assets/XR and Assets/XRI created, EditorBuildSettings registers the XR loader. Scripts exist
+  (Player/OpenXrViewRig.cs, VrHud.cs, XrInput.cs, XrOptic.cs, XrRuntime.cs, Player/Editor/) and the project compiles, BUT
+  the subagent was cut off by a rate limit before finishing: NO XrSelfTest, NO build probe, NO TODO/PROGRESS entry for
+  it, nothing tested on a headset. Treat it as unfinished code; finish per Docs/plan-vr-openxr.md section 4.
+
+### Self-test list now (run after every change; retry once on a 5 s timeout)
+Score 77, FullScoring 36, Report 19, Learner 14, Prevalence 13, Trainer 56, Dashboard 23, Package 27, Sensor 21,
+Environment 18, TerrainGen 93, Vr 19 (Edit mode), Lasso 16, Swarm 12, Site 9, Range 12, Net 11, MapOffline 8, Crowd 27,
+Team 27, Layers 58. One-line files for them: `return "x=" + Chaukanna.<Namespace>.<Class>.Run();`.
+**Known failing on 2026-10-19: Crowd 26/27**, the check "10 000 agents under 2 ms" measures 7 to 8 ms after the Editor was
+restarted (0.7 ms earlier the same week). Likely Burst running uncompiled or XR packages changing Editor settings:
+check Jobs > Burst > Enable Compilation and Safety Checks, then re-run. Not a logic failure.
+
+### Open items / decisions (TODO.md has the full queue)
+1. Finish VR-1 (above). 2. Replay green lines (FIX-2b, spec in plan-replay-fix.md, includes the terrain fallback-tree
+warning and the Kargil / surround OSM re-fetch). 3. CRIT-1c prefetch map tiles then rebuild. 4. All hand tests are
+batched for the owner (TODO MP-2, TL-2, DS-3, VR-2 lists): NONE of the new UI has been seen on screen (IMGUI does not
+paint in an unfocused Editor). 5. Frame time: layers cost about 3 ms (telaviv) to 8 ms (dense woodland) in the Editor;
+untested on a GTX 1650. 6. Do not render hundreds of thousands of terrain trees in a camera loop: it reset the GPU once.
+7. Git author on the machine that wrote this was not Utkarsh Kale; the commits here are authored as Utkarsh Kale per
+CLAUDE.md rule 7.

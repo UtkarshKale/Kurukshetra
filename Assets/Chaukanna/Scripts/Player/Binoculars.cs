@@ -33,13 +33,17 @@ namespace Chaukanna.Player
 
         public bool Zoomed { get; set; }
 
+        // Headset: the camera's field of view cannot change, so the optic is a second camera on a quad (OpenXrViewRig) and this is its
+        // blend (0 down, 1 fully up). Negative = not in a headset: the camera's own FOV is the zoom, as on the desktop.
+        public float ExternalBlend { get; set; } = -1f;
+
         Camera cam;
         Texture2D mask;
         float maskDiameter, maskSeparation, maskRim;
 
         // 0 = normal, 1 = fully zoomed.
         float Blend => Mathf.InverseLerp(normalFov, zoomedFov, cam.fieldOfView);
-        public float ZoomBlend => cam != null ? Blend : 0f;
+        public float ZoomBlend => ExternalBlend >= 0f ? ExternalBlend : cam != null ? Blend : 0f;
 
         void Awake()
         {
@@ -49,6 +53,7 @@ namespace Chaukanna.Player
 
         void Update()
         {
+            if (ExternalBlend >= 0f) return;          // headset: the optic camera does the zooming, never this camera
             var mouse = Mouse.current;
             // In VR mode the hands raise and lower the optic (ViewRigSwitch); right-click is only for desktop.
             if (mouse != null && mouse.rightButton.wasPressedThisFrame && !Chaukanna.Scenario.ContactRegistry.InputBlocked && !ViewRigSwitch.VrActive) Zoomed = !Zoomed;

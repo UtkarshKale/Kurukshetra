@@ -100,3 +100,16 @@ and the open decision (sentry/commander roles in TEAM mode), and wait for my go 
   confirm it compiles; see PROGRESS.md 2026-10-16 "handoff" for the result.
 - Tools inventory from `claude --version`, `claude plugin list`, `claude plugin marketplace list`, `claude mcp list`,
   `~/.agents/.skill-lock.json`, `unity --version`, `unity editors --installed`, `git lfs version`.
+
+## 7. Update 2026-10-19: picking up the branch
+- Branch `dev/modules-2026-10-19` on origin (main untouched at 29dba3f). `git fetch && git checkout dev/modules-2026-10-19`.
+  Install Git LFS first. Open with Unity 6000.6.3f1; the first open resolves the two new XR packages (internet once).
+- New in git this round: Packages/manifest.json + packages-lock.json (OpenXR, XRI), ProjectSettings/EditorBuildSettings.asset
+  (XR loader), Assets/XR, Assets/XRI, the OSM data files for 3 areas, plans in Assets/Chaukanna/Docs/.
+- Still deliberately NOT committed (owner's files, same as section 3): GraphicsSettings.asset, ProjectSettings.asset,
+  UnityConnectSettings.asset, Assets/Settings/PC_RPAsset.asset, UniversalRenderPipelineGlobalSettings.asset, the changed
+  Terrain/RealData/Area/* files, Terrain/RealData/ter/, Assets/_Recovery, Assets/Resources, .vscode. The `ter` area (and its
+  OSM data) is therefore not on the branch; copy it by hand if needed.
+- Start Claude Code in the project folder; it reads CLAUDE.md. First message to give it: "Read CLAUDE.md, CONTEXT.md
+  section 10, TODO.md top and PROGRESS.md top. Run the self-tests. Then finish VR-1 per Docs/plan-vr-openxr.md and do the
+  replay fix per Docs/plan-replay-fix.md. Plan with Opus high, build with Sonnet." Keys (.chaukanna) are not in git.

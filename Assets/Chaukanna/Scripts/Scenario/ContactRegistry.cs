@@ -59,6 +59,27 @@ namespace Chaukanna.Scenario
         public float anomalyTime = -1f;
         public string anomalyCue;
 
+        // Dense sky (DS-1). fromCrowd: this contact was a crowd drone that the soldier picked out and promoted.
+        // IFF / Remote ID (the I key): whether it was challenged, when, and what came back. iffNoReply / iffSpoof are the
+        // truth side (a cooperative drone with its transponder off; a hostile that answers as an own drone).
+        public bool fromCrowd;
+        public int crowdPattern = -1;
+        public bool iffNoReply, iffSpoof;
+        public bool iffChecked;
+        public float iffAskedTime = -1f, iffTime = -1f;     // iffTime = when the reply came
+        public string iffReply = "";
+
+        public int crowdIndex = -1;                         // the crowd agent it was promoted from (LAN: every PC removes that agent)
+
+        // LAN team play (MP-1). handled*: another seat's jam or hit took it out (written on the host by RemoteAct, on a team
+        // client from the host's Handled message), so this seat's clock must not run out on it. Times are this PC's scenario
+        // clock. reported*: the sentry's report as it reached this (commander) seat; reportReceivedTime = the first one.
+        public string handledBy = "", handledAction = "";
+        public float handledTime = -1f;
+        public string reportedBy = "";
+        public PlayerCall reportedCall = PlayerCall.None;
+        public float reportReceivedTime = -1f;
+
         // Every call, action and anomaly in order, as text, for the session file and the dashboard.
         public List<string> history = new List<string>();
 

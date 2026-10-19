@@ -16,6 +16,18 @@ namespace Chaukanna.Scenario
         float yaw, pitch;
         Camera cam;
 
+        // Headset: the head is tracked, so the mouse does not look. The body (this origin, the parent of the camera) turns instead:
+        // the report slew and the snap turn both rotate it. Set by the headset rig, null otherwise.
+        [System.NonSerialized] public Transform headsetOrigin;
+
+        // Puts the mouse look back where the head ended up when the headset rig lets go of the camera.
+        public void SetView(float newYaw, float newPitch)
+        {
+            yaw = newYaw;
+            pitch = Mathf.Clamp(newPitch, minPitch, maxPitch);
+            transform.rotation = Quaternion.Euler(-pitch, yaw, 0f);
+        }
+
         void Start()
         {
             cam = GetComponent<Camera>();
@@ -29,8 +41,50 @@ namespace Chaukanna.Scenario
             pitch = -Mathf.DeltaAngle(0f, e.x);
         }
 
+        // Turns the view to a point over `seconds` (the commander's T key). Works without the mouse and in VR-sim too, which is
+        // looked through this same camera. The mouse takes over again when it ends.
+        public bool Slewing => slewing;
+        bool slewing;
+        float slewT, slewDur, fromYaw, fromPitch, toYaw, toPitch;
+
+        public void SlewTo(Vector3 worldPoint, float seconds = 0.3f)
+        {
+            Vector3 d = worldPoint - transform.position;
+            if (d.sqrMagnitude < 0.01f) return;
+            Vector3 e = transform.eulerAngles;
+            fromYaw = e.y;
+            fromPitch = -Mathf.DeltaAngle(0f, e.x);
+            toYaw = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
+            toPitch = Mathf.Clamp(Mathf.Asin(Mathf.Clamp(d.normalized.y, -1f, 1f)) * Mathf.Rad2Deg, minPitch, maxPitch);
+            slewT = 0f;
+            slewDur = Mathf.Max(0.01f, seconds);
+            slewing = true;
+        }
+
         void Update()
         {
+            if (headsetOrigin != null)
+            {
+                if (slewing)
+                {
+                    slewT += Time.deltaTime;
+                    float kh = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(slewT / slewDur));
+                    float want = Mathf.LerpAngle(fromYaw, toYaw, kh);
+                    headsetOrigin.Rotate(0f, Mathf.DeltaAngle(transform.eulerAngles.y, want), 0f, Space.World);
+                    if (slewT >= slewDur) slewing = false;
+                }
+                return;
+            }
+            if (slewing)
+            {
+                slewT += Time.deltaTime;
+                float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(slewT / slewDur));
+                yaw = Mathf.LerpAngle(fromYaw, toYaw, k);
+                pitch = Mathf.Lerp(fromPitch, toPitch, k);
+                transform.rotation = Quaternion.Euler(-pitch, yaw, 0f);
+                if (slewT >= slewDur) slewing = false;
+                return;
+            }
             var mouse = Mouse.current;
             var kb = Keyboard.current;
             if (mouse == null || ContactRegistry.InputBlocked) return;

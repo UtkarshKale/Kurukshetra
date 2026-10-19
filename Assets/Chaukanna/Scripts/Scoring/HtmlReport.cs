@@ -69,6 +69,18 @@ namespace Chaukanna.Scoring
             Sdt(h, "Engage: is it hostile?", s.engageSdt);
             if (s.prevalence != "Custom" || s.quietWatch)
                 h.Append("<p><b>Prevalence:</b> ").Append(Esc(s.prevalence)).Append(", realised ").Append(s.realisedHostileShare < 0f ? "-" : F0(100f * s.realisedHostileShare) + " %").Append(" hostile").Append(s.prevalenceNote.Length > 0 ? " &middot; " + Esc(s.prevalenceNote) : "").Append("</p>");
+            if (s.crowdTracks > 0 || s.iffChallenges > 0)
+                h.Append("<p><b>Dense sky:</b> ").Append(s.crowdTracks).Append(" crowd tracks (peak ").Append(s.crowdPeak).Append(" airborne) &middot; ").Append(s.crowdChecked).Append(" checked &middot; ").Append(s.iffChallenges).Append(" IFF challenges &middot; ").Append(s.crowdFriendliesHit).Append(" friendlies engaged or jammed</p>");
+            if (!string.IsNullOrEmpty(s.seatRole) || s.handledByTeam > 0)
+            {
+                h.Append("<p><b>Team").Append(string.IsNullOrEmpty(s.seatRole) ? "" : ": " + Esc(s.seatRole)).Append(":</b> ");
+                if (s.seatRole == "COMMANDER")
+                    h.Append("report to decision ").Append(s.commanderDelayMean < 0f ? "-" : F1(s.commanderDelayMean) + " s").Append(" (").Append(s.commanderDelayCount).Append(" decisions) &middot; ").Append(s.upstreamWaivers).Append(" miss(es) waived, the sentry's report came too late &middot; ")
+                        .Append(s.reportAloneEngagements).Append(" engaged on a report alone &middot; ").Append(s.handoffFratricides).Append(" hand-off fratricide &middot; ");
+                else if (s.seatRole == "SENTRY")
+                    h.Append(s.sentryReports).Append(" contacts reported, lock to report ").Append(s.sentryReportLatencyMean < 0f ? "-" : F1(s.sentryReportLatencyMean) + " s").Append(" &middot; ");
+                h.Append(s.handledByTeam).Append(" handled by teammates</p>");
+            }
             if (s.quietWatch) h.Append("<p><b>Quiet watch vigilance:</b> ").Append(Esc(s.vigilance.summary)).Append("</p>");
             if (s.cardChange != null && s.cardChange.happened) h.Append("<p><b>Card change:</b> ").Append(Esc(s.cardChange.summary)).Append("</p>");
             if (s.swarm != null && s.swarm.happened) h.Append("<p><b>Swarm triage:</b> ").Append(Esc(s.swarm.summary)).Append("</p>");
@@ -78,6 +90,8 @@ namespace Chaukanna.Scoring
             Replay(h, s, records);
             Contacts(h, s);
             Confusion(h, s);
+            if (!string.IsNullOrEmpty(s.terrainLayers) || !string.IsNullOrEmpty(s.mapCredit))
+                h.Append("<p class=\"meta\">Terrain layers: ").Append(Esc(s.terrainLayers ?? "")).Append(string.IsNullOrEmpty(s.mapCredit) ? "" : "<br>" + Esc(s.mapCredit)).Append("</p>");
 
             h.Append("<footer>").Append(Disclaimer).Append(" Cards A / B / C, release points, deadlines and bands are placeholders, not Indian doctrine; an officer must set them. ")
                 .Append("\"In view\" means on the player's screen and passing the detection test, never \"saw\". The sound call is an annotated replay of the logged run, not a re-simulation.</footer>");

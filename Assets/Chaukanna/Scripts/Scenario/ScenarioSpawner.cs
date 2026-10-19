@@ -100,6 +100,7 @@ namespace Chaukanna.Scenario
             public float orbitRadius;
             public int motionSeed;
             public int group = -1;              // swarm or flock id; -1 = flies on its own
+            public bool frozen;                 // a promoted crowd drone: its CrowdFollower moves it, not ContactMotion
         }
 
         // Swarms and flocks of this run, keyed by id; members join as they spawn.
@@ -128,6 +129,16 @@ namespace Chaukanna.Scenario
         public ScenarioConfig TrainerConfig { get; private set; }
         float activeSpeed = 1f;
         float activeBlendIn;
+
+        // Dense sky (DS-1): the crowd of this run, and the track numbers shared by planned contacts and crowd drones.
+        int aCrowdCount;
+        float aCrowdRadius;
+        int[] trackIds;                 // null when there is no crowd: ids are then 1, 2, 3... as before
+        int idPlanCount;                // planned contacts at the start of the run (the track-number shuffle is over idPlanCount + crowd)
+        public CrowdSky Crowd => crowd;
+        CrowdSky crowd;
+        // The first track number that is free for contacts made outside the plan (Director, Range drill).
+        public int FirstFreeId => trackIds != null ? trackIds.Length + 1 : 1;
 
         // Start (or restart) a run from a trainer config. Pass null to go back to the Inspector / preset values.
         public void StartRun(ScenarioConfig config)
@@ -177,6 +188,9 @@ namespace Chaukanna.Scenario
             activeBlendIn = 0f;
             aSwarmSize = 0; aBirdFlocks = 0; aFlockSize = 8; aSwarmTime = 60f; aSwarmBearing = 999f;
             aSite = SiteType.None;
+            aCrowdCount = 0; aCrowdRadius = 0f;
+            float noIffPct = 5f, spoofPct = 0f;
+            bool iffAid = true;
             string source = "";
             if (TrainerConfig != null)
             {
@@ -196,6 +210,8 @@ namespace Chaukanna.Scenario
                 activeBlendIn = Mathf.Max(0f, c.blendInPercent);
                 aSwarmSize = c.swarmSize; aSwarmTime = c.swarmTime; aSwarmBearing = c.swarmBearing; aBirdFlocks = c.birdFlocks; aFlockSize = c.flockSize;
                 aSite = c.site;
+                aCrowdCount = c.crowdCount; aCrowdRadius = c.CrowdRadiusEffective;
+                iffAid = c.iffAid; noIffPct = c.friendlyNoIffPercent; spoofPct = c.hostileSpoofPercent;
             }
             else if (overridePreset)
             {
@@ -227,6 +243,10 @@ namespace Chaukanna.Scenario
             RunConditions.PackageId = TrainerConfig != null ? TrainerConfig.packageId ?? "" : "";
             RunConditions.NightVisionSeconds = 0f;
             RunConditions.AllowMovement = TrainerConfig != null && TrainerConfig.allowMovement;
+            RunConditions.IffAid = iffAid;
+            RunConditions.FriendlyNoIffPercent = noIffPct;
+            RunConditions.HostileSpoofPercent = spoofPct;
+            Iff.BeginRun(active.seed);
             // The site around the post: rebuilt each run (the post may have moved, the seed decides the layout).
             if (siteRoot != null) Destroy(siteRoot);
             siteRoot = SiteBuilder.Build(transform, aSite, preset.siteProfile, active.seed);
@@ -251,6 +271,7 @@ namespace Chaukanna.Scenario
             next = 0;
             finished = false;
             BuildPlan();
+            idPlanCount = plan.Count;       // a team client clears its plan below, but its track numbers must match the host's
             // Range drill: no planned contacts; the drill puts one item at a time in front of the soldier and ends the run itself.
             var drill = GetComponent<RangeDrill>();
             if (RunConditions.NetTeamClient)
@@ -278,7 +299,8 @@ namespace Chaukanna.Scenario
                 if (director != null) director.Stop();
                 Director.Log.Clear();
             }
-            Debug.Log($"[Scenario] '{active.name}'{source} seed {active.seed}: {plan.Count} contacts planned over {active.duration:F0}s, ring {active.spawnRingRadius:F0} m.");
+            StartCrowd();
+            Debug.Log($"[Scenario] '{active.name}'{source} seed {active.seed}: {plan.Count} contacts planned over {active.duration:F0}s, ring {active.spawnRingRadius:F0} m." + (crowd != null ? $" Crowd: {aCrowdCount} tracks over {aCrowdRadius:F0} m." : ""));
         }
 
         const float RangeSampleSeconds = 0.5f;
@@ -298,7 +320,7 @@ namespace Chaukanna.Scenario
             ScenarioTime += Time.deltaTime;
             ContactRegistry.ScenarioTime = ScenarioTime;
 
-            while (next < plan.Count && plan[next].time <= ScenarioTime) Spawn(plan[next], ++next);
+            while (next < plan.Count && plan[next].time <= ScenarioTime) { Spawn(plan[next], PlannedId(next)); next++; }
             foreach (var g in groups.Values) g.Step(Time.deltaTime);
 
             // Range to the post twice a second, for the scoring's decision clock (release points are scoring rules).
@@ -531,7 +553,44 @@ namespace Chaukanna.Scenario
             return ContactRegistry.Live.Count > 0 ? ContactRegistry.Live[ContactRegistry.Live.Count - 1] : null;
         }
 
-        void Spawn(PlannedSpawn p, int id)
+        int PlannedId(int index) => PlannedTrackId(trackIds, index);
+
+        // The track number of the planned contact at `index` in time order: 1, 2, 3... without a crowd, from the shuffle with one.
+        public static int PlannedTrackId(int[] ids, int index) => ids != null && index < ids.Length ? ids[index] : index + 1;
+
+        // Builds the crowd for this run (or tears the old one down). Track numbers: with a crowd, the planned contacts and the crowd
+        // drones draw from one shuffled permutation of 1..N, so a number never tells which is which.
+        void StartCrowd()
+        {
+            trackIds = null;
+            bool wanted = aCrowdCount > 0 && !RunConditions.RangeDrill;
+            RunConditions.CrowdActive = wanted;
+            CrowdSky.ResetRunStats();
+            if (!wanted)
+            {
+                if (crowd != null) crowd.Stop();
+                return;
+            }
+            if (crowd == null) crowd = GetComponent<CrowdSky>() ?? gameObject.AddComponent<CrowdSky>();
+            trackIds = CrowdIds.Permutation(idPlanCount + aCrowdCount, active.seed);
+            var slice = new int[aCrowdCount];
+            System.Array.Copy(trackIds, idPlanCount, slice, 0, aCrowdCount);
+            var defs = new ContactDefinition[5];
+            var models = new List<GameObject>[5];
+            for (int c = 0; c < 5; c++) { defs[c] = active.GetDefinition((ContactClass)c); models[c] = ModelsFor((ContactClass)c); }
+            Vector3 post = defendedPoint != null ? defendedPoint.position : transform.position;
+            crowd.Begin(this, active.seed, aCrowdCount, aCrowdRadius, post, active.spawnRingRadius, active.duration, RunConditions.FriendlyNoIffPercent, defs, models, slice);
+        }
+
+        // A crowd drone the soldier picked out: a real contact on the spot, frozen for ContactMotion (its CrowdFollower flies it).
+        public Contact SpawnCrowdContact(ContactClass cls, Vector3 position, int lookSeed, int id)
+        {
+            var def = active != null ? active.GetDefinition(cls) : null;
+            if (def == null) return null;
+            return Spawn(new PlannedSpawn { time = ScenarioTime, def = def, look = def, start = position, goal = position, speed = 0f, motionSeed = lookSeed, frozen = true }, id);
+        }
+
+        Contact Spawn(PlannedSpawn p, int id)
         {
             var go = ContactVisuals.Build(p.look, out var materials, out var wingL, out var wingR, p.motionSeed / 7, ModelsFor(p.look.contactClass));
             go.name = $"Contact_{id:00}";   // name must not reveal class in the hierarchy either
@@ -551,6 +610,9 @@ namespace Chaukanna.Scenario
                 if (p.def.contactClass == ContactClass.HostileQuad || p.def.contactClass == ContactClass.HostileFixedWing) contact.Data.swarmId = p.group;
             }
             motion.rotors = ContactVisuals.FindRotors(go);
+            if (p.frozen) motion.Frozen = true;
+            Iff.SetFlags(contact.Data, active.seed, id, RunConditions.FriendlyNoIffPercent, RunConditions.HostileSpoofPercent);
+            return contact;
         }
 
         Vector3 OnSector(float bearingDeg, float radius, float altitude)

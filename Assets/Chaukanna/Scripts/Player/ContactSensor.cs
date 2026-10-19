@@ -33,6 +33,20 @@ namespace Chaukanna.Player
 
         public Contact Locked { get; private set; }
 
+        // Headset: the view is not the screen. The headset rig (OpenXrViewRig) fills this every frame: the lock ray (the right hand's
+        // pointer, or the optic's centre when the binoculars are up), the field-of-view box that "in view" is tested against, and the
+        // vertical FOVs that scale the size threshold and the lock tolerance (a headset camera's own fieldOfView cannot zoom).
+        // Inactive on the desktop and in VR-sim, where the camera itself is the view.
+        public struct ViewOverride
+        {
+            public bool active;
+            public Vector3 aimOrigin, aimDirection;
+            public Quaternion viewRotation;
+            public float halfH, halfV;          // half field of view of the box, degrees
+            public float detectFov, lockFov;    // see above
+        }
+        public ViewOverride Headset;
+
         // Multi-select: Ctrl (or Shift) + click adds or removes the contact under the aim dot, holding the button and
         // sweeping adds every contact the dot passes over, G selects everything in view, X or Esc clears, and holding Tab
         // draws a lasso round several at once (LassoSelect).
@@ -106,7 +120,8 @@ namespace Chaukanna.Player
         GUIStyle labelStyle;
 
         Camera Cam => cam != null ? cam : (cam = GetComponent<Camera>());
-        float FovScale => Cam.fieldOfView / referenceFov;
+        float FovScale => (Headset.active ? Headset.detectFov : Cam.fieldOfView) / referenceFov;
+        float LockScale => (Headset.active ? Headset.lockFov : Cam.fieldOfView) / referenceFov;
 
         void Awake()
         {
@@ -172,11 +187,24 @@ namespace Chaukanna.Player
         Contact AtCentre()
         {
             Contact best = null;
-            float bestAngle = lockToleranceDegrees * FovScale;
+            float bestAngle = lockToleranceDegrees * LockScale;
+            Vector3 aimFrom = Headset.active ? Headset.aimOrigin : transform.position;
+            Vector3 aimDir = Headset.active ? Headset.aimDirection : transform.forward;
             foreach (var c in visible)
             {
-                float angle = Vector3.Angle(transform.forward, c.transform.position - transform.position);
+                float angle = Vector3.Angle(aimDir, c.transform.position - aimFrom);
                 if (angle <= bestAngle) { best = c; bestAngle = angle; }
+            }
+            // Dense sky: a crowd drone nearer the aim than the best contact is promoted to a real contact and returned.
+            var crowd = CrowdSky.Active;
+            if (crowd != null)
+            {
+                int index = crowd.Pick(Cam, aimDir, bestAngle, this, out float crowdAngle);
+                if (index >= 0 && crowdAngle < bestAngle)
+                {
+                    var promoted = crowd.Promote(index);
+                    if (promoted != null) return promoted;
+                }
             }
             return best;
         }
@@ -193,16 +221,50 @@ namespace Chaukanna.Player
 
         public bool CanSee(Contact c, out float range, out float apparentDegrees)
         {
+            return CanSeePoint(c.transform.position, c.Definition.size, out range, out apparentDegrees);
+        }
+
+        // The detection test for any point: a contact, or a crowd drone that is not a contact yet (dense sky). lineOfSight
+        // false skips the Physics.Linecast, for a cheap first pass over many candidates.
+        public bool CanSeePoint(Vector3 pos, float size, out float range, out float apparentDegrees, bool lineOfSight = true)
+        {
             Vector3 eye = transform.position;
-            Vector3 pos = c.transform.position;
             range = Vector3.Distance(eye, pos);
-            apparentDegrees = 2f * Mathf.Atan2(c.Definition.size * 0.5f, range) * Mathf.Rad2Deg;
+            apparentDegrees = 2f * Mathf.Atan2(size * 0.5f, range) * Mathf.Rad2Deg;
 
             if (range > EffectiveMaxRange) return false;
             if (apparentDegrees < minApparentDegrees * sizeThresholdMultiplier * FovScale) return false;
-            Vector3 vp = Cam.WorldToViewportPoint(pos);
-            if (vp.z <= 0f || vp.x < 0f || vp.x > 1f || vp.y < 0f || vp.y > 1f) return false;
-            return !Physics.Linecast(eye, pos, terrainMask, QueryTriggerInteraction.Ignore);
+            if (Headset.active)
+            {
+                // A headset has no single viewport: in view = inside the eye's (or the optic's) angular box.
+                if (!InAngularBox(pos, eye, Headset.viewRotation, Headset.halfH, Headset.halfV)) return false;
+            }
+            else
+            {
+                Vector3 vp = Cam.WorldToViewportPoint(pos);
+                if (vp.z <= 0f || vp.x < 0f || vp.x > 1f || vp.y < 0f || vp.y > 1f) return false;
+            }
+            return !lineOfSight || LineOfSight(pos);
+        }
+
+        // Is the point within halfH / halfV degrees (horizontal / vertical) of the view direction?
+        public static bool InAngularBox(Vector3 point, Vector3 eye, Quaternion viewRotation, float halfH, float halfV)
+        {
+            Vector3 local = Quaternion.Inverse(viewRotation) * (point - eye);
+            if (local.z <= 0f) return false;
+            return Mathf.Abs(Mathf.Atan2(local.x, local.z)) * Mathf.Rad2Deg <= halfH && Mathf.Abs(Mathf.Atan2(local.y, local.z)) * Mathf.Rad2Deg <= halfV;
+        }
+
+        public bool LineOfSight(Vector3 pos) => !Physics.Linecast(transform.position, pos, terrainMask, QueryTriggerInteraction.Ignore);
+
+        // A short message under the aim dot ("IFF not available").
+        string say;
+        float sayUntil;
+        public string Said => Time.unscaledTime < sayUntil ? say ?? "" : "";      // the message showing now (self-tests)
+        public void Say(string text, float seconds = 2f)
+        {
+            say = text;
+            sayUntil = Time.unscaledTime + seconds;
         }
 
         // Locks the visible contact nearest the screen centre, or unlocks if there is none within tolerance.
@@ -216,9 +278,22 @@ namespace Chaukanna.Player
             return best != null;
         }
 
+        // Locks a given contact whether or not it is under the aim dot: the commander's T key (slew to a report), a team client's
+        // crowd pick coming back from the host. Same bookkeeping as a click.
+        public bool LockContact(Contact c, string how)
+        {
+            if (c == null) return false;
+            ClearSelection();
+            if (c == Locked) return true;
+            if (Locked != null) ContactRegistry.Record(ContactEventType.Unlock, Locked, null);
+            Locked = c;
+            c.MarkLocked($"range {Vector3.Distance(transform.position, c.transform.position):F0} m ({how})");
+            return true;
+        }
+
         void OnGUI()
         {
-            if (PlayerView.HideOverlays) return;
+            if (PlayerView.HideOverlays || Headset.active) return;      // in the headset the brackets and label are world-space (VrHud)
             GUI.BeginGroup(PlayerView.Rect);
             DrawGui();
             GUI.EndGroup();
@@ -234,12 +309,15 @@ namespace Chaukanna.Player
             if (labelStyle == null) labelStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleLeft };
             labelStyle.fontSize = Mathf.RoundToInt(labelFontSize * ui);
 
+            if (!string.IsNullOrEmpty(say) && Time.unscaledTime < sayUntil)
+                GUI.Label(new Rect(cx - 300f * ui, cy + 70f * ui, 600f * ui, 30f * ui), say, new GUIStyle(labelStyle) { alignment = TextAnchor.MiddleCenter });
+
             // Every contact in the group gets cyan brackets and its own short tag.
             var groupColour = new Color(0.3f, 0.9f, 1f);
             foreach (var c in Selected)
             {
                 if (c == null || !Brackets(c, groupColour, ui, out float gx, out float gy, out float gh)) continue;
-                string tag = $"#{c.Id:00}" + (c.Call != PlayerCall.None ? " " + c.Call.Label() : "") + (c.Actioned ? " " + ActionTag(c.Action) : "");
+                string tag = $"#{c.Id:00}" + (c.Call != PlayerCall.None ? " " + c.Call.Label() : "") + (c.Actioned ? " " + ActionTag(c.Action) : "") + (c.Data.iffChecked ? "  " + Iff.Line(c) : "");
                 GUI.Label(new Rect(gx + gh + 6f * ui, gy - 20f * ui, 600f * ui, 40f * ui), tag, labelStyle);
             }
             if (Selected.Count > 0)
@@ -251,16 +329,26 @@ namespace Chaukanna.Player
 
             if (Locked == null) return;
             if (!Brackets(Locked, Color.white, ui, out float x, out float y, out float h)) return;
-            float range = Vector3.Distance(transform.position, Locked.transform.position);
-            // Id, range and the player's own call and action; never the truth class.
-            string label = $"#{Locked.Id:00}  {range:F0} m";
-            if (Locked.Call != PlayerCall.None) label += "  CALL: " + Locked.Call.Label();
-            if (Locked.CanFireAgain) label += "  MISSED - F TO FIRE AGAIN";
-            else if (Locked.OnHold) label += "  HELD - R / J / F to act";
-            else if (Locked.Actioned) label += "  " + ActionTag(Locked.Action) + (Locked.CanChangeAction ? "  (1-5 / H R J F to change)" : "  (1-5 to change the call)");
+            GUI.Label(new Rect(x + h + 6f * ui, y - 30f * ui, 900f * ui, 90f * ui), LockLabel(Locked), labelStyle);
+        }
+
+        // The text beside the lock brackets (desktop) or in the headset HUD. Id, range and the player's own call and action; never the truth class.
+        public string LockLabel(Contact c)
+        {
+            float range = Vector3.Distance(transform.position, c.transform.position);
+            string label = $"#{c.Id:00}  {range:F0} m";
+            if (c.Call != PlayerCall.None) label += "  CALL: " + c.Call.Label();
+            if (c.CanFireAgain) label += "  MISSED - F TO FIRE AGAIN";
+            else if (c.OnHold) label += "  HELD - R / J / F to act";
+            else if (c.Actioned) label += "  " + ActionTag(c.Action) + (c.CanChangeAction ? "  (1-5 / H R J F to change)" : "  (1-5 to change the call)");
             // What a sensor would flag: the track has left the pattern it was flying. Not the truth class.
-            if (Locked.AnomalyShown) label += "\n! TRACK LEFT ITS PATROL PATTERN";
-            GUI.Label(new Rect(x + h + 6f * ui, y - 30f * ui, 900f * ui, 60f * ui), label, labelStyle);
+            if (c.AnomalyShown) label += "\n! TRACK LEFT ITS PATROL PATTERN";
+            // Dense sky: the filed-route line (what an air picture shows) and the IFF / Remote ID answer.
+            string route = Iff.RouteCue(c);
+            if (route.Length > 0) label += "\n" + route;
+            string iff = Iff.Line(c);
+            if (iff.Length > 0) label += "\n" + iff;
+            return label;
         }
 
         // Corner brackets around a contact. False when it is behind the camera.

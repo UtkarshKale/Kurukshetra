@@ -299,14 +299,66 @@ namespace Chaukanna.Session
             built.root.name = "GeneratedTerrain (session)";
             Debug.Log("[Session] Terrain built for the session.\n" + built.report);
 
+            TerrainBuildResult around = null;
             if (SessionSetup.surroundDem != null)
             {
                 progress?.Invoke(1f, "Building the surround (horizon)");
                 yield return null;
-                var around = TerrainBuilder.BuildSurround(cfg, SessionSetup.surroundDem, SessionSetup.surroundImagery, built.field.centreElevation);
+                around = TerrainBuilder.BuildSurround(cfg, SessionSetup.surroundDem, SessionSetup.surroundImagery, built.field.centreElevation);
                 surroundSize = around.field.sizeMetres;
                 Debug.Log($"[Session] Surround built: {surroundSize / 1000f:F0} km square around the play area.");
             }
+
+            // Trees, grass and buildings on top of the ground (one frame-sized slice at a time). A failure here costs the
+            // layers, not the run.
+            progress?.Invoke(1f, "Trees, grass and buildings");
+            yield return null;
+            IEnumerator layers = null;
+            Exception layerProblem = null;
+            try { layers = BuildLayers(cfg, built, around, progress); }
+            catch (Exception e) { layerProblem = e; }
+            while (layerProblem == null && layers != null)
+            {
+                bool more;
+                try { more = layers.MoveNext(); } catch (Exception e) { layerProblem = e; break; }
+                if (!more) break;
+                yield return null;
+            }
+            if (layerProblem != null) Debug.LogError("[Session] The terrain layers (trees, grass, buildings) could not be built: " + layerProblem);
+        }
+
+        // Makes the layer manager for this session and builds all three layers.
+        static IEnumerator BuildLayers(TerrainGenConfig cfg, TerrainBuildResult built, TerrainBuildResult around, Action<float, string> progress)
+        {
+            var spawner = UnityEngine.Object.FindAnyObjectByType<ScenarioSpawner>();
+            var ctx = new LayerContext
+            {
+                cfg = cfg, kit = TerrainLayerKit.Default, demPath = cfg.demPath,
+                playImagery = SessionSetup.imagery, surroundImagery = SessionSetup.surroundImagery,
+                biome = SurfaceBiomes.Resolve(cfg.biome, built.field),
+                centreLatitude = SessionSetup.dem != null ? SessionSetup.dem.CentreLatitude : cfg.centreLatitude,
+                centreLongitude = SessionSetup.dem != null ? SessionSetup.dem.CentreLongitude : cfg.centreLongitude,
+            };
+            ctx.play = new LayerGround(built.field, cfg.groundPostAtZero ? -built.field.centreElevation : 0f);
+            ctx.playTiles.AddRange(built.tiles);
+            if (around != null)
+            {
+                ctx.surround = new LayerGround(around.field, -built.field.centreElevation - TerrainBuilder.SurroundSink);
+                ctx.surroundTiles.AddRange(around.tiles);
+            }
+            var local = SessionSetup.LocalPlayer;
+            if (local != null) ctx.posts.Add(local.post);
+            foreach (var p in SessionSetup.players) if (p != local) ctx.posts.Add(p.post);
+
+            // The site stands around the post: the layers keep clear of it from the start.
+            if (spawner != null && local != null && SessionSetup.scenario != null)
+                SiteClearance.Set(SiteBuilder.Clearance(new Vector3(local.post.x, 0f, local.post.y), spawner.transform.forward, SessionSetup.scenario.site, spawner.preset != null ? spawner.preset.siteProfile : null));
+            else SiteClearance.Clear();
+
+            var manager = TerrainLayerManager.Create(ctx);
+            var run = manager.BuildAll((f, text) => progress?.Invoke(1f, "Trees, grass and buildings: " + text));
+            while (run.MoveNext()) yield return run.Current;
+            Debug.Log("[Session] Terrain layers: " + manager.Summary());
         }
 
         static float surroundSize;

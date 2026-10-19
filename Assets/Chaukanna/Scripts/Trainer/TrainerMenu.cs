@@ -53,16 +53,21 @@ namespace Chaukanna.Trainer
         string searchText = "", areaName = "Area";
         public bool Downloading { get; private set; }
         public bool WithSatellite = true;      // also download a satellite picture to colour the terrain
+        public bool WithMapFeatures = true;    // also fetch the OpenStreetMap features (buildings, trees, forests, grass) once, for the Realistic layers
         float downloadProgress;
         string downloadStep = "";
         List<string> areas = new List<string>();
         float areasCheckedAt = -100f;
 
-        static readonly string[] TabNames = { "1  TERRAIN", "2  SCENARIO", "3  MAP", "EDITOR", "BOARD", "4  LOBBY", "CREDITS" };
+        // The CREDITS tab is hidden for now (the owner will add it back): set ShowCredits to true to restore it. It is the last tab, so no index moves.
+        const bool ShowCredits = false;
+        static readonly string[] AllTabNames = { "1  TERRAIN", "2  SCENARIO", "3  MAP", "EDITOR", "BOARD", "4  LOBBY", "CREDITS" };
+        static readonly string[] TabNames = ShowCredits ? AllTabNames : System.Array.FindAll(AllTabNames, n => n != "CREDITS");
         static readonly string[] ModeNames = { "Real world\naccurate", "Real world\n+ subtle detail", "Real world\n+ major variations", "Pure\nprocedural", "Custom\nhybrid" };
 
         void Awake()
         {
+            DifficultyProfile.EnsureExtreme(difficulties);      // the Extreme level lives in code too: the scene lists stay untouched
             Terrain = terrainTemplate != null ? Instantiate(terrainTemplate) : ScriptableObject.CreateInstance<TerrainGenConfig>();
             Terrain.name = "Session terrain";
             if (terrainTemplate == null) Terrain.ApplyPreset(ProceduralPreset.RollingHills);
@@ -166,14 +171,14 @@ namespace Chaukanna.Trainer
             System.Action<float, string> step(string part, float from, float span) => (f, what) => { downloadProgress = from + span * f; downloadStep = part + ": " + what; };
 
             AreaDownloadResult area = null;
-            yield return ElevationDownloader.Download(req, step("Elevation", 0f, 0.4f), r => area = r);
+            yield return ElevationDownloader.Download(req, step("Elevation", 0f, 0.3f), r => area = r);
             if (area == null || !area.ok) { Downloading = false; areasCheckedAt = -100f; Message = area?.error ?? "Download failed."; downloadStep = "Failed"; yield break; }
             string notes = area.summary;
 
             if (WithSatellite)
             {
                 ImageryDownloadResult picture = null;
-                yield return ImageryDownloader.Download(req, ImageryDownloader.PathFor(area.rawPath), step("Satellite", 0.4f, 0.3f), r => picture = r);
+                yield return ImageryDownloader.Download(req, ImageryDownloader.PathFor(area.rawPath), step("Satellite", 0.3f, 0.2f), r => picture = r);
                 notes += "\n" + (picture != null && picture.ok ? picture.summary : picture?.error);
             }
 
@@ -181,10 +186,19 @@ namespace Chaukanna.Trainer
             var around = new AreaRequest { name = System.IO.Path.GetFileNameWithoutExtension(area.rawPath) + ElevationDownloader.SurroundSuffix, folder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(area.rawPath)),
                 latitude = req.latitude, longitude = req.longitude, radiusMetres = req.radiusMetres * ElevationDownloader.SurroundFactor };
             AreaDownloadResult surround = null;
-            yield return ElevationDownloader.Download(around, step("Surround", 0.7f, 0.15f), r => surround = r);
+            yield return ElevationDownloader.Download(around, step("Surround", 0.5f, 0.1f), r => surround = r);
             if (surround != null && surround.ok && WithSatellite)
-                yield return ImageryDownloader.Download(around, ImageryDownloader.PathFor(surround.rawPath), step("Surround picture", 0.85f, 0.15f), r => { });
+                yield return ImageryDownloader.Download(around, ImageryDownloader.PathFor(surround.rawPath), step("Surround picture", 0.6f, 0.15f), r => { });
             notes += surround != null && surround.ok ? $"\nSurround for the horizon: {around.SideMetres / 1000f:F0} km square." : "\nNo surround (" + surround?.error + ")";
+
+            // Map features (OpenStreetMap) for the Realistic trees, grass and buildings. A failure keeps the terrain.
+            if (WithMapFeatures)
+            {
+                OsmFetchResult features = null;
+                yield return OsmFetcher.Fetch(area.rawPath, step("Map features (OpenStreetMap)", 0.75f, 0.25f), r => features = r);
+                notes += features != null && features.ok ? "\nMap features (OpenStreetMap): " + features.file.CountsLine() + "." + (features.note.Length > 0 ? " " + features.note : "")
+                    : "\nNo map features (" + (features?.error ?? "not fetched") + "). Realistic layers use the satellite colour for trees and grass and have no buildings.";
+            }
 
             Downloading = false;
             areasCheckedAt = -100f;
@@ -330,7 +344,7 @@ namespace Chaukanna.Trainer
                         packet.areaName = System.IO.Path.GetFileName(areaFolder);
                         packet.demFile = System.IO.Path.GetFileName(dem);
                         foreach (var f in System.IO.Directory.GetFiles(areaFolder))
-                            if (!f.EndsWith(".meta") && !f.EndsWith(".key")) packet.areaFiles.Add(new Chaukanna.Net.AreaFile { name = System.IO.Path.GetFileName(f), size = new System.IO.FileInfo(f).Length });
+                            if (!f.EndsWith(".meta") && !f.EndsWith(".key") && !f.EndsWith("_osm.json") && !f.EndsWith("_osm_surround.json")) packet.areaFiles.Add(new Chaukanna.Net.AreaFile { name = System.IO.Path.GetFileName(f), size = new System.IO.FileInfo(f).Length });
                     }
                 }
                 Chaukanna.Net.LanSession.Instance.HostStart(packet, areaFolder);
@@ -472,6 +486,8 @@ namespace Chaukanna.Trainer
             if (Picture != null) Terrain.imageryBlend = Slider("Picture strength", Terrain.imageryBlend, 0f, 1f);
             GUILayout.Label(Picture != null ? Picture.Describe() : "No picture: the terrain is coloured by height and slope.", small);
 
+            LayersBlock(row);
+
             GUILayout.Space(8f);
             if (GUILayout.Button(previewStale ? "<b>Generate preview</b>" : "Regenerate preview", button, GUILayout.Height(row * 1.5f))) GeneratePreview();
             GUILayout.Label("The same settings and seed are used to build the real terrain when you press START.", small);
@@ -492,6 +508,82 @@ namespace Chaukanna.Trainer
             Fill(map, new Color(0.1f, 0.12f, 0.15f));
             if (preview != null) GUI.DrawTexture(map, preview);
             GUI.Label(new Rect(map.x + 8f, map.y + 4f, map.width - 16f, 40f), preview == null ? "No preview yet. Press Generate preview." : previewStale ? "<color=#FFB040>Settings changed since this preview.</color>" : "North is up.", small);
+        }
+
+        // --- Trees, grass and buildings ---
+
+        string layerInfoFor = "\u0001", layerInfo = "";
+        bool fetchingFeatures;
+        static readonly string[] LayerModeNames = { "OFF", "REALISTIC", "PROCEDURAL" };
+
+        // Three layers, each Off / Realistic / Procedural, and the numbers behind them. Realistic = the real place
+        // (OpenStreetMap, with a satellite-colour estimate for trees and grass where the map has nothing).
+        void LayersBlock(float row)
+        {
+            var L = Terrain.terrainLayers;
+            bool real = Terrain.UsesDem;
+            GUILayout.Space(8f);
+            GUILayout.Label("<b>Trees, grass and buildings</b>  (near = detailed, far = less)", label);
+            foreach (LayerKind kind in Enum.GetValues(typeof(LayerKind)))
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(kind.ToString(), label, GUILayout.Width(86f), GUILayout.Height(row));
+                var shown = L.Effective(kind, real);
+                for (int i = 0; i < 3; i++)
+                    using (new GUIEnabledScope(i != (int)LayerMode.Realistic || real))
+                        if (GUILayout.Toggle(shown == (LayerMode)i, LayerModeNames[i], button, GUILayout.Height(row)) && shown != (LayerMode)i) L.Set(kind, (LayerMode)i);
+                GUILayout.EndHorizontal();
+            }
+            if (!real) GUILayout.Label("Realistic needs a real place: on a procedural terrain every layer is procedural.", small);
+
+            GUILayout.BeginHorizontal();
+            L.treeDensity = (float)Math.Max(0.0, NumberEntry.FieldDouble("menu.treeDensity", L.treeDensity, 0, field, GUILayout.Width(70f), GUILayout.Height(row)));
+            GUILayout.Label(" trees per ha", label, GUILayout.Height(row));
+            L.grassDensity = Mathf.Clamp01((float)NumberEntry.FieldDouble("menu.grassDensity", L.grassDensity, 2, field, GUILayout.Width(60f), GUILayout.Height(row)));
+            GUILayout.Label(" grass cover 0-1", label, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            L.buildingDensity = (float)Math.Max(0.0, NumberEntry.FieldDouble("menu.buildingDensity", L.buildingDensity, 2, field, GUILayout.Width(70f), GUILayout.Height(row)));
+            GUILayout.Label(" villages per km² (procedural)", label, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            L.treeBudget = (int)Math.Min(int.MaxValue, Math.Max(0.0, NumberEntry.FieldDouble("menu.treeBudget", L.treeBudget, 0, field, GUILayout.Width(80f), GUILayout.Height(row))));
+            GUILayout.Label(" most trees at once (0 = no limit; each costs frame time)", label, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            L.treeLodBias = (float)Math.Max(0.01, NumberEntry.FieldDouble("menu.treeLodBias", L.treeLodBias, 2, field, GUILayout.Width(60f), GUILayout.Height(row)));
+            GUILayout.Label(" tree draw distance (0.2 = about 1.2 km, 0.5 = 2.9 km; farther costs frame time)", label, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            L.falloffStartKm = (float)Math.Max(0.05, NumberEntry.FieldDouble("menu.falloff", L.falloffStartKm, 2, field, GUILayout.Width(60f), GUILayout.Height(row)));
+            GUILayout.Label(" km: full density this near the post, thinner beyond", label, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            L.treesBlockSight = GUILayout.Toggle(L.treesBlockSight, "  Trees block the line of sight", GUILayout.Height(row));
+            L.fillGapsProcedurally = GUILayout.Toggle(L.fillGapsProcedurally, "  Realistic buildings: fill empty 500 m cells procedurally (labelled as filled)", GUILayout.Height(row));
+
+            // What data the Realistic mode has for the chosen area.
+            if (real)
+            {
+                if (layerInfoFor != Terrain.demPath) { layerInfoFor = Terrain.demPath; layerInfo = LayerFile.Describe(Terrain.demPath); }
+                bool needsData = L.trees == LayerMode.Realistic || L.grass == LayerMode.Realistic || L.buildings == LayerMode.Realistic;
+                if (layerInfo.Length > 0) GUILayout.Label(layerInfo + " Map features © OpenStreetMap contributors (ODbL).", small);
+                else if (needsData) GUILayout.Label("<color=#FFB040>No OSM data for this area yet: Realistic uses satellite colour for trees and grass, no buildings.</color>", small);
+                if (layerInfo.Length == 0 && Dem != null && demLoadedFrom == Terrain.demPath)
+                    using (new GUIEnabledScope(!fetchingFeatures && !Downloading))
+                        if (GUILayout.Button(fetchingFeatures ? "Fetching map features..." : "Fetch map features (OpenStreetMap) for this area", button, GUILayout.Height(row)))
+                            StartCoroutine(FetchFeatures());
+            }
+        }
+
+        System.Collections.IEnumerator FetchFeatures()
+        {
+            fetchingFeatures = true;
+            string raw = ElevationDownloader.Resolve(Terrain.demPath);
+            OsmFetchResult result = null;
+            yield return OsmFetcher.Fetch(raw, (f, what) => { Message = what; }, r => result = r);
+            fetchingFeatures = false;
+            layerInfoFor = "\u0001";
+            Message = result != null && result.ok ? "Map features (OpenStreetMap): " + result.file.CountsLine() + "." + (result.note.Length > 0 ? " " + result.note : "") : "No map features: " + (result?.error ?? "not fetched");
         }
 
         // Search, typed position and radius, download, and the areas already downloaded.
@@ -518,6 +610,7 @@ namespace Chaukanna.Trainer
             GUILayout.Label(note, small);
 
             WithSatellite = GUILayout.Toggle(WithSatellite, "  Also download a satellite picture (Sentinel-2, 10 m) to colour the ground", GUILayout.Height(row));
+            WithMapFeatures = GUILayout.Toggle(WithMapFeatures, "  Also fetch map features (OpenStreetMap: buildings, trees, forests, grass), once", GUILayout.Height(row));
             GUILayout.BeginHorizontal();
             GUILayout.Label("Name", label, GUILayout.Width(44f), GUILayout.Height(row));
             areaName = GUILayout.TextField(areaName, 40, field, GUILayout.Width(150f), GUILayout.Height(row));
@@ -759,6 +852,11 @@ namespace Chaukanna.Trainer
             for (int i = 0; i < presets.Count; i++)
                 if (presets[i] != null && GUILayout.Button(presets[i].config.presetName, button, GUILayout.Height(row * 1.3f))) Scenario = presets[i].config.Clone().Validate();
             GUILayout.EndHorizontal();
+            // Presets defined in code (dense sky), after the asset presets.
+            GUILayout.BeginHorizontal();
+            foreach (var built in BuiltInPresets.All())
+                if (GUILayout.Button(built.presetName, button, GUILayout.Height(row * 1.3f))) LoadBuiltIn(built);
+            GUILayout.EndHorizontal();
 
             GUILayout.Space(6f);
             GUILayout.BeginHorizontal();
@@ -799,8 +897,19 @@ namespace Chaukanna.Trainer
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             Scenario.blendInPercent = Stepper("Blend-in %", Mathf.RoundToInt(Scenario.blendInPercent), 5, row, -1, 100);
-            GUILayout.Label(Scenario.blendInPercent < 0f ? "Hostiles posing as own drones: -1 = set by the difficulty level (none on Recruit, 10 % Trained, 30 % Expert)." : "of the hostiles fly an own-drone patrol to blend in, then break off for the post.", small, GUILayout.Height(row));
+            GUILayout.Label(Scenario.blendInPercent < 0f ? "Hostiles posing as own drones: -1 = set by the difficulty level (none on Recruit, 10 % Trained, 30 % Expert, 50 % Extreme)." : "of the hostiles fly an own-drone patrol to blend in, then break off for the post.", small, GUILayout.Height(row));
             GUILayout.EndHorizontal();
+            // Dense sky: the crowd of cooperative drones and birds, and the IFF / Remote ID aid (I key).
+            GUILayout.BeginHorizontal();
+            Scenario.crowdCount = Stepper("Crowd tracks", Scenario.crowdCount, 500, row);
+            Scenario.crowdRadius = Stepper("Crowd radius m", Mathf.RoundToInt(Scenario.crowdRadius), 500, row);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("IFF aid: " + (Scenario.iffAid ? "ON" : "OFF"), button, GUILayout.Width(120f), GUILayout.Height(row))) Scenario.iffAid = !Scenario.iffAid;
+            Scenario.friendlyNoIffPercent = Stepper("No-IFF %", Mathf.RoundToInt(Scenario.friendlyNoIffPercent), 1, row, 0, 100);
+            Scenario.hostileSpoofPercent = Stepper("Spoof %", Mathf.RoundToInt(Scenario.hostileSpoofPercent), 5, row, 0, 100);
+            GUILayout.EndHorizontal();
+            GUILayout.Label("Crowd tracks: cooperative drones and birds besides the contacts above (0 = none; radius 0 = 1.5 x the ring). Hostiles hide among them; the soldier finds them by aiming (I key = IFF / Remote ID).", small, GUILayout.Height(row));
 
             GUILayout.Space(6f);
             GUILayout.BeginHorizontal();
@@ -859,8 +968,10 @@ namespace Chaukanna.Trainer
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Soldier movement: " + (Scenario.allowMovement ? "ALLOWED (W A S D, Shift to run)" : "FIXED AT POST"), button, GUILayout.Width(330f), GUILayout.Height(row))) Scenario.allowMovement = !Scenario.allowMovement;
             var vrColour = GUI.backgroundColor;
-            if (Scenario.vrMode) GUI.backgroundColor = new Color(0.3f, 0.75f, 1f);
-            if (GUILayout.Button("<b>VR MODE: " + (Scenario.vrMode ? "ON" : "OFF") + "</b>", button, GUILayout.Width(150f), GUILayout.Height(row))) Scenario.vrMode = !Scenario.vrMode;
+            int view = Scenario.EffectiveViewMode;
+            if (view != ScenarioConfig.ViewDesktop) GUI.backgroundColor = view == ScenarioConfig.ViewHeadset ? new Color(0.45f, 1f, 0.55f) : new Color(0.3f, 0.75f, 1f);
+            // Three-way: desktop > VR-sim (mouse) > headset (OpenXR). With no headset runtime the run falls back to VR-sim.
+            if (GUILayout.Button("<b>VIEW: " + ScenarioConfig.ViewModeLabel(view) + "</b>", button, GUILayout.Width(170f), GUILayout.Height(row))) Scenario.SetViewMode((view + 1) % 3);
             GUI.backgroundColor = vrColour;
             GUI.enabled = Scenario.allowMovement;
             Scenario.moveRadius = Stepper("Radius m", Mathf.RoundToInt(Scenario.moveRadius), 10, row);
@@ -877,6 +988,14 @@ namespace Chaukanna.Trainer
             GUILayout.Space(8f);
             GUILayout.Label("Type a number into any box and press Enter (or click elsewhere), or use - / +. Difficulty is applied on top of these numbers when the run starts. Drone spawn points and player posts are set on the Map tab.", small);
             GUILayout.EndArea();
+        }
+
+        // A preset defined in code: becomes the working scenario, and selects the difficulty level it wants (Extreme).
+        public void LoadBuiltIn(ScenarioConfig built)
+        {
+            Scenario = built.Clone().Validate();
+            int level = BuiltInPresets.DifficultyIndexFor(built, difficulties);
+            if (level >= 0) difficultyIndex = level;
         }
 
         DifficultyProfile Difficulty => difficulties.Count > 0 ? difficulties[Mathf.Clamp(difficultyIndex, 0, difficulties.Count - 1)] : null;
@@ -1008,8 +1127,22 @@ namespace Chaukanna.Trainer
                 }
                 GUILayout.Space(6f);
                 GUILayout.Label("<b>Seats</b>", label);
+                bool team = lan.roster.mode == Chaukanna.Net.NetMode.Team;
                 foreach (var p in lan.roster.players)
+                {
+                    GUILayout.BeginHorizontal();
                     GUILayout.Label($"{p.name}{(p.host ? "  (trainer / host)" : "")}   {(p.host ? "" : p.ready ? "<color=#60E080>READY</color>" : "<color=#FFB040>not ready</color>")}   {p.state}", label, GUILayout.Height(row - 4f));
+                    // Team mode: each seat's role. The trainer clicks to cycle SENTRY / COMMANDER / ANY.
+                    if (team)
+                    {
+                        string roleName = Chaukanna.Net.NetPlayer.RoleName(p.Role);
+                        if (role == Chaukanna.Net.LanSession.Role.Host) { if (GUILayout.Button("Role: " + roleName, button, GUILayout.Width(170f), GUILayout.Height(row - 4f))) lan.CycleRole(p.clientId); }
+                        else GUILayout.Label("<b>" + roleName + "</b>", label, GUILayout.Width(120f), GUILayout.Height(row - 4f));
+                    }
+                    GUILayout.EndHorizontal();
+                }
+                if (team && !lan.roster.HasCommander()) GUILayout.Label("<color=#FFB040>No commander: nobody can jam or fire.</color>", label);
+                else if (team) GUILayout.Label("A SENTRY locks, classifies, reports (R) and checks IFF; the COMMANDER sees the reports (list, mini-map, T key) and decides Hold / Jam / Engage. ANY does everything.", small);
             }
             GUILayout.Space(6f);
             if (lan != null) GUILayout.Label(lan.Status, small);

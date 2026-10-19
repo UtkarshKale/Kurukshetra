@@ -10,6 +10,10 @@ namespace Chaukanna.Net
     // send their decisions; each trainee is scored on their own calls and actions.
     public enum NetMode { Solo, Team }
 
+    // Team mode: what a seat may do. Sentry = lock, classify, report (R), challenge IFF; the commander decides (Hold / Jam /
+    // Engage) on the reports that arrive. Any = everything, and the only role in Solo mode and on a single PC.
+    public enum SeatRole { Any, Sentry, Commander }
+
     [Serializable]
     public class NetPlayer
     {
@@ -19,6 +23,10 @@ namespace Chaukanna.Net
         public bool host;
         public Vector2 post;                 // metres east / north of the terrain centre
         public string state = "";            // in lobby / loading / RUNNING mm:ss / COMPLETE
+        public int role;                     // SeatRole as an int (JsonUtility); Team mode only
+
+        public SeatRole Role => (SeatRole)role;
+        public static string RoleName(SeatRole r) => r == SeatRole.Sentry ? "SENTRY" : r == SeatRole.Commander ? "COMMANDER" : "ANY";
     }
 
     [Serializable]
@@ -28,6 +36,13 @@ namespace Chaukanna.Net
         public List<NetPlayer> players = new List<NetPlayer>();
 
         public NetPlayer Find(ulong id) => players.Find(p => p.clientId == id);
+
+        // Team mode with nobody who can jam or fire (every seat a sentry): the Lobby warns about it.
+        public bool HasCommander()
+        {
+            foreach (var p in players) if (p.Role == SeatRole.Commander || p.Role == SeatRole.Any) return true;
+            return false;
+        }
 
         // Every trainee who is not the host has pressed Ready (the host's own seat starts when the host presses START).
         public bool AllReady()
@@ -68,6 +83,34 @@ namespace Chaukanna.Net
         public int id, truth, look, seed;
         public bool deceptive;
         public Vector3 position;
+        public int crowdIndex = -1;          // dense sky: the crowd agent this contact was promoted from; -1 = a planned contact
+    }
+
+    // Team mode: a sentry's report (R) on its way to the commander(s). seat / time are filled in by the host.
+    [Serializable]
+    public class ReportMsg
+    {
+        public int id, call;
+        public string seat = "";
+        public ulong seatId;
+        public float time;                   // host scenario time
+        public float range, bearing;         // as seen from the reporting seat: metres, degrees from north
+    }
+
+    // Dense sky on a team client: "promote this crowd drone for me" (the host owns the sky).
+    [Serializable]
+    public class CrowdPickMsg
+    {
+        public int index;
+    }
+
+    // Team mode: a teammate's jam or hit took this contact out (so another seat's clock must not run out on it).
+    [Serializable]
+    public class HandledMsg
+    {
+        public int id, action;
+        public string by = "";
+        public float time;                   // host scenario time of the action
     }
 
     // Team mode: a trainee's decision, sent to the host.
@@ -153,5 +196,6 @@ namespace Chaukanna.Net
         public const string NeedArea = "chk.needarea", AreaChunk = "chk.areachunk";
         public const string Spawn = "chk.spawn", Despawn = "chk.despawn", Snap = "chk.snap", Anomaly = "chk.anomaly";
         public const string Decide = "chk.decide", Effect = "chk.effect", Live = "chk.live", Result = "chk.result";
+        public const string Report = "chk.report", CrowdPick = "chk.crowdpick", Handled = "chk.handled";
     }
 }

@@ -46,7 +46,7 @@ namespace Chaukanna.Scoring
             if (live == null || Time.unscaledTime >= nextLiveTime)
             {
                 nextLiveTime = Time.unscaledTime + 0.5f;
-                live = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart);
+                live = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart, RunConditions.SeatRole);
                 StampConditions(live);
             }
             return live;
@@ -75,7 +75,7 @@ namespace Chaukanna.Scoring
 
         void Finish()
         {
-            Last = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart);
+            Last = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart, RunConditions.SeatRole);
             Last.timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             StampConditions(Last);
             Debug.Log($"[Score] Conditions: {Last.timeOfDay}, {Last.visibility}, night vision {Last.nightVisionPercent:F0}% of the run. Difficulty: {(Last.difficulty.Length > 0 ? Last.difficulty : "none")}");
@@ -142,7 +142,10 @@ namespace Chaukanna.Scoring
             s.difficulty = RunConditions.Difficulty ?? "";
             s.allowMovement = RunConditions.AllowMovement;
             s.displayTier = RunConditions.DisplayTier ?? "desktop";
+            s.terrainLayers = Chaukanna.TerrainGen.TerrainLayerManager.CurrentSummary();
+            s.mapCredit = Chaukanna.TerrainGen.TerrainLayerManager.CurrentCredit();
             ScoreCalculator.StampPrevalence(s, RunConditions.Prevalence, RunConditions.QuietWatch, RunConditions.NullMission);
+            ScoreCalculator.StampCrowd(s, ContactRegistry.Records, CrowdSky.RunTracks, CrowdSky.RunPeak);
             s.playerId = PlayerName;
             s.packageId = RunConditions.PackageId ?? "";
             s.referencePackage = RunConditions.ReferencePackage;

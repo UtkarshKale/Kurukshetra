@@ -35,7 +35,13 @@ namespace Chaukanna.Scenario
         public static bool DirectorOn, ReferencePackage;
         // LAN team mode on a trainee's PC: the host runs the sky; this PC only shows proxies and sends decisions.
         public static bool NetTeamClient;
+        // LAN team mode: this PC's seat (Sentry / Commander). Any everywhere else, and then no role scoring or refusals apply.
+        public static Chaukanna.Net.SeatRole SeatRole = Chaukanna.Net.SeatRole.Any;
         public static string PackageId = "";
+        // Dense sky (DS-1): a crowd is in the run; the I key works; the shares of cooperative drones with no reply and hostiles that spoof.
+        public static bool CrowdActive;
+        public static bool IffAid = true;
+        public static float FriendlyNoIffPercent = 5f, HostileSpoofPercent;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         public static void Reset()
@@ -51,6 +57,11 @@ namespace Chaukanna.Scenario
             RangeDrill = false;
             DirectorOn = ReferencePackage = false;
             PackageId = "";
+            SeatRole = Chaukanna.Net.SeatRole.Any;
+            CrowdActive = false;
+            IffAid = true;
+            FriendlyNoIffPercent = 5f;
+            HostileSpoofPercent = 0f;
         }
     }
 
@@ -119,6 +130,18 @@ namespace Chaukanna.Scenario
         public int birdFlocks;
         public int flockSize = 8;
 
+        [Header("Dense sky (DS-1)")]
+        [Tooltip("Cooperative drones and birds in the air besides the planned contacts (own ISR, civil delivery and survey drones, light shows, bird flocks). Drawn by the thousand, never hostile. 0 = no crowd.")]
+        public int crowdCount;
+        [Tooltip("Metres round the post that the crowd fills. 0 = 1.5 x the spawn ring radius.")]
+        public float crowdRadius;
+        [Tooltip("On: the I key challenges a contact for IFF / Remote ID, and the lock label shows the filed-route line.")]
+        public bool iffAid = true;
+        [Tooltip("Share (percent) of the own and civil drones that do not answer: transponder off, no Remote ID.")]
+        public float friendlyNoIffPercent = 5f;
+        [Tooltip("Share (percent) of the hostiles that answer IFF with a valid-looking reply.")]
+        public float hostileSpoofPercent;
+
         [Header("Geometry")]
         public float sectorArcDegrees = 120f;
         public float spawnRingRadius = 1000f;
@@ -146,6 +169,8 @@ namespace Chaukanna.Scenario
         [Header("View")]
         [Tooltip("On: the run starts in VR mode (seated soldier, hands, sensor tablet, binoculars by raising both hands). Movement is off in VR.")]
         public bool vrMode;
+        [Tooltip("How the soldier sees the field: 0 desktop, 1 VR-sim (mouse), 2 headset (OpenXR). -1 = not set: derived from VR mode, so old presets and packages keep working.")]
+        public int viewMode = -1;
 
         [Header("Soldier")]
         [Tooltip("On: the soldier can walk (W A S D, Shift to run). Off: fixed at the post, look only.")]
@@ -165,6 +190,20 @@ namespace Chaukanna.Scenario
             return (ScenarioConfig)MemberwiseClone();
         }
 
+        public const int ViewDesktop = 0, ViewVrSim = 1, ViewHeadset = 2;
+
+        // The view this config asks for. A preset saved before the headset existed only has vrMode.
+        public int EffectiveViewMode => viewMode >= ViewDesktop && viewMode <= ViewHeadset ? viewMode : vrMode ? ViewVrSim : ViewDesktop;
+
+        // Sets both fields together, so code that only knows vrMode (older packages, other builds) still sees VR on for the sim and the headset.
+        public void SetViewMode(int mode)
+        {
+            viewMode = Mathf.Clamp(mode, ViewDesktop, ViewHeadset);
+            vrMode = viewMode != ViewDesktop;
+        }
+
+        public static string ViewModeLabel(int mode) => mode == ViewHeadset ? "HEADSET" : mode == ViewVrSim ? "VR-SIM" : "DESKTOP";
+
         // Only what cannot physically work is corrected (negative counts, zero length, a window outside the run).
         // There are no upper limits: the trainer may ask for as many contacts, seconds or metres as they wish.
         // Returns this for chaining.
@@ -179,6 +218,10 @@ namespace Chaukanna.Scenario
             swarmSize = Mathf.Max(swarmSize, 0);
             birdFlocks = Mathf.Max(birdFlocks, 0);
             flockSize = Mathf.Max(flockSize, 1);
+            crowdCount = Mathf.Max(crowdCount, 0);
+            crowdRadius = Mathf.Max(crowdRadius, 0f);
+            friendlyNoIffPercent = Mathf.Clamp(friendlyNoIffPercent, 0f, 100f);     // shares: cannot pass 100 %
+            hostileSpoofPercent = Mathf.Clamp(hostileSpoofPercent, 0f, 100f);
             swarmTime = Mathf.Clamp(swarmTime, 0f, duration);
             blendInPercent = Mathf.Clamp(blendInPercent, -1f, 100f);        // a share: cannot pass 100 %
             sectorArcDegrees = Mathf.Clamp(sectorArcDegrees, 1f, 360f);     // a circle has 360 degrees
@@ -242,12 +285,17 @@ namespace Chaukanna.Scenario
         // Values above these still run; the trainer is only told they may be slow or hard to see.
         public const int ManyContacts = 300;
         public const float FarRing = 4000f;
+        public const int ManyCrowd = 20000;
+
+        // The metres the crowd fills: the typed radius, or 1.5 x the spawn ring.
+        public float CrowdRadiusEffective => crowdRadius > 0f ? crowdRadius : 1.5f * spawnRingRadius;
 
         // Empty when nothing needs saying. Never blocks START.
         public string Warning()
         {
             string s = "";
             if (TotalContacts > ManyContacts) s += $"{TotalContacts} contacts in one run may slow the simulation down (above about {ManyContacts}).  ";
+            if (crowdCount > ManyCrowd) s += $"{crowdCount} crowd tracks may be slow (above about {ManyCrowd}).  ";
             if (spawnRingRadius > FarRing) s += $"At {spawnRingRadius:F0} m small drones start out too far to see, even through binoculars.  ";
             if (quietWatch && contactsPerHour > 4f) s += $"A Quiet watch should have at most 4 contacts per hour ({contactsPerHour:F0} set).  ";
             if (spawnWindowEnd < duration * 0.5f && TotalContacts > 0 && !quietWatch) s += $"All contacts appear in the first {spawnWindowEnd:F0} s of a {duration:F0} s run (raise \"Spawn until s\").  ";

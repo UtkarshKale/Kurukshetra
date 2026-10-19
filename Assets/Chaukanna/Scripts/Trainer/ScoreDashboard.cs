@@ -263,18 +263,36 @@ namespace Chaukanna.Trainer
             for (int i = 0; i < Players.Count; i++)
             {
                 var p = Players.Get(i);
-                var row = new Rect(x, y, w, 34f);
+                // LAN team run: the seat's role, and for a sentry / commander the link they are measured on.
+                string extra = RoleLine(p);
+                float rowH = extra.Length > 0 ? 54f : 34f;
+                var row = new Rect(x, y, w, rowH);
                 bool hover = row.Contains(Event.current.mousePosition);
                 C.Fill(row, i == selected ? C.Selected : hover ? C.PanelHover : C.Panel);
                 if (GUI.Button(row, GUIContent.none, GUIStyle.none)) selected = i;
                 string score = p.current != null ? $"Score {p.current.totalPoints} / {p.current.maxPoints}" : "no score yet";
-                GUI.Label(new Rect(x + 10f, y, w * 0.3f, 34f), "<b>" + p.name + "</b>", C.Label);
-                GUI.Label(new Rect(x + w * 0.32f, y, w * 0.34f, 34f), p.state, C.Label);
+                string role = string.IsNullOrEmpty(p.role) ? "" : $"  <color=#FFD060>{p.role}</color>";
+                GUI.Label(new Rect(x + 10f, y, w * 0.34f, 34f), "<b>" + p.name + "</b>" + role, C.Label);
+                GUI.Label(new Rect(x + w * 0.36f, y, w * 0.3f, 34f), p.state, C.Label);
                 GUI.Label(new Rect(x + w * 0.66f, y, w * 0.34f - 8f, 34f), score, C.Label);
-                y += 38f;
+                if (extra.Length > 0) GUI.Label(new Rect(x + 10f, y + 30f, w - 20f, 20f), extra, C.Small);
+                y += rowH + 4f;
             }
             GUI.Label(new Rect(x, y, w, 20f), "Click a player to see their stats. More players appear here with multiplayer.", C.Small);
             return y + 30f;
+        }
+
+        // The roster's second line for a seat with a role: sentry = reports and lock-to-report, commander = report-to-decision.
+        public static string RoleLine(PlayerEntry p)
+        {
+            var s = p != null ? p.current : null;
+            if (s == null || string.IsNullOrEmpty(p.role) || p.role == "ANY") return "";
+            string handled = s.handledByTeam > 0 ? $", {s.handledByTeam} handled by teammates" : "";
+            if (p.role == "SENTRY")
+                return $"Sentry: {s.sentryReports} report{(s.sentryReports == 1 ? "" : "s")}, lock to report " + (s.sentryReportLatencyMean < 0f ? "-" : s.sentryReportLatencyMean.ToString("F1") + " s") + handled;
+            return "Commander: report to decision " + (s.commanderDelayMean < 0f ? "-" : s.commanderDelayMean.ToString("F1") + " s") + $" ({s.commanderDelayCount} decision{(s.commanderDelayCount == 1 ? "" : "s")})"
+                + (s.upstreamWaivers > 0 ? $", {s.upstreamWaivers} miss waived (report too late)" : "") + (s.reportAloneEngagements > 0 ? $", {s.reportAloneEngagements} engaged on a report alone" : "")
+                + (s.handoffFratricides > 0 ? $", {s.handoffFratricides} hand-off fratricide" : "") + handled;
         }
 
         float Overview(float x, float y, float w, PlayerEntry player)
@@ -385,6 +403,18 @@ namespace Chaukanna.Trainer
             {
                 string pv = $"Prevalence <b>{s.prevalence}</b>, realised {(s.realisedHostileShare < 0f ? "-" : (100f * s.realisedHostileShare).ToString("F0") + " %")} hostile" + (s.prevalenceNote.Length > 0 ? $"  <color=#{ColorUtility.ToHtmlStringRGB(C.Warn)}>{s.prevalenceNote}</color>" : "");
                 GUI.Label(new Rect(x, y, w, 20f), pv, C.Small);
+                y += 22f;
+            }
+            if (s.crowdTracks > 0 || s.iffChallenges > 0)
+            {
+                GUI.Label(new Rect(x, y, w, 20f), $"<b>Dense sky</b>  {s.crowdTracks} crowd tracks (peak {s.crowdPeak} airborne), {s.crowdChecked} checked, {s.iffChallenges} IFF challenges, <b>{s.crowdFriendliesHit}</b> friendlies engaged or jammed", C.Small);
+                y += 22f;
+            }
+            if (!string.IsNullOrEmpty(s.seatRole) || s.handledByTeam > 0)
+            {
+                string chain = s.seatRole == "COMMANDER" ? $"report to decision {(s.commanderDelayMean < 0f ? "-" : s.commanderDelayMean.ToString("F1") + " s")} ({s.commanderDelayCount}), {s.upstreamWaivers} miss(es) waived as upstream, {s.reportAloneEngagements} engaged on a report alone, {s.handoffFratricides} hand-off fratricide"
+                    : s.seatRole == "SENTRY" ? $"{s.sentryReports} reported, lock to report {(s.sentryReportLatencyMean < 0f ? "-" : s.sentryReportLatencyMean.ToString("F1") + " s")}" : "";
+                GUI.Label(new Rect(x, y, w, 20f), $"<b>Team{(string.IsNullOrEmpty(s.seatRole) ? "" : ": " + s.seatRole)}</b>  {chain}{(chain.Length > 0 ? ", " : "")}{s.handledByTeam} handled by teammates", C.Small);
                 y += 22f;
             }
             if (s.quietWatch)

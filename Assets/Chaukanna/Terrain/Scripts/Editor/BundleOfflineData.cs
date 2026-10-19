@@ -34,6 +34,7 @@ namespace Chaukanna.TerrainGen.EditorTools
                 string name = Path.GetFileName(file);
                 if (skipMeta && name.EndsWith(".meta")) continue;
                 if (name.EndsWith(".key")) continue;
+                if (skipMeta && (name.EndsWith("_osm.json") || name.EndsWith("_osm_surround.json"))) continue;     // raw OpenStreetMap answers: large, and the build only needs <area>_layers.json
                 string target = Path.Combine(to, file.Substring(from.Length).TrimStart('\\', '/'));
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
                 File.Copy(file, target, true);

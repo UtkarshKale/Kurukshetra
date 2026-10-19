@@ -34,6 +34,16 @@ namespace Chaukanna.Player
             return inside;
         }
 
+        // For testing many points against one loop (the crowd): copy the loop once, then call InsidePrepared per point.
+        public static void Prepare(List<Vector2> loop, out Vector2 min, out Vector2 max)
+        {
+            min = max = loop.Count > 0 ? loop[0] : Vector2.zero;
+            for (int i = 1; i < loop.Count; i++) { min = Vector2.Min(min, loop[i]); max = Vector2.Max(max, loop[i]); }
+            Copy(loop);
+        }
+
+        public static bool InsidePrepared(float px, float py, int n) => Inside(px, py, xs, ys, n);
+
         public static float Area(List<Vector2> loop)
         {
             float twice = 0f;
@@ -198,6 +208,7 @@ namespace Chaukanna.Player
         readonly List<Vector2> guiLoop = new List<Vector2>();
         readonly List<Contact> picked = new List<Contact>();
         readonly List<Contact> candidates = new List<Contact>();
+        readonly List<int> crowdScratch = new List<int>();
         Vector2 cursor;
         bool drawing, fillDirty;
         LassoMode liveMode;
@@ -304,12 +315,24 @@ namespace Chaukanna.Player
             drawing = false;
             Candidates();
             float minArea = 12f * 12f * Ui * Ui;
-            if (loop.Count >= 3 && LassoMath.Area(loop) >= minArea) LassoMath.Pick(candidates, cam, loop, Near, Far, picked);
-            else PickNearCursor();
+            int crowdMade = 0, crowdTotal = 0;
+            var crowd = CrowdSky.Active;
+            if (loop.Count >= 3 && LassoMath.Area(loop) >= minArea)
+            {
+                LassoMath.Pick(candidates, cam, loop, Near, Far, picked);
+                // Dense sky: crowd drones in the loop become real contacts (up to 48, nearest the post first).
+                if (crowd != null && mode != LassoMode.Remove) crowdMade = crowd.PromoteForLasso(cam, loop, Near, Far, sensor, picked, out crowdTotal);
+            }
+            else
+            {
+                PickNearCursor();
+                if (picked.Count == 0 && crowd != null && mode != LassoMode.Remove) PickCrowdNearCursor(crowd);
+            }
             sensor.ApplyLasso(picked, mode, "lasso");
             LastPicked = picked.Count;
             string verb = mode == LassoMode.Remove ? "taken out of the group" : mode == LassoMode.Add ? "added" : "selected";
             result = picked.Count == 0 ? "Nothing you can see is inside the loop" : $"{picked.Count} {verb}  ({sensor.Selected.Count} in group)";
+            if (crowdTotal > crowdMade) result += $"   {crowdMade} of {crowdTotal} crowd drones in the loop: tighten the loop";
             resultUntil = Time.unscaledTime + 2f;
             loop.Clear();
             picked.Clear();
@@ -332,6 +355,18 @@ namespace Chaukanna.Player
                 if (d <= bestDist) { best = c; bestDist = d; }
             }
             if (best != null) picked.Add(best);
+        }
+
+        // A click without a loop: the crowd drone nearest the cursor (within the same pixel reach), promoted.
+        void PickCrowdNearCursor(CrowdSky crowd)
+        {
+            Ray ray = cam.ScreenPointToRay(new Vector3(cursor.x, cursor.y, 0f));
+            float degPerPixel = cam.fieldOfView / Mathf.Max(1, cam.pixelHeight);
+            int index = crowd.Pick(cam, ray.direction, clickPickPixels * Ui * degPerPixel, sensor);
+            if (index < 0) return;
+            if (!LassoMath.InBand(Vector3.Distance(cam.transform.position, crowd.PositionOf(index)), Near, Far)) return;
+            var c = crowd.Promote(index);
+            if (c != null) picked.Add(c);
         }
 
         void OnGUI()
@@ -391,7 +426,10 @@ namespace Chaukanna.Player
                     string mode = liveMode == LassoMode.Add ? "+ " : liveMode == LassoMode.Remove ? "- " : "";
                     var badge = new Rect(cur.x + 12f * ui, cur.y + 6f * ui, 150f * ui, 24f * ui);
                     Box(badge, new Color(0f, 0f, 0f, 0.6f));
-                    GUI.Label(badge, $"{mode}{picked.Count} in loop", style);
+                    int crowdInLoop = 0;
+                    var crowd = CrowdSky.Active;
+                    if (crowd != null && loop.Count >= 3) { crowd.InLoop(cam, loop, Near, Far, sensor, crowdScratch); crowdInLoop = crowdScratch.Count; }
+                    GUI.Label(badge, $"{mode}{picked.Count + crowdInLoop} in loop", style);
                 }
             }
             GUI.EndGroup();

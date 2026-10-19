@@ -21,6 +21,10 @@ namespace Chaukanna.Player
 
         public bool Allowed { get; private set; }
 
+        // The post as last set (the eye position). The headset rig keeps its origin here, since a tracked camera cannot be placed directly.
+        public bool HavePost => havePost;
+        public Vector3 Post => post;
+
         ScenarioSpawner spawner;
         int run = -1;
         Vector3 post;

@@ -33,6 +33,40 @@ namespace Chaukanna.Trainer
         [Range(0f, 1f)] public float sensorDegradedProbability = 0.25f;
         [Range(0f, 1f)] public float roeFlipProbability = 0.4f;
 
+        public const string ExtremeName = "Extreme";
+
+        // The Extreme level, built in code with the same numbers as Data/Difficulty/Difficulty_Extreme.asset. The trainer lists are
+        // serialized in the scenes (which stay untouched), so Extreme is added to them at run time when they have no such entry.
+        public static DifficultyProfile Extreme()
+        {
+            var p = CreateInstance<DifficultyProfile>();
+            p.name = "Difficulty_Extreme";
+            p.displayName = ExtremeName;
+            p.contactCountMultiplier = 1.5f;
+            p.speedMultiplier = 1.25f;
+            p.blendInPercent = 50f;
+            p.extraHazeLevels = 1;
+            p.minVisibleSizeMultiplier = 1.25f;
+            p.aiErrorRateOk = 0.30f;
+            p.aiErrorRateDegraded = 0.50f;
+            p.sensorDegradedProbability = 0.6f;
+            p.roeFlipProbability = 0.8f;
+            return p;
+        }
+
+        // Appends Extreme to a trainer's list unless it already has a level of that name. Returns true when it was added.
+        public static bool EnsureExtreme(System.Collections.Generic.List<DifficultyProfile> levels)
+        {
+            if (levels == null) return false;
+            foreach (var d in levels) if (d != null && d.displayName == ExtremeName) return false;
+            DifficultyProfile asset = null;
+#if UNITY_EDITOR
+            asset = UnityEditor.AssetDatabase.LoadAssetAtPath<DifficultyProfile>("Assets/Chaukanna/Data/Difficulty/Difficulty_Extreme.asset");
+#endif
+            levels.Add(asset != null ? asset : Extreme());
+            return true;
+        }
+
         // Returns a new config; the one passed in is left alone so levels never stack.
         public ScenarioConfig Apply(ScenarioConfig source)
         {

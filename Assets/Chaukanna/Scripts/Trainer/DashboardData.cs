@@ -24,6 +24,7 @@ namespace Chaukanna.Trainer
     {
         public string name;
         public string state;            // "RUNNING 01:23", "COMPLETE", "IDLE"
+        public string role = "";        // LAN team run: "SENTRY" / "COMMANDER" / "ANY"; empty otherwise
         public SessionResult current;   // may be null
         public List<TrendPoint> history = new List<TrendPoint>();   // oldest first, real sessions only
     }

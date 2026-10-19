@@ -83,6 +83,19 @@ namespace Chaukanna.Scoring
         public List<NodeResult> nodes = new List<NodeResult>();
         public int total;
         public string path;     // one-line tree path for the log
+
+        // LAN team play (MP-1). handled: a teammate's jam or hit took it out before this seat's clock ran out (0 points, not a
+        // miss). Commander seat: report-to-decision delay, who was at fault for a miss, hand-off flags. Sentry seat: lock-to-report.
+        public bool handled;
+        public string handledBy = "";
+        public string reportedBy = "", reportedCall = "";
+        public float reportReceived = -1f;          // commander: when the sentry's report reached this seat
+        public float commanderDelay = -1f;          // commander: report received > action; -1 = no report before an action
+        public float sentryReportLatency = -1f;     // sentry: lock > report (R)
+        public string firstFault = "";              // commander clock miss: "sentry" (report too late, waived) or "commander"
+        public bool upstreamWaiver;                 // commander: the clock miss was waived, the report came too late
+        public bool reportAlone;                    // commander: engaged under Card B / C on a report alone (no own lock, optics or IFF)
+        public bool handoffFratricide;              // commander: engaged an own drone that a sentry had reported as hostile
     }
 
     [Serializable]
@@ -99,6 +112,8 @@ namespace Chaukanna.Scoring
         public string difficulty = "";              // empty = no difficulty level applied
         public bool allowMovement;                  // the soldier could walk
         public string displayTier = "desktop";      // desktop, vr-sim or mixed: never pooled with each other
+        public string terrainLayers = "";           // trees / grass / buildings: the mode and the data actually used (OSM, satellite estimate, procedural, off)
+        public string mapCredit = "";               // set when OpenStreetMap data was shown
         public int comfortRating = -1;              // VR only: 1-5 from the after-run check, 0 = skipped, -1 = not asked
         public string comfortSickness = "";
 
@@ -160,6 +175,18 @@ namespace Chaukanna.Scoring
         public string prevalenceNote = "";
         public bool quietWatch, nullMission;
         public VigilanceResult vigilance = new VigilanceResult();
+
+        // Dense sky (DS-1), data only: no points attached.
+        public int crowdTracks, crowdPeak, crowdChecked, iffChallenges, crowdFriendliesHit;
+
+        // LAN team play (MP-1). seatRole is empty when the run was not played with roles (solo, or a team seat with no role).
+        public string seatRole = "";
+        public int handledByTeam;                   // contacts a teammate took out before this seat's clock ran out
+        public int sentryReports;                   // sentry: contacts reported
+        public float sentryReportLatencyMean = -1f; // sentry: mean lock > report, seconds
+        public int commanderDelayCount;             // commander: decisions that followed a report
+        public float commanderDelayMean = -1f;      // commander: mean report received > decision, seconds ("Report to decision")
+        public int upstreamWaivers, reportAloneEngagements, handoffFratricides;
     }
 
     // Vigilance over a watch (doc §5.4.8): the watch cut into thirds; hit rate (brought into view in time) and N1b
@@ -293,11 +320,14 @@ namespace Chaukanna.Scoring
 
         static RoeCard startCardForRun;
         static IList<RoeChange> changesForRun;
+        static Chaukanna.Net.SeatRole roleForRun;      // Any = classic scoring; Sentry / Commander = the team chain (doc §5.4.7)
 
-        public static SessionResult Calculate(IList<ContactRecord> records, RuleSet rules, float runEndTime, int seed = 0, IList<RoeChange> roeChanges = null, RoeCard startCard = RoeCard.WeaponsHold)
+        public static SessionResult Calculate(IList<ContactRecord> records, RuleSet rules, float runEndTime, int seed = 0, IList<RoeChange> roeChanges = null, RoeCard startCard = RoeCard.WeaponsHold,
+            Chaukanna.Net.SeatRole role = Chaukanna.Net.SeatRole.Any)
         {
             startCardForRun = startCard;
             changesForRun = roeChanges;
+            roleForRun = role;
             var s = new SessionResult
             {
                 seed = seed,
@@ -346,7 +376,7 @@ namespace Chaukanna.Scoring
                 s.totalPoints += c.total;
                 s.maxPoints += maxPerContact;
                 bool hostile = Category(r.truthClass) == ContactCategory.Hostile;
-                if (hostile && !r.Actioned) s.missedHostiles++;
+                if (hostile && !r.Actioned && !c.handled) s.missedHostiles++;
 
                 if (!c.detected) { s.missed++; continue; }
                 s.detected++;
@@ -356,7 +386,7 @@ namespace Chaukanna.Scoring
                 if (row >= 0 && col >= 0) s.confusion[row * Columns.Length + col]++;
                 if (r.call != PlayerCall.None && r.call == RightCall(r.truthClass)) right++;
 
-                if (!r.Actioned) { s.unresolved++; continue; }
+                if (!r.Actioned) { if (!c.handled) s.unresolved++; continue; }
                 actioned++;
                 if (c.nodes[2].passed) correctActions++;
                 if (r.action == PlayerAction.Engage && !hostile) s.falseEngagements++;
@@ -369,6 +399,7 @@ namespace Chaukanna.Scoring
             }
             if (actioned > 0) s.engagementDecisionScore = 100f * correctActions / actioned;
             RollUp(s, records, rules);
+            TeamRollUp(s, role);
             PrevalenceAndVigilance(s, records, runEndTime, rules);
             s.swarm = Triage(records, rules);
             if (s.swarm.happened) { s.totalPoints += s.swarm.points; s.maxPoints += s.swarm.maxPoints; }
@@ -425,6 +456,14 @@ namespace Chaukanna.Scoring
             if (nullMission) s.prevalenceNote = "null mission: no hostile this run (planned)";
             else if (s.realisedHostileShare < band.x || s.realisedHostileShare > band.y)
                 s.prevalenceNote = $"{requested} prevalence requested ({band.x * 100f:F0}-{band.y * 100f:F0} %), realised {s.realisedHostileShare * 100f:F0} %";
+        }
+
+        // The dense-sky facts of a run, from its records. Scoring is not changed by them.
+        public static void StampCrowd(SessionResult s, IList<ContactRecord> records, int tracks, int peak)
+        {
+            var c = CrowdSky.Summarize(records, tracks, peak);
+            s.crowdTracks = c.tracks; s.crowdPeak = c.peak; s.crowdChecked = c.checkedCount;
+            s.iffChallenges = c.iffChallenges; s.crowdFriendliesHit = c.friendliesHit;
         }
 
         public static SwarmTriageResult Triage(IList<ContactRecord> records, RuleSet rules)
@@ -496,6 +535,37 @@ namespace Chaukanna.Scoring
             s.processScore = processN > 0 ? (float)processSum / processN : -1f;
             s.reportSdt = SdtResult.From(rHits, rSignals, rFa, rNoise, rules.sdtMinimumTrials);
             s.engageSdt = SdtResult.From(eHits, eSignals, eFa, eNoise, rules.sdtMinimumTrials);
+        }
+
+        // LAN team play: the counts and the two seat-specific means. Handled-by-team applies on any seat in a team run.
+        static void TeamRollUp(SessionResult s, Chaukanna.Net.SeatRole role)
+        {
+            s.seatRole = role == Chaukanna.Net.SeatRole.Any ? "" : Chaukanna.Net.NetPlayer.RoleName(role);
+            float delaySum = 0f, latSum = 0f;
+            int delayN = 0, latN = 0;
+            foreach (var c in s.contacts)
+            {
+                if (!c.scored) continue;
+                if (c.handled) s.handledByTeam++;
+                if (c.upstreamWaiver) s.upstreamWaivers++;
+                if (c.reportAlone) s.reportAloneEngagements++;
+                if (c.handoffFratricide) s.handoffFratricides++;
+                if (c.commanderDelay >= 0f) { delaySum += c.commanderDelay; delayN++; }
+                if (c.sentryReportLatency >= 0f) { latSum += c.sentryReportLatency; latN++; }
+            }
+            if (role == Chaukanna.Net.SeatRole.Commander && delayN > 0) { s.commanderDelayCount = delayN; s.commanderDelayMean = delaySum / delayN; }
+            if (role == Chaukanna.Net.SeatRole.Sentry) { s.sentryReports = latN; s.sentryReportLatencyMean = latN > 0 ? latSum / latN : -1f; }
+        }
+
+        static bool IsHostileCall(PlayerCall call) => call == PlayerCall.HostileQuad || call == PlayerCall.HostileFixedWing;
+
+        // Commander: engaged under Card B / C with only the sentry's report to go on. An own lock from before the report, a look
+        // through the binoculars or an IFF challenge is the commander's own check; a lock made after the report (the T key) is not.
+        static bool ReportAlone(ContactRecord r)
+        {
+            if (r.action != PlayerAction.Engage || r.reportReceivedTime < 0f || r.opticsVerified || r.iffChecked) return false;
+            bool ownViewFirst = r.firstLockTime >= 0f && r.firstLockTime < r.reportReceivedTime;
+            return !ownViewFirst && (r.roeAtAction == RoeCard.CardB || r.roeAtAction == RoeCard.CardC);
         }
 
         // The class the player's call names (their belief), if any.
@@ -609,6 +679,16 @@ namespace Chaukanna.Scoring
             };
             string head = $"#{r.id:00} {r.truthClass}";
 
+            // LAN team play: who reported it, and the two links of the chain this seat can be measured on.
+            bool sentry = roleForRun == Chaukanna.Net.SeatRole.Sentry, commander = roleForRun == Chaukanna.Net.SeatRole.Commander;
+            c.handledBy = r.handledBy ?? "";
+            c.reportedBy = r.reportedBy ?? "";
+            c.reportedCall = r.reportedCall == PlayerCall.None ? "" : r.reportedCall.Label();
+            c.reportReceived = r.reportReceivedTime;
+            if (sentry && r.action == PlayerAction.Report && r.actionTime >= 0f && r.firstLockTime >= 0f) c.sentryReportLatency = Math.Max(0f, r.actionTime - r.firstLockTime);
+            if (commander && r.reportReceivedTime >= 0f && r.Actioned && r.action != PlayerAction.Hold && r.actionTime >= r.reportReceivedTime) c.commanderDelay = r.actionTime - r.reportReceivedTime;
+            c.handoffFratricide = commander && Category(r.truthClass) == ContactCategory.Own && r.action == PlayerAction.Engage && IsHostileCall(r.reportedCall);
+
             if (!c.detected && r.spawnTime > runEndTime - rules.lateSpawnSeconds)
             {
                 c.scored = false;
@@ -720,7 +800,7 @@ namespace Chaukanna.Scoring
                 c.reportBand = c.reportLatency <= rules.reportFullSeconds ? "full" : c.reportLatency <= rules.reportPartialSeconds ? "partial" : "late";
             }
             // Node 3: right action for the card in force when it was taken?
-            var act = new NodeResult { label = "ACT" };
+            var act = new NodeResult { label = sentry ? "REPORT" : "ACT" };
             bool hostileTruth = Category(r.truthClass) == ContactCategory.Hostile;
             // The decision clock (doc §5.4.1): opens when the contact is in view (or when it was called, if earlier), runs out at
             // the class's release point for a hostile, or when a non-hostile leaves / after a fixed time.
@@ -730,15 +810,50 @@ namespace Chaukanna.Scoring
             bool decidedInTime = r.Actioned && r.action != PlayerAction.Hold && r.actionTime <= c.deadline + 0.01f;
             if (deadlinePassed && r.firstLockTime < 0f) c.missKind = "perception failure: in view, never marked";
             bool rejected = r.action == PlayerAction.None || r.action == PlayerAction.Hold || r.action == PlayerAction.Report;
-            if (rules.fullScoring && deadlinePassed && hostileTruth && !decidedInTime)
+
+            // LAN team play (all of it needs a role or a teammate's mark; solo records never take these branches).
+            // Handled: a teammate's jam or hit took it out before the deadline and this seat had not decided in time.
+            c.handled = !decidedInTime && r.handledTime >= 0f && c.deadline >= 0f && r.handledTime <= c.deadline + 0.01f;
+            // Sentry: the job is to report. A hostile reported in time, or a non-hostile reported, is sound; a non-hostile reported
+            // with a hostile call is a false report (Minor). A hostile not reported by its deadline is the usual clock miss below.
+            bool sentryReport = sentry && !c.handled && r.action == PlayerAction.Report && (!hostileTruth || decidedInTime);
+            bool falseReport = sentryReport && !hostileTruth && IsHostileCall(r.call);
+            // Commander first-fault rule: the sentry's report reached them too late to act on, and they had no view of their own
+            // before it came. Their miss is waived and charged to the link upstream.
+            bool commanderLate = commander && rules.fullScoring && deadlinePassed && hostileTruth && !decidedInTime && !c.handled && r.reportReceivedTime >= 0f
+                && r.reportReceivedTime > c.deadline - rules.commanderMinSeconds && !(r.firstLockTime >= 0f && r.firstLockTime < r.reportReceivedTime);
+            if (c.handled)
+            {
+                string who = string.IsNullOrEmpty(r.handledBy) ? "the team" : r.handledBy;
+                act.passed = true;
+                act.reason = $"handled by {who} at {F(r.handledTime)}s ({(string.IsNullOrEmpty(r.handledAction) ? "action" : r.handledAction)}), before {c.deadlineReason} at {F(c.deadline)}s";
+            }
+            else if (sentryReport)
+            {
+                var sev = falseReport ? Severity.Minor : Severity.Sound;
+                c.severity = sev.ToString();
+                act.points = rules.Points(sev);
+                act.passed = !falseReport;
+                act.reason = hostileTruth ? $"reported at {F(r.actionTime)}s, before {c.deadlineReason} at {F(c.deadline)}s, sound"
+                    : falseReport ? $"FALSE REPORT: called it {r.call.Label()} (Minor)" : "reported, correct rejection, sound";
+            }
+            else if (commanderLate)
+            {
+                c.upstreamWaiver = true;
+                c.firstFault = "sentry";
+                string who = string.IsNullOrEmpty(r.reportedBy) ? "the sentry" : r.reportedBy;
+                act.reason = $"upstream: report came too late ({who}): it reached the commander at {F(r.reportReceivedTime)}s, the deadline ({c.deadlineReason}) was {F(c.deadline)}s, no clock miss charged";
+            }
+            else if (rules.fullScoring && deadlinePassed && hostileTruth && !decidedInTime)
             {
                 var card = CardAt(c.deadline, startCardForRun, changesForRun);
                 var sev = Judge(rules, card, r.truthClass, PlayerAction.Hold);
                 c.clockMiss = true;
                 c.severity = sev.ToString();
+                if (commander) c.firstFault = "commander";
                 act.points = rules.Card(card) != null ? rules.Points(sev) : Math.Min(0, rules.Find(card, ContactCategory.Hostile, PlayerAction.Hold)?.points ?? 0);
                 string late = r.Actioned && r.action != PlayerAction.Hold ? $", {r.action} came at {F(r.actionTime)}s, too late" : r.OnHold ? ", still on hold" : "";
-                act.reason = $"MISS: no decision before {c.deadlineReason} at {F(c.deadline)}s{late} ({sev} under {RoeCards.Short(card)})";
+                act.reason = $"MISS: {(sentry ? "not reported" : "no decision")} before {c.deadlineReason} at {F(c.deadline)}s{late} ({sev} under {RoeCards.Short(card)})";
             }
             else if (rules.fullScoring && deadlinePassed && !hostileTruth && rejected && !r.Actioned)
             {
@@ -769,11 +884,16 @@ namespace Chaukanna.Scoring
                 {
                     // Cards A / B / C: the severity matrix decides (doc §5.4.4).
                     var sev = lettered.Lookup(RuleSet.Group(r.truthClass), r.action);
+                    // Commander verification lapse (doc rule 1): engaged on a report alone is at least Minor under B, Major under C.
+                    bool lapse = commander && ReportAlone(r) && sev < ReportAloneFloor(r.roeAtAction);
+                    if (lapse) sev = ReportAloneFloor(r.roeAtAction);
+                    c.reportAlone = commander && ReportAlone(r);
                     c.severity = sev.ToString();
                     act.points = rules.Points(sev) + c.holdPenalty + actionChange;
                     act.passed = sev == Severity.Sound;
                     act.reason = under + (sev == Severity.Sound ? ", sound" : $", {sev.ToString().ToUpperInvariant()} under {RoeCards.Short(r.roeAtAction)}")
-                        + (c.holdPenalty != 0 ? $", held {F(r.holdUnderAttackSeconds)}s under attack ({c.holdPenalty})" : "");
+                        + (c.holdPenalty != 0 ? $", held {F(r.holdUnderAttackSeconds)}s under attack ({c.holdPenalty})" : "")
+                        + (c.reportAlone ? ", engaged on a report alone (no own lock, optics or IFF)" : "");
                 }
                 else if (rule == null) { act.points = actionChange; act.reason = under + ", no rule"; }
                 else
@@ -797,29 +917,34 @@ namespace Chaukanna.Scoring
                 }
             }
             // Hold or report on a non-hostile by its deadline is also a correct rejection (scored by the action rules above).
-            if (rules.fullScoring && deadlinePassed && !hostileTruth && rejected && r.Actioned) c.correctRejection = true;
+            if (rules.fullScoring && deadlinePassed && !hostileTruth && rejected && r.Actioned && !falseReport && !c.handled) c.correctRejection = true;
+            if (c.handoffFratricide) act.reason += $", HAND-OFF FRATRICIDE: {(string.IsNullOrEmpty(r.reportedBy) ? "a sentry" : r.reportedBy)} had reported this own drone as {r.reportedCall.Label()}";
             c.nodes.Add(act);
-            c.actBranch = c.clockMiss ? "Clock ran out" : c.correctRejection && !r.Actioned ? "Left alone" : r.Actioned ? r.action.ToString() : "No action";
-            c.outcomeBranch = c.clockMiss ? "Wrong action" : c.correctRejection ? "Right action" : !r.Actioned ? "Unresolved"
+            c.actBranch = c.handled ? "Handled by team" : c.upstreamWaiver ? "Report too late"
+                : c.clockMiss ? "Clock ran out" : c.correctRejection && !r.Actioned ? "Left alone" : r.Actioned ? r.action.ToString() : "No action";
+            c.outcomeBranch = c.handled ? "Right action" : c.upstreamWaiver ? "Unresolved" : c.clockMiss ? "Wrong action" : c.correctRejection ? "Right action" : !r.Actioned ? "Unresolved"
                 : r.action == PlayerAction.Engage && Category(r.truthClass) != ContactCategory.Hostile ? "False engagement"
                 : act.passed ? "Right action" : "Wrong action";
 
             // N3 process: judged on what the player believed (their own call), not on the truth they could not know.
             // N4 outcome: what actually happened. The two together give the process x outcome grid.
-            if (c.clockMiss || c.correctRejection || r.Actioned)
+            if (c.clockMiss || c.correctRejection || r.Actioned || c.handled || c.upstreamWaiver)
             {
                 Severity process;
-                if (c.correctRejection) process = Severity.Sound;
+                if (c.handled || c.upstreamWaiver) process = Severity.Sound;       // not this seat's fault: judged sound
+                else if (sentryReport) process = falseReport ? Severity.Minor : Severity.Sound;
+                else if (c.correctRejection) process = Severity.Sound;
                 else if (c.clockMiss) process = (Severity)Enum.Parse(typeof(Severity), c.severity);
                 else
                 {
                     var card = r.roeAtAction;
                     process = CallClass(r.call, out var believed) ? Judge(rules, card, believed, r.action) : Judge(rules, card, r.truthClass, r.action);
                     if (c.unverified && process < Severity.Major) process = (card == RoeCard.CardB || card == RoeCard.CardC) ? Severity.Major : (Severity)Math.Max((int)process, (int)Severity.Minor);
+                    if (c.reportAlone && process < ReportAloneFloor(card)) process = ReportAloneFloor(card);
                 }
                 c.processSeverity = process.ToString();
                 c.processScore = Math.Max(0, 100 - Units(process, rules));
-                c.outcome = Outcome(r, hostileTruth, c);
+                c.outcome = c.handled ? HandledOutcome(r, hostileTruth) : Outcome(r, hostileTruth, c);
                 bool soundProcess = process <= Severity.Minor;
                 bool goodOutcome = c.outcome == "Neutralised" || c.outcome == "Clear" || c.outcome == "Tracked";
                 // A result not known yet (still in the air, nothing decisive happened) is not luck either way.
@@ -930,13 +1055,27 @@ namespace Chaukanna.Scoring
         }
 
         // N4: what happened in the sim.
+        static Severity ReportAloneFloor(RoeCard card) => card == RoeCard.CardB ? Severity.Minor : Severity.Major;
+
+        // A teammate's shot down is also "EngagedHit" on this seat's contact; only team play counts it.
+        static bool TeamPlay(ContactRecord r) => roleForRun != Chaukanna.Net.SeatRole.Any || r.handledTime >= 0f;
+
+        // What a teammate's jam or hit did, for a contact this seat had no chance to decide on.
+        static string HandledOutcome(ContactRecord r, bool hostile)
+        {
+            if (hostile) return "Neutralised";
+            return r.truthClass == ContactClass.FriendlyISR ? "Fratricide" : "Collateral";
+        }
+
         static string Outcome(ContactRecord r, bool hostile, ContactResult c)
         {
             bool fired = r.action == PlayerAction.Engage && r.shots > 0;
+            if (!hostile && !fired && r.despawnReason == "EngagedHit" && TeamPlay(r))
+                return r.truthClass == ContactClass.FriendlyISR ? "Fratricide" : "Collateral";      // another seat shot it down
             if (hostile)
             {
                 // Jammed with effect (link lost, coming down) counts as neutralised even before it reaches the ground.
-                if ((fired && r.engageHit) || r.despawnReason == "JammedDown" || (r.action == PlayerAction.Jam && r.actionLocked)) return "Neutralised";
+                if ((fired && r.engageHit) || r.despawnReason == "JammedDown" || (r.action == PlayerAction.Jam && r.actionLocked) || (r.despawnReason == "EngagedHit" && TeamPlay(r))) return "Neutralised";
                 if (r.despawnReason == "ReachedDefendedPoint") return "Leaked";
                 if (r.action == PlayerAction.Report && r.truthClass == ContactClass.HostileFixedWing) return "Tracked";
                 return r.despawnTime >= 0f ? "Not stopped" : "Pending";

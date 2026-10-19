@@ -50,9 +50,25 @@ namespace Chaukanna.Scenario
     public static class SiteBuilder
     {
         public const string RootName = "Site (generated)";
+        // The ground the site occupies, as rectangles the terrain layers (trees, buildings) keep clear of: the cantonment on
+        // its side of the post and the open fields on the other. Same numbers as Build, so a layer built before the site
+        // and the site itself agree.
+        public static List<Chaukanna.TerrainGen.SiteClearance.Zone> Clearance(Vector3 origin, Vector3 forward, SiteType type, SiteProfile profile)
+        {
+            if (type == SiteType.None) return new List<Chaukanna.TerrainGen.SiteClearance.Zone>();
+            var p = profile != null ? profile : ScriptableObject.CreateInstance<SiteProfile>();
+            Vector3 fwd = forward; fwd.y = 0f; fwd = fwd.sqrMagnitude > 1e-6f ? fwd.normalized : Vector3.forward;
+            float reach = p.canalDistance + p.canalWidth;
+            foreach (float d in p.treeLines) reach = Mathf.Max(reach, d + 6f);
+            var zones = Chaukanna.TerrainGen.SiteClearance.ForSite(new Vector2(origin.x, origin.z), new Vector2(fwd.x, fwd.z), type == SiteType.Urban ? 1f : -1f, p.wallDistance, p.depth, p.halfWidth, reach);
+            if (profile == null) Kill(p);
+            return zones;
+        }
+
 
         public static GameObject Build(Transform post, SiteType type, SiteProfile profile, int seed)
         {
+            if (post != null) Chaukanna.TerrainGen.SiteClearance.Set(Clearance(post.position, post.forward, type, profile));   // the terrain layers keep clear of it
             if (type == SiteType.None || post == null) return null;
             var root = new GameObject(RootName);
             var rng = new System.Random(seed ^ 0x517E);

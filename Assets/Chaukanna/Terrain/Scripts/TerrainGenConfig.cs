@@ -186,6 +186,9 @@ namespace Chaukanna.TerrainGen
         [Tooltip("0 = surface rules only, 1 = the picture only (where it covers the terrain).")]
         [Range(0f, 1f)] public float imageryBlend = 1f;
 
+        [Header("Trees, grass and buildings")]
+        public TerrainLayerSettings terrainLayers = new TerrainLayerSettings();
+
         public bool UsesDem => mode != TerrainMode.PureProcedural;
         public float TileSize => sizeMetres / Mathf.Max(1, tilesPerSide);
         // Samples across the whole area; neighbouring tiles share their edge row.

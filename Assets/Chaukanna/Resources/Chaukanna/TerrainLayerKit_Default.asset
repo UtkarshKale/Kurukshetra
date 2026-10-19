@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c01b42066a3d86b45b34055869b7864c, type: 3}
+  m_Name: TerrainLayerKit_Default
+  m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.TerrainGen.TerrainLayerKit
+  treePrefabs:
+  - {fileID: 3514483221996823209, guid: c4efcc5bb63391f4eaaa643fa4925521, type: 3}
+  - {fileID: 5885180309833833889, guid: 4ea716748d3656f4985a879d119c3db6, type: 3}
+  treeHeight: {x: 8, y: 17}
+  grassPrefabs:
+  - {fileID: 7771706426000198866, guid: c22ed9060ed44614498bb45e4827ab84, type: 3}
+  grassTextures: []
+  grassHealthy: {r: 0.45, g: 0.62, b: 0.25, a: 1}
+  grassDry: {r: 0.62, g: 0.58, b: 0.32, a: 1}
+  grassWidth: {x: 0.6, y: 1}
+  grassHeight: {x: 0.35, y: 0.6}
+  buildingPrefabs:
+    house:
+    - {fileID: 1971353712148610920, guid: e28fe37b7247c2944a595b72ddc28ad8, type: 3}
+    apartments:
+    - {fileID: 7116014259664943267, guid: a319752d83ebd2e49acc7a1634675dde, type: 3}
+    commercial:
+    - {fileID: 934717119849073639, guid: 529af0a1182859042bdea4e143005ea4, type: 3}
+    industrial:
+    - {fileID: 473041813479976775, guid: 74a81e3d35d09104d8b8f115556102f9, type: 3}
+    religious:
+    - {fileID: 1740625993770163473, guid: 4abb206761c328a4eafa2d44635adda2, type: 3}
+    shed:
+    - {fileID: 5576129254627811559, guid: f14253d4f71a16c4e8b1833de5e6f20c, type: 3}
+    generic:
+    - {fileID: 1971353712148610920, guid: e28fe37b7247c2944a595b72ddc28ad8, type: 3}
+  realisticUsesPrefabs: 0
+  buildingMaterial: {fileID: 2100000, guid: db43f09692379fe4baf1cc235fca9c15, type: 2}
+  roofMaterial: {fileID: 2100000, guid: b2207536bef436b40bfe67f4e4c9d495, type: 2}

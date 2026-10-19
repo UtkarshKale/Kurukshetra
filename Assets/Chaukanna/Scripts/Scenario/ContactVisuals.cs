@@ -41,6 +41,21 @@ namespace Chaukanna.Scenario
             return choices.Count == 0 ? null : choices[(variantSeed & 0x7FFFFFFF) % choices.Count];
         }
 
+        // How many different looks PickPrefab chooses between (1 when only the grey placeholder is available).
+        public static int ChoiceCount(ContactDefinition def, System.Collections.Generic.List<GameObject> overrideModels = null)
+        {
+            int n = 0;
+            if (overrideModels != null)
+                foreach (var m in overrideModels) if (m != null) n++;
+            if (n == 0)
+            {
+                if (def.variants != null)
+                    foreach (var m in def.variants) if (m != null) n++;
+                if (def.prefab != null) n++;
+            }
+            return Mathf.Max(1, n);
+        }
+
         // Returns the root. Every material on the contact is replaced by its own copy, so tinting one contact (F1 debug)
         // never touches another contact or the asset.
         public static GameObject Build(ContactDefinition def, out Material[] materials, out Transform wingL, out Transform wingR, int variantSeed = 0,

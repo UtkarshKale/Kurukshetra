@@ -45,6 +45,7 @@ namespace Chaukanna.Player
                 rng = new System.Random(spawner.ActiveSeed ^ 0x5EED);   // hit rolls repeat with the scenario seed
                 summaryPrinted = false;
             }
+            Iff.Tick(ContactRegistry.ScenarioTime);      // IFF / Remote ID replies that are due
             if (spawner.Finished)
             {
                 if (!summaryPrinted && ContactRegistry.Live.Count == 0) PrintSummary();   // wait for end-of-run despawns to be logged
@@ -62,6 +63,18 @@ namespace Chaukanna.Player
             if (kb.rKey.wasPressedThisFrame) Act(PlayerAction.Report);
             if (kb.jKey.wasPressedThisFrame) Act(PlayerAction.Jam);
             if (kb.fKey.wasPressedThisFrame) Act(PlayerAction.Engage);
+            if (kb.iKey.wasPressedThisFrame) Challenge();
+        }
+
+        // I: challenge the locked contact, or every selected one, for IFF / Remote ID. The answer comes back 0.6 to 1.4 s later.
+        public bool Challenge()
+        {
+            var targets = sensor.Targets;
+            if (targets.Count == 0) return false;
+            if (!RunConditions.IffAid) { sensor.Say(Iff.NotAvailable); return false; }
+            bool any = false;
+            foreach (var c in targets) if (Iff.Ask(c)) any = true;
+            return any;
         }
 
         // Both apply to every contact in the sensor's selection, or to the locked contact when nothing is selected.
@@ -75,8 +88,17 @@ namespace Chaukanna.Player
             return any;
         }
 
+        // LAN team mode: a sentry reports, the commander decides. Everywhere else every seat may do everything.
+        public const string SentryRefusal = "SENTRY: report it (R). The commander decides.";
+        public static bool RoleAllows(Chaukanna.Net.SeatRole role, PlayerAction action)
+        {
+            return role != Chaukanna.Net.SeatRole.Sentry || action == PlayerAction.Report || action == PlayerAction.None;
+        }
+
         public bool Act(PlayerAction action)
         {
+            if (sensor == null) sensor = GetComponent<ContactSensor>();     // Awake has not run on a scratch object (self-tests)
+            if (!RoleAllows(RunConditions.SeatRole, action)) { sensor.Say(SentryRefusal, 2f); return false; }
             var targets = sensor.Targets;
             if (targets.Count == 0) return false;
             // One trigger pull is one salvo: every contact in the group gets a shot, then the cooldown runs.
@@ -91,19 +113,60 @@ namespace Chaukanna.Player
             return any;
         }
 
-        // LAN team mode, on the host: a trainee's decision on the shared sky. The host's effectors decide what happens
-        // (whether the jam works, whether the shot hits); the team record gets the call if it had none.
-        public bool RemoteAct(Contact c, PlayerCall call, PlayerAction action, out bool locked, out bool hit, out string result)
+        // LAN team mode, on the host: a trainee's jam or shot on the shared sky. The host's effectors decide what happens
+        // (whether the jam works, whether the shot hits). Only the physical effect is applied: the host seat's own record never
+        // gets a call or an action for it (that would score the host for the trainee's decision). When the effect lands the
+        // record is marked handled instead (handledBy / handledTime / handledAction, a history line), and every PC is told so
+        // that no other seat's clock runs out on a contact a teammate already took out. Returns false when there was nothing to act on.
+        public bool RemoteAct(Contact c, PlayerCall call, PlayerAction action, string seat, ulong fromId, out bool locked, out bool hit, out string result)
         {
             locked = hit = false;
             result = "";
             if (c == null) return false;
-            if (c.Call == PlayerCall.None && call != PlayerCall.None) c.Classify(call, Vector3.Distance(transform.position, c.transform.position));
-            bool ok = ActOn(c, action, false);
-            locked = c.Data.actionLocked;
-            hit = c.Data.engageHit;
-            result = c.Data.actionResult ?? "";
-            return ok;
+            if (string.IsNullOrEmpty(seat)) seat = "Trainee";
+            if (action == PlayerAction.Jam)
+            {
+                var motion = c.GetComponent<ContactMotion>();
+                if (motion != null && motion.Jammed) { result = "already jammed"; locked = true; return true; }
+                bool affected = c.Definition.silhouette == Silhouette.Quad;
+                result = affected ? "link lost, descending" : "no effect";
+                locked = affected;
+                c.Data.Log($"{seat}: Jam, {result}");
+                if (affected && motion != null) { motion.Jam(); MarkHandled(c, seat, action, fromId); }
+                return true;
+            }
+            if (action == PlayerAction.Engage)
+            {
+                if (rng == null) rng = new System.Random(spawner != null ? spawner.ActiveSeed ^ 0x5EED : 1);
+                Vector3 target = c.transform.position;
+                float range = Vector3.Distance(transform.position, target);
+                float p = hitChance * Mathf.Lerp(1f, farRangeFactor, Mathf.Clamp01(range / farRange));
+                hit = rng.NextDouble() < p;
+                result = $"{(hit ? "hit" : "miss")} (p {p:F2}, {range:F0} m)";
+                locked = true;
+                c.Data.Log($"{seat}: Engage, {result}");
+                PlaceholderFx.Tracer(transform.position + Vector3.down * 0.3f, target);
+                if (hit)
+                {
+                    PlaceholderFx.Burst(target, c.Definition.size * 4f);
+                    MarkHandled(c, seat, action, fromId);
+                    c.Despawn("EngagedHit");
+                }
+                return true;
+            }
+            return false;
+        }
+
+        // First seat to take a contact out gets the mark; everyone is told right away.
+        void MarkHandled(Contact c, string seat, PlayerAction action, ulong fromId)
+        {
+            if (c.Data.handledTime < 0f)
+            {
+                c.Data.handledBy = seat;
+                c.Data.handledTime = ContactRegistry.ScenarioTime;
+                c.Data.handledAction = action.ToString();
+            }
+            Chaukanna.Net.LanSession.HostHandled(c, seat, action, fromId);
         }
 
         bool ActOn(Contact c, PlayerAction action, bool group)
@@ -126,13 +189,20 @@ namespace Chaukanna.Player
             {
                 case PlayerAction.Hold:
                 case PlayerAction.Report:
-                    return c.Act(action, null, group);
+                    bool acted = c.Act(action, null, group);
+                    // LAN team mode: the report goes up to the commander(s). A repeat of the same call is ignored there, a changed call is sent again.
+                    if (action == PlayerAction.Report && (acted || c.Data.action == PlayerAction.Report)) Chaukanna.Net.LanSession.SendReport(c, c.Call);
+                    return acted;
 
                 case PlayerAction.Jam:
                     // Only the RF-controlled quads respond; fixed-wings and birds carry on. A jam that worked cannot be taken back.
                     bool affected = c.Definition.silhouette == Silhouette.Quad;
                     if (!c.Act(action, affected ? "link lost, descending" : "no effect", group, affected)) return false;
-                    if (affected) c.GetComponent<ContactMotion>().Jam();
+                    if (affected)
+                    {
+                        c.GetComponent<ContactMotion>().Jam();
+                        Chaukanna.Net.LanSession.HostHandled(c, Chaukanna.Scoring.ScoreKeeper.PlayerName, action);
+                    }
                     return true;
 
                 case PlayerAction.Engage:
@@ -145,12 +215,14 @@ namespace Chaukanna.Player
                     if (hit)
                     {
                         PlaceholderFx.Burst(target, c.Definition.size * 4f);
+                        Chaukanna.Net.LanSession.HostHandled(c, Chaukanna.Scoring.ScoreKeeper.PlayerName, action);
                         c.Despawn("EngagedHit");
                     }
                     return true;
             }
             return false;
         }
+
         void PrintSummary()
         {
             summaryPrinted = true;
@@ -194,15 +266,23 @@ namespace Chaukanna.Player
             style.normal.textColor = Color.white;
 
             string on = "#FFFFFF", off = "#FFFFFF55";
+            var seat = RunConditions.SeatRole;
+            bool sentrySeat = seat == Chaukanna.Net.SeatRole.Sentry;
             string text =
                 $"<color={(canClassify ? on : off)}>CLASSIFY\n1 Hostile quad\n2 Hostile fixed-wing\n3 Own ISR drone\n4 Civilian drone\n5 Bird</color>\n\n" +
-                $"<color={(canAct ? on : off)}>ACTION\nH Hold\nR Report\nJ Jam</color>\n" +
-                $"<color={(canFire ? on : off)}>F Engage{(c != null && c.CanFireAgain ? " (fire again)" : "")}</color>";
+                (sentrySeat
+                    // A sentry reports; hold, jam and engage are the commander's (greyed).
+                    ? $"ACTION\n<color={off}>H Hold</color>\n<color={(canAct ? on : off)}>R Report</color>\n<color={off}>J Jam\nF Engage</color>"
+                    : $"<color={(canAct ? on : off)}>ACTION\nH Hold\nR Report\nJ Jam</color>\n" +
+                      $"<color={(canFire ? on : off)}>F Engage{(c != null && c.CanFireAgain ? " (fire again)" : "")}</color>");
             if (many) text += $"\n\nGROUP of {targets.Count}";
             else if (c != null && c.Resolved) text += $"\n\n#{c.Id:00} resolved\n" + (c.CanChangeAction ? "any key changes it" : "1-5 changes the call");
             else if (c != null && c.OnHold) text += $"\n\n#{c.Id:00} held: R / J / F";
-            text += "\n\n<color=#FFFFFFAA>Hold Tab + drag: lasso\nCtrl+click add to group\nG all in view   X clear</color>";
-            if (ViewRigSwitch.VrActive) text = "<b>VR MODE</b>  (F7 desktop)\nB or both buttons: binoculars\nQ: read the tablet\nHold E: call / action menu\nLeft click: lock\n\n" + text;
+            text += "\n\n<color=#FFFFFFAA>I check IFF / Remote ID\nHold Tab + drag: lasso\nCtrl+click add to group\nG all in view   X clear</color>";
+            if (seat == Chaukanna.Net.SeatRole.Commander) text += "\n<color=#FFD060>T slew to the newest report\nShift+T the next one</color>";
+            if (seat != Chaukanna.Net.SeatRole.Any) text = $"<b>ROLE: {Chaukanna.Net.NetPlayer.RoleName(seat)}</b>\n" + text;
+            if (ViewRigSwitch.HeadsetActive) text = "<b>HEADSET</b>  (F7 desktop)\nRight trigger: lock\nLeft trigger: binoculars\nStick click / A: call menu\nX: read tablet   Menu: pause\n\n" + text;
+            else if (ViewRigSwitch.VrActive) text = "<b>VR MODE</b>  (F7 desktop)\nB or both buttons: binoculars\nQ: read the tablet\nHold E: call / action menu\nLeft click: lock\n\n" + text;
 
             var content = new GUIContent(text);
             Vector2 size = style.CalcSize(content);
