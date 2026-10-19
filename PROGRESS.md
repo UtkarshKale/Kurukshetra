@@ -2,6 +2,11 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Phase 1: big drone swarm (prototype) + delete downloaded terrains
+- Scripts/Scenario/Swarm/: SwarmSim (NativeArrays, Burst, fixed 50 Hz, hash grid, nearest 7; Reynolds + Olfati-Saber spacing + Vasarhelyi limits; tactics Direct / Saturate / Split; terrain floor), SwarmRender (GPU instancing, model near / silhouette far), SwarmSky (promote to a real Contact on lock / lasso), SwarmJobSelfTest (16 checks). Swarms above 64 use it. Tactic button in menu, F6 and editor.
+- Step: 0.39 ms at 1000, 1.05 ms at 3000, 1.73 ms at 5000, 2.81 ms at 10000 (Editor, Burst). Zero GC per step. Live: 3000 drones at 25 s, 7053 instances drawn, 1.64 ms main thread, no exceptions (after fixing a WriteOnly job bug found live). Not verified: Saturate/Split live, promotion by aiming, GPU time, LAN team clients (big swarm not shown there).
+- Terrain tab: Delete per downloaded terrain (two-click confirm, MB freed) and Clear cached map tiles; only inside the app's area/tile folders.
+
 ## 2026-10-19 - Phase 0: trainer windows fit the view
 - Scroll views added: menu SCENARIO, MAP side panel, LOBBY, EDITOR list and checks, bottom message strip; toolbar fits between title and START at 1366x768. F6 panel: controls scroll, START/SCORE pinned under them, map and feed always visible. Dashboard header goes to two rows when narrow. Compiles; Trainer/Dashboard/Package/MapOffline self-tests pass. NOT seen on screen.
 

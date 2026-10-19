@@ -126,6 +126,8 @@ namespace Chaukanna.Scenario
         public float swarmTime = 60f;
         [Tooltip("Bearing the swarm comes from, degrees from the centre of the sector (negative = left). Above 360 = picked from the seed.")]
         public float swarmBearing = 999f;
+        [Tooltip("How a big swarm (more than 64) attacks: Direct, Saturate (spread to several bearings at a set range, then rush together) or Split (two bodies from the flanks).")]
+        public SwarmTactic swarmTactic;
         [Tooltip("Bird flocks crossing the sector, each flying together.")]
         public int birdFlocks;
         public int flockSize = 8;

@@ -206,6 +206,17 @@ namespace Chaukanna.Player
                     if (promoted != null) return promoted;
                 }
             }
+            // Big swarm: same idea.
+            var swarm = SwarmSky.Active;
+            if (swarm != null)
+            {
+                int index = swarm.Pick(Cam, aimDir, bestAngle, this, out float swarmAngle);
+                if (index >= 0 && swarmAngle < bestAngle)
+                {
+                    var promoted = swarm.Promote(index);
+                    if (promoted != null) return promoted;
+                }
+            }
             return best;
         }
 

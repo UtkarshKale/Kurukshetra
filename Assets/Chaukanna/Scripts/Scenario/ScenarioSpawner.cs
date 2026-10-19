@@ -48,6 +48,8 @@ namespace Chaukanna.Scenario
         public float swarmTime = 60f;
         [Tooltip("Degrees from the sector centre; above 360 = from the seed.")]
         public float swarmBearing = 999f;
+        [Tooltip("How a big swarm (more than 64) attacks.")]
+        public SwarmTactic swarmTactic;
         public int birdFlocks;
         public int flockSize = 8;
         [Tooltip("How swarms fly together. Empty = built-in defaults.")]
@@ -110,6 +112,8 @@ namespace Chaukanna.Scenario
         GameObject siteRoot;
         public GameObject SiteRoot => siteRoot;
         float aSwarmTime = 60f, aSwarmBearing = 999f;
+        SwarmTactic aSwarmTactic;
+        public SwarmSky BigSwarm => GetComponent<SwarmSky>();
         SwarmProfile defaultSwarm, defaultFlock;
         public IEnumerable<SwarmGroup> Groups => groups.Values;
 
@@ -186,7 +190,7 @@ namespace Chaukanna.Scenario
             active.name = preset.name;
             activeSpeed = 1f;
             activeBlendIn = 0f;
-            aSwarmSize = 0; aBirdFlocks = 0; aFlockSize = 8; aSwarmTime = 60f; aSwarmBearing = 999f;
+            aSwarmSize = 0; aBirdFlocks = 0; aFlockSize = 8; aSwarmTime = 60f; aSwarmBearing = 999f; aSwarmTactic = SwarmTactic.Direct;
             aSite = SiteType.None;
             aCrowdCount = 0; aCrowdRadius = 0f;
             float noIffPct = 5f, spoofPct = 0f;
@@ -208,7 +212,7 @@ namespace Chaukanna.Scenario
                 active.spawnWindowEnd = c.spawnWindowEnd;
                 activeSpeed = c.speedMultiplier;
                 activeBlendIn = Mathf.Max(0f, c.blendInPercent);
-                aSwarmSize = c.swarmSize; aSwarmTime = c.swarmTime; aSwarmBearing = c.swarmBearing; aBirdFlocks = c.birdFlocks; aFlockSize = c.flockSize;
+                aSwarmSize = c.swarmSize; aSwarmTime = c.swarmTime; aSwarmBearing = c.swarmBearing; aSwarmTactic = c.swarmTactic; aBirdFlocks = c.birdFlocks; aFlockSize = c.flockSize;
                 aSite = c.site;
                 aCrowdCount = c.crowdCount; aCrowdRadius = c.CrowdRadiusEffective;
                 iffAid = c.iffAid; noIffPct = c.friendlyNoIffPercent; spoofPct = c.hostileSpoofPercent;
@@ -218,7 +222,7 @@ namespace Chaukanna.Scenario
                 source = " (Inspector override)";
                 activeSpeed = speedMultiplier;
                 activeBlendIn = blendInPercent;
-                aSwarmSize = swarmSize; aSwarmTime = swarmTime; aSwarmBearing = swarmBearing; aBirdFlocks = birdFlocks; aFlockSize = flockSize;
+                aSwarmSize = swarmSize; aSwarmTime = swarmTime; aSwarmBearing = swarmBearing; aSwarmTactic = swarmTactic; aBirdFlocks = birdFlocks; aFlockSize = flockSize;
                 aSite = site;
                 active.seed = seed;
                 active.duration = duration;
@@ -408,6 +412,8 @@ namespace Chaukanna.Scenario
         void PlanGroups(List<PlannedSpawn> list)
         {
             groups.Clear();
+            var bigSky = GetComponent<SwarmSky>();
+            if (bigSky != null) bigSky.Stop();
             var rng = new System.Random(active.seed ^ 0x5A17);
             float half = active.sectorArcDegrees * 0.5f, r = active.spawnRingRadius;
             int id = 0;
@@ -423,8 +429,18 @@ namespace Chaukanna.Scenario
                     Vector3 centre = GroupCentre(OnSector(bearing, r, altitude), altitude, rng.Next());
                     float speed = Mathf.Lerp(def.speedRange.x, def.speedRange.y, 0.5f) * activeSpeed;
                     var prof = swarmProfile != null ? swarmProfile : (defaultSwarm != null ? defaultSwarm : (defaultSwarm = SwarmProfile.Drones()));
-                    AddGroup(list, id++, def, aSwarmSize, centre, defendedPoint.position + Vector3.up * 10f, speed, Mathf.Min(aSwarmTime, active.duration), prof, rng.Next(), "ReachedDefendedPoint");
-                    log.Add($"a swarm of {aSwarmSize} {def.contactClass} at {aSwarmTime:F0} s from {bearing:F0} deg");
+                    if (aSwarmSize > SwarmSky.Threshold && !RunConditions.RangeDrill)
+                    {
+                        // Big swarm: data-oriented simulation and instanced drawing (SwarmSky); members become contacts only when picked out.
+                        if (bigSky == null) bigSky = gameObject.AddComponent<SwarmSky>();
+                        bigSky.Begin(this, id++, def, ModelsFor(def.contactClass), aSwarmSize, centre, defendedPoint.position + Vector3.up * 10f, speed, Mathf.Min(aSwarmTime, active.duration), rng.Next(), aSwarmTactic);
+                        log.Add($"a big swarm of {aSwarmSize} {def.contactClass} ({aSwarmTactic}) at {aSwarmTime:F0} s from {bearing:F0} deg, simulated as data");
+                    }
+                    else
+                    {
+                        AddGroup(list, id++, def, aSwarmSize, centre, defendedPoint.position + Vector3.up * 10f, speed, Mathf.Min(aSwarmTime, active.duration), prof, rng.Next(), "ReachedDefendedPoint");
+                        log.Add($"a swarm of {aSwarmSize} {def.contactClass} at {aSwarmTime:F0} s from {bearing:F0} deg");
+                    }
                 }
             }
             var bird = active.GetDefinition(ContactClass.Bird);

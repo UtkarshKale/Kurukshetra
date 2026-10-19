@@ -184,6 +184,7 @@ namespace Chaukanna.Player
             {
                 var motion = c.GetComponent<ContactMotion>();
                 if (motion != null && motion.Group != null) c.Data.swarmRank = motion.Group.RankByDistance(motion);
+                else { var big = c.GetComponent<SwarmFollower>(); if (big != null) c.Data.swarmRank = big.Rank(); }
             }
             switch (action)
             {

@@ -122,7 +122,7 @@ namespace Chaukanna.Scenario
         // Always a copy of the built-in Resources Lit material (instancing on in the asset), carrying the model material's
         // colour and texture. A copy of the model's own material would need that shader's instancing variant in the build,
         // which Unity strips unless some built material has instancing on: the crowd would then draw nothing in a build.
-        static Material MakeMaterial(Material src)
+        internal static Material MakeMaterial(Material src)
         {
             var lit = RuntimeMaterials.Lit;
             var m = lit != null ? new Material(lit) : new Material(Shader.Find("Universal Render Pipeline/Lit"));
@@ -143,7 +143,7 @@ namespace Chaukanna.Scenario
             return m;
         }
 
-        static void SetColour(Material m, Color c)
+        internal static void SetColour(Material m, Color c)
         {
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
             if (m.HasProperty("_Color")) m.SetColor("_Color", c);
@@ -207,7 +207,7 @@ namespace Chaukanna.Scenario
 
         // --- Tiny silhouettes: about 12 triangles each, double sided, unit span. ---
 
-        static Mesh SilhouetteMesh(Silhouette s)
+        internal static Mesh SilhouetteMesh(Silhouette s)
         {
             var v = new List<Vector3>(); var n = new List<Vector3>(); var t = new List<int>();
             switch (s)

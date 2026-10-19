@@ -25,6 +25,7 @@ namespace Chaukanna.Scenario
         public int prevalenceTotal = 12;
         public int hostiles = 3, ownDrones = 2, civilDrones = 2, birds = 6;
         public int swarmSize, swarmSecond = 60, birdFlocks;
+        public SwarmTactic swarmTactic;
         public int ringMetres = 1000;
         public bool sensorsDegraded;
         public bool quietWatch;
@@ -120,6 +121,7 @@ namespace Chaukanna.Scenario
                 birdCount = s.birds,
                 swarmSize = s.swarmSize,
                 swarmTime = s.swarmSecond,
+                swarmTactic = s.swarmTactic,
                 birdFlocks = s.birdFlocks,
                 spawnRingRadius = s.ringMetres,
                 timeOfDay = s.light,

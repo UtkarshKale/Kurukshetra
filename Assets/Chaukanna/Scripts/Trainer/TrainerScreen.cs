@@ -333,6 +333,11 @@ namespace Chaukanna.Trainer
             Working.swarmSize = Stepper("Swarm", Working.swarmSize, 8, row);
             Working.swarmTime = Stepper("Swarm at s", Mathf.RoundToInt(Working.swarmTime), 10, row);
             GUILayout.EndHorizontal();
+            if (Working.swarmSize > 0 && GUILayout.Button($"Swarm tactic: {Working.swarmTactic} (click to change)", button, GUILayout.Height(row)))
+            {
+                var tactics = (Chaukanna.Scenario.SwarmTactic[])System.Enum.GetValues(typeof(Chaukanna.Scenario.SwarmTactic));
+                Working.swarmTactic = tactics[(System.Array.IndexOf(tactics, Working.swarmTactic) + 1) % tactics.Length];
+            }
             GUILayout.BeginHorizontal();
             Working.birdFlocks = Stepper("Flocks", Working.birdFlocks, 1, row);
             Working.flockSize = Stepper("Flock size", Working.flockSize, 2, row, 1);

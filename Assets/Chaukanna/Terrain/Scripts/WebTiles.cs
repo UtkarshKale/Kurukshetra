@@ -193,6 +193,72 @@ namespace Chaukanna.TerrainGen
             return list;
         }
 
+        // --- Deleting downloaded data. Only paths inside the areas folders or the tile cache are ever touched. ---
+        static readonly string[] AreaSuffixes = { "", "_surround", "_satellite", "_surround_satellite", "_osm", "_layers" };
+
+        static bool Inside(string root, string path)
+        {
+            if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(path)) return false;
+            string r = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, '/') + Path.DirectorySeparatorChar;
+            string p = Path.GetFullPath(path);
+            return p.StartsWith(r, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // True when this area may be deleted (it lives in this PC's areas folder or the received folder, not the read-only bundled one).
+        public static bool CanDeleteArea(string rawPath) => Inside(AreasFolder, rawPath) || Inside(ReceivedAreasFolder, rawPath);
+
+        // Deletes every file of one area (raw, json, surround, satellite picture, map features, and the .meta files), then its folder if
+        // that is left empty. Returns the bytes freed; error is set (and nothing deleted) when the path is not allowed.
+        public static long DeleteArea(string rawPath, out string error)
+        {
+            error = null;
+            if (!CanDeleteArea(rawPath)) { error = "Not deleted: this area is not in the downloads folders (bundled areas are read-only)."; return 0; }
+            string dir = Path.GetDirectoryName(Path.GetFullPath(rawPath));
+            string stem = Path.GetFileNameWithoutExtension(rawPath);
+            long freed = 0;
+            try
+            {
+                foreach (var file in Directory.GetFiles(dir))
+                {
+                    string name = Path.GetFileName(file);
+                    string baseName = name.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) ? name.Substring(0, name.Length - 5) : name;
+                    string noExt = Path.GetFileNameWithoutExtension(baseName);
+                    bool mine = false;
+                    foreach (var suffix in AreaSuffixes) if (string.Equals(noExt, stem + suffix, StringComparison.OrdinalIgnoreCase)) mine = true;
+                    if (!mine || !Inside(dir, file)) continue;
+                    freed += new FileInfo(file).Length;
+                    File.Delete(file);
+                }
+                bool root = string.Equals(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar, '/'), Path.GetFullPath(AreasFolder).TrimEnd(Path.DirectorySeparatorChar, '/'), StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar, '/'), Path.GetFullPath(ReceivedAreasFolder).TrimEnd(Path.DirectorySeparatorChar, '/'), StringComparison.OrdinalIgnoreCase);
+                if (!root && Directory.GetFileSystemEntries(dir).Length == 0)
+                {
+                    Directory.Delete(dir);
+                    string folderMeta = dir + ".meta";
+                    if (File.Exists(folderMeta)) File.Delete(folderMeta);
+                }
+            }
+            catch (Exception e) { error = "Delete stopped: " + e.Message; }
+#if UNITY_EDITOR
+            UnityEditor.AssetDatabase.Refresh();
+#endif
+            return freed;
+        }
+
+        // Deletes the cached map tile pictures (*.png) under CacheFolder. Never .key files, never anything outside that folder.
+        public static long ClearTileCache(out int files)
+        {
+            files = 0;
+            long freed = 0;
+            if (!Directory.Exists(CacheFolder)) return 0;
+            foreach (var file in Directory.GetFiles(CacheFolder, "*.png", SearchOption.AllDirectories))
+            {
+                if (!Inside(CacheFolder, file)) continue;
+                try { freed += new FileInfo(file).Length; File.Delete(file); files++; } catch { }
+            }
+            return freed;
+        }
+
         public static string ProjectRelative(string absolute)
         {
             string project = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/').TrimEnd('/') + "/";

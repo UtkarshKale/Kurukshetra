@@ -61,6 +61,8 @@ namespace Chaukanna.Trainer
         string downloadStep = "";
         List<string> areas = new List<string>();
         float areasCheckedAt = -100f;
+        string deleteArmed;
+        bool tilesArmed;
 
         static readonly string[] TabNames = { "1  TERRAIN", "2  SCENARIO", "3  MAP", "EDITOR", "BOARD", "4  LOBBY" };
         static readonly string[] ModeNames = { "Real world\naccurate", "Real world\n+ subtle detail", "Real world\n+ major variations", "Pure\nprocedural", "Custom\nhybrid" };
@@ -642,7 +644,32 @@ namespace Chaukanna.Trainer
                     GUILayout.BeginHorizontal();
                     GUILayout.Label(System.IO.Path.GetFileNameWithoutExtension(a), label, GUILayout.Height(row - 4f));
                     if (GUILayout.Button("Use", button, GUILayout.Width(60f), GUILayout.Height(row - 4f))) UseArea(ElevationDownloader.ProjectRelative(a));
+                    if (ElevationDownloader.CanDeleteArea(a))
+                    {
+                        bool armed = deleteArmed == a;
+                        if (GUILayout.Button(armed ? "Delete? click again" : "Delete", button, GUILayout.Width(armed ? 150f : 70f), GUILayout.Height(row - 4f)))
+                        {
+                            if (!armed) deleteArmed = a;
+                            else
+                            {
+                                deleteArmed = null;
+                                long freed = ElevationDownloader.DeleteArea(a, out string err);
+                                Message = err ?? $"Deleted area {System.IO.Path.GetFileNameWithoutExtension(a)}: {freed / 1048576f:F1} MB freed.";
+                                areasCheckedAt = -100f;
+                            }
+                        }
+                    }
                     GUILayout.EndHorizontal();
+                }
+            }
+            if (GUILayout.Button(tilesArmed ? "Clear cached map tiles? click again (areas are not touched)" : "Clear cached map tiles (pictures only, re-downloaded when needed)", button, GUILayout.Height(row - 4f)))
+            {
+                if (!tilesArmed) tilesArmed = true;
+                else
+                {
+                    tilesArmed = false;
+                    long freed = ElevationDownloader.ClearTileCache(out int n);
+                    Message = $"Cleared {n} cached map tiles: {freed / 1048576f:F1} MB freed.";
                 }
             }
         }
@@ -736,8 +763,9 @@ namespace Chaukanna.Trainer
                 GUILayout.EndHorizontal();
             }
             GUILayout.BeginHorizontal();
-            spec.swarmSize = Stepper("Swarm", spec.swarmSize, 8, row, 0, 99);
+            spec.swarmSize = Stepper("Swarm", spec.swarmSize, 8, row, 0);
             if (spec.swarmSize > 0) spec.swarmSecond = Stepper("Swarm at s", spec.swarmSecond, 15, row, 0, 7200);
+            if (spec.swarmSize > 0 && GUILayout.Button($"Tactic: {spec.swarmTactic}", button, GUILayout.Height(row))) spec.swarmTactic = Cycle(spec.swarmTactic);
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             spec.birdFlocks = Stepper("Bird flocks", spec.birdFlocks, 1, row, 0, 20);
@@ -907,6 +935,13 @@ namespace Chaukanna.Trainer
             Scenario.swarmSize = Stepper("Swarm size", Scenario.swarmSize, 8, row);
             Scenario.swarmTime = Stepper("Swarm at s", Mathf.RoundToInt(Scenario.swarmTime), 10, row);
             GUILayout.EndHorizontal();
+            if (Scenario.swarmSize > 0)
+            {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button($"Swarm tactic: <b>{Scenario.swarmTactic}</b> (click to change)", button, GUILayout.Height(row))) Scenario.swarmTactic = Cycle(Scenario.swarmTactic);
+                GUILayout.Label(Scenario.swarmSize > Chaukanna.Scenario.SwarmSky.Threshold ? "A big swarm: simulated as data, thousands are fine. Tactic applies." : $"Tactic applies above {Chaukanna.Scenario.SwarmSky.Threshold} drones.", small);
+                GUILayout.EndHorizontal();
+            }
             GUILayout.BeginHorizontal();
             Scenario.birdFlocks = Stepper("Bird flocks", Scenario.birdFlocks, 1, row);
             Scenario.flockSize = Stepper("Flock size", Scenario.flockSize, 2, row, 1);
