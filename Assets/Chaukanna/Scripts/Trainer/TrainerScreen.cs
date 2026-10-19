@@ -358,6 +358,7 @@ namespace Chaukanna.Trainer
             GUILayout.EndHorizontal();
 
             LayersPanel(row);
+            Chaukanna.Audio.SoundEngine.DrawPanel(label, small, button, row, fontSize);
             if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Host) CommsPanel.Draw(label, small, button, row, fontSize);
 
             // After a run: a suggestion only. The trainer decides.

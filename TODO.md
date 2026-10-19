@@ -314,3 +314,5 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] R10b. Full AAR later: per-card PNG, hover tooltips, officer-checked verdicts and thresholds, unit pack.
 - [x] R11. Phase 4 multiplayer + proximity voice prototype (2026-10-20). Two-PC test pending (owner).
 - [ ] R11b. Full later: Observer seat, voice on busy Wi-Fi test, exact heard-audio rebuild, voice codec upgrade if needed.
+- [x] R12. Phase 5 sound engine prototype (2026-10-20).
+- [ ] R12b. Full sound later: ambient-noise audibility gate (solution-v3 1.16), ground reflection, sound travel delay, real recorded samples option.

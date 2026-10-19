@@ -123,6 +123,7 @@ namespace Chaukanna.Scenario
         public void Jam()
         {
             jammed = true;
+            Chaukanna.Audio.SoundEngine.JammerPulse(transform.position);
         }
 
         void JammedDescent(float dt)
@@ -203,6 +204,7 @@ namespace Chaukanna.Scenario
         // --- Swarm and flock members: the group decides where they go. ---
         [System.NonSerialized] public SwarmGroup Group;
         public bool Jammed => jammed;
+        public float Speed => speed;
 
         public void FlyGroupStep(Vector3 position, Vector3 velocity, float flapRate)
         {

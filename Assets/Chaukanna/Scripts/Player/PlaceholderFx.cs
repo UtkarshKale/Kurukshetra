@@ -10,6 +10,7 @@ namespace Chaukanna.Player
 
         public static void Burst(Vector3 position, float size)
         {
+            Chaukanna.Audio.SoundEngine.Impact(position);
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "Fx_Burst";
             Destroy(go.GetComponent<Collider>());
@@ -20,6 +21,7 @@ namespace Chaukanna.Player
 
         public static void Tracer(Vector3 from, Vector3 to)
         {
+            Chaukanna.Audio.SoundEngine.Gunshot(from);
             var go = new GameObject("Fx_Tracer");
             var line = go.AddComponent<LineRenderer>();
             line.sharedMaterial = Unlit(new Color(1f, 0.95f, 0.6f));

@@ -34,6 +34,7 @@ namespace Chaukanna.Scenario
             // Walking is a separate component, added here so existing scenes get it without being edited.
             if (GetComponent<Chaukanna.Player.ObserverMove>() == null) gameObject.AddComponent<Chaukanna.Player.ObserverMove>();
             if (GetComponent<Chaukanna.Player.ViewRigSwitch>() == null) gameObject.AddComponent<Chaukanna.Player.ViewRigSwitch>();
+            if (GetComponent<Chaukanna.Audio.SoundEngine>() == null) gameObject.AddComponent<Chaukanna.Audio.SoundEngine>();
             if (GetComponent<Chaukanna.Player.ContactSensor>() != null && GetComponent<Chaukanna.Player.LassoSelect>() == null) gameObject.AddComponent<Chaukanna.Player.LassoSelect>();
             Chaukanna.Player.DisplayCalibration.ApplyTo(cam);
             Vector3 e = transform.eulerAngles;

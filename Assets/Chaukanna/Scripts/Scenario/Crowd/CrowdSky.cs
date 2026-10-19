@@ -39,6 +39,7 @@ namespace Chaukanna.Scenario
         public float LastCpuMs { get; private set; }        // jobs + bucket + draw submission, this frame
         public float LastJobMs { get; private set; }
         public int AliveCount { get; private set; }
+        public float Radius => radius;
         public int ModelAgents { get; private set; }        // drawn as models
         public int DotAgents { get; private set; }          // drawn as tiny silhouettes
         public int DrawnInstances { get; private set; }
