@@ -7,6 +7,7 @@
 - [ ] CRIT-1c run Chaukanna > Offline map > Prefetch map tiles (a download, owner's yes) and rebuild.
 - [ ] H-10. CrowdSelfTest 26/27 on 2026-10-19: 10 000-agent jobs 7 to 8 ms, was 0.7 ms. Check Burst compilation is on (Jobs > Burst), re-run.
 - [ ] H-5 still open: set git author on each dev machine to Utkarsh Kale <utkarshkale.w@gmail.com> (rule 7).
+- 2026-10-19 (later): project renamed **Kurukshetra** (code names unchanged). Design = Assets/Chaukanna/Docs/solution-v3.md (council v2 + faculty review). What is built = Assets/Chaukanna/Docs/STATUS.md (update the row with every code change). New queue items from the review: section FACULTY REVIEW below.
 
 Work top to bottom. One task per session. Tick [x] when done and log it in PROGRESS.md.
 (plan) = needs Opus 5.5 in plan mode first; the rest are Sonnet 5.5 build tasks.
@@ -14,6 +15,32 @@ Work top to bottom. One task per session. Tick [x] when done and log it in PROGR
 SCOPE SOURCE: module-1-demo.md (the agreed Module 1 demo; the user rejected the bigger module plan as over-engineered). Its key demo moments are (1) the ROE flip between 2 cards, (2) the AI cue being wrong once, (3) the red decision-tree path when the player engages an own drone: all three exist already. The file is now in Assets/Chaukanna/Docs/module-1-demo.md.
 First restructured 2026-10-14 against the solution doc (solution-v2-council.md: §2 PS coverage table R1a-R9, §11.1 M1 scope, §12 demo script). No item was deleted; items were moved and tagged. New items from the gap check are numbered N1 and up.
 Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo moments in §12: (1) cold open, night, own drone engaged, "your call vs the sound call"; (2) the card flip mid-mission; (3) night 24-swarm with a wrong AI cue. Shot 5b is the VR sentry.
+
+## FACULTY REVIEW v3 (added 2026-10-19; design in Docs/solution-v3.md, recommended order in its section 11.5; the owner sets the real order and confirms before each big step)
+Waiting on the owner first: design questions Q1-Q6 (solution-v3 header notes; defaults = the recommendations).
+- [ ] FR-1. [R3] Two-PC LAN test (same as N-L1 / MP-2). The pitch now leads with local multiplayer, so this comes first. Needs a second PC and the owner's hands.
+- [ ] FR-2. [R6] Rename cards A / B / C to Weapons Free / Tight / Hold, letters kept in brackets (waits on Q1). Text and data only.
+- [ ] FR-3. [R7] Black box: 10 Hz operator state (view az/el, FOV/zoom, sensor in use, binoculars, VR head pose, lock, card) + every action (zoom from/to, sensor toggle with az/el/zoom, lock, lase, interrogate, mark, classify, report, decisions, every trigger pull, jammer on/off) + "Download raw telemetry" (zip: events.jsonl, operator_state.csv, world_truth.csv, scorecard.csv, manifest.json with hashes). solution-v3 section 1.18.
+- [ ] FR-4. [R1b][R2b] IFF interrogator as one model for the dense-sky I key and normal contacts: valid / no reply / wrong code, own-drone transponder faults, datalink loss; scoring (valid reply engaged = Critical; "no reply" alone under Tight = verification lapse). RECONCILE: the dense sky's placeholder "30 % spoofing hostiles" vs the design's "at most 5 %" (section 1.15f); ask an expert. Overlaps DS-4 (IFF in the scoring tree).
+- [ ] FR-5. [R1a][R1b] EO sight: continuous zoom 1-30x (placeholder), mil reticle, pan 60 / tilt 30 deg/s limits, contrast lock that also grabs birds and clutter (no truth leak). Binoculars stay.
+- [ ] FR-6. [R1b] Laser rangefinder on the EO sight: slant range, ground distance, height, closing speed; 1 mrad beam, background returns when the target does not fill the spot.
+- [ ] FR-7. [R1b][R6] Track table with evidence chips (EO, TH, RF, AC, RD, IFF) and a PID rule per card (min channels, AI cue never counts). No fused "HOSTILE" verdict.
+- [ ] FR-8. [R1a][R2c] Procedural drone sound (blade-pass harmonics per class, rotor beating, RPM from ContactMotion, Doppler, travel delay R/343 s, air absorption, ambient masking) with Unity's built-in 3D audio. Steam Audio HRTF needs the owner's yes (package). Same area as P2 / N7.
+- [ ] FR-9. [R2a] Night vision as an image-intensifier look (phosphor, scintillation, halo, circular mask); scan lines only on an analog video feed style (waits on Q4). Same area as "Realistic night vision" in CONTEXT section 7.
+- [ ] FR-10. [R2a][R1b] Thermal sight: per-renderer heat values via MaterialPropertyBlock (no new layers), white-hot / black-hot, low resolution, birds warm, gliders cold.
+- [ ] FR-11. [R2b] RF spectrum waterfall (sub-GHz, 2.4, 5.8 GHz), bearing error, fibre FPV silent, own jammer blinds own RF detector.
+- [ ] FR-12. [R1b] Deception: formation shadow (hostile inside a friendly formation, then peels off) and stealth glider (silent, RF-silent, near ambient on thermal). Blend-in (D11) is the template.
+- [ ] FR-13. [R7] AAR scrubber: drag backward and forward via 1 s keyframes, step a frame, jump to event markers, operator graphs (camera az, zoom, sensor, trigger pulls). Builds on the replay slider (after FIX-2b).
+- [ ] FR-14. [R5] Starter progression presets: Avian Wildlife (birds only, often no hostile, Weapons Hold), Patrol Spur (own patrol + a hostile that shadows then spurs off, Tight), Single Rogue Infiltrator (one low / slow or glider hostile, dusk / night, Tight to Free).
+- [ ] FR-15. [R2b][R2c] Radar Desk sensor (plots, 1 s scan, micro-Doppler rotor / flap hint, bird and sea clutter, terrain masking) + coastal site (waits on Q2). Large.
+- [ ] FR-16. [R1c] Effector failure modes: jam failsafe per class, GNSS jammer hits own drones too, small-arms P(hit) by range and crossing speed, AD-gun collateral over the cantonment, laser DEW later.
+- [ ] FR-17. Operator station layout (compass strip, weapon-control banner, sensor stack, track table, action bar, AZ / EL / RNG / ALT / ZOOM readout) = the "UI redesign later" item (waits on Q3, Q5).
+- [ ] FR-18. [R4] Stereoscopic fallback (Cardboard side-by-side; anaglyph optional) and per-user IPD (waits on Q6). Low training value at range; do last.
+- [ ] FR-19. [R3] Cable-pulled offline test: unplug every PC except the LAN switch and run a full session (proves "zero runtime network dependencies").
+- [ ] FR-20. Re-enter the arena: "Practice from this moment" (unscored, from the nearest keyframe) and an unscored free arena.
+- [ ] FR-21. Interactive technical-approach flowchart (HTML) generated from solution-v3 section 5.0, for the PPT.
+- [ ] FR-22. Drone attitude as a visual cue (quads tilt toward acceleration, fixed wings bank to turn) in ContactMotion.
+- [ ] FR-23. Bird density parameter (birds per km2), typeable, no cap.
 
 ## TERRAIN LAYERS (user, 2026-10-17: trees, grass, buildings with Realistic / Procedural modes; plan in Assets/Chaukanna/Docs/plan-terrain-layers.md)
 - [x] TL-1. (BUILT 2026-10-17, see PROGRESS.md; hand test TL-2 below) Trees, grass and buildings, each Off / Realistic / Procedural. Realistic = OpenStreetMap (Overpass, fetched once per area, `<area>_layers.json` beside the area; raw answers `_osm.json`, `_osm_surround.json`) with a satellite-colour estimate for trees and grass where the map has nothing; Procedural = seeded. Terrain trees (LOD prefab, trunk colliders block sight), grass drawn by an own instanced renderer, buildings extruded from footprints per 250 m cell with MeshCollider + LOD boxes, far buildings as merged boxes. Kit asset `Resources/Chaukanna/TerrainLayerKit_Default.asset` + placeholders (menu Chaukanna > Terrain > Build layer placeholders). Menu TERRAIN tab block, F6 row, session file and HTML report line + credit. LayersSelfTest 58/58.

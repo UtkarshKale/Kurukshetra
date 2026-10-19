@@ -2,6 +2,12 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-19 (later) - Docs: Kurukshetra name, solution v3, STATUS.md (no code change)
+- Project renamed Kurukshetra by the owner. Changed in CLAUDE.md, AGENTS.md, CONTEXT.md (new section 11) and the solution doc only; code namespace, folders and data paths keep "Chaukanna" on purpose.
+- Added Assets/Chaukanna/Docs/solution-v3.md: council v2 plus the faculty review (items F1-F33, new sections 1.15-1.21 and 5.0-5.1d, risks K22-K29, build list 11.5). It carries no build status.
+- Added Assets/Chaukanna/Docs/STATUS.md: per-feature status keyed to the F-numbers, written from this branch's PROGRESS and CONTEXT (commit 9d95535). Nothing was re-run for it.
+- TODO.md: STATE line and a new FACULTY REVIEW section FR-1 to FR-23 (nothing deleted). Found one design/code conflict: the dense sky's 30 % spoofing hostiles vs the design's at most 5 % (FR-4).
+- Not verified: nothing compiled or run (docs only). Unity will import the two new .md files with the .meta files committed here.
 ## 2026-10-19 - Hand-over snapshot (VR half-built, everything committed to a branch)
 - State checked before the push: Unity 6000.6.3f1 reopened, project compiles with 0 errors; all 21 self-tests pass except CrowdSelfTest 26/27 (the 10 000-agent timing check, 7 to 8 ms vs 0.7 ms earlier; see TODO H-10).
 - VR-1: the subagent was stopped by a rate limit twice. Packages (openxr 1.18.0, xr.interaction.toolkit 3.6.1), Assets/XR, Assets/XRI and the scripts OpenXrViewRig / VrHud / XrInput / XrOptic / XrRuntime exist and compile. NOT done: XrSelfTest, the build probe (-chkVrProbe), TODO/PROGRESS entries, any headset test. Files changed outside Assets/Chaukanna by the install: Packages/manifest.json, Packages/packages-lock.json, ProjectSettings/EditorBuildSettings.asset (all approved by the user).

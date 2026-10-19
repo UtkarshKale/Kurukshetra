@@ -21,7 +21,9 @@ The full rules are in CLAUDE.md and apply to every agent; the full project conte
 - `Assets/Chaukanna/Charts/` optional XCharts dashboard panel (own asmdef).
 - `Assets/Chaukanna/Data/` presets, difficulty, scoring/site/swarm profiles.
 - `Assets/Chaukanna/Resources/Chaukanna/` materials that must always be in a build.
-- `Assets/Chaukanna/Docs/solution-v2-council.md` the solution document (the scope source for later modules).
+- `Assets/Chaukanna/Docs/solution-v3.md` the solution document (design only; v2 kept beside it as history).
+- `Assets/Chaukanna/Docs/STATUS.md` what is built today, per feature; update it with every code change.
+- Project name: Kurukshetra. Code namespace and folders stay `Chaukanna`; do not rename them.
 - `Assets/these assets/` third-party models (Kenney, Quaternius, others); some folders are not in git (see HANDOFF.md).
 
 ## Testing
