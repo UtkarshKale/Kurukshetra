@@ -78,9 +78,21 @@ namespace Chaukanna.Scenario
         [ReadOnly] public NativeArray<float4x4> partLocal;  // per bucket (identity for the silhouettes)
         [ReadOnly] public NativeArray<int> dotBucket;       // [cls] -> silhouette bucket
         public int bucketCount;
+        public int birdFirst;                               // -1 = no flapping birds; else first pose bucket (see CrowdRenderer.BirdFirst)
+        public float time;
         public NativeArray<int> counts, starts, fill;
         [WriteOnly] public NativeArray<float4x4> matrices;
         public NativeArray<int> stats;                      // 0 alive, 1 model-level agents, 2 dot-level agents
+
+        // The flap-pose bucket of a bird: species from the flock's look, tint and phase from the member, pose from the time.
+        int BirdBucket(CrowdAgent a, int i)
+        {
+            uint h = BirdFlight.Mix(i, math.asuint(a.memberPhase));
+            int sp = a.variant % BirdSpeciesInfo.Count;
+            float span = BirdSpeciesInfo.Span(sp) * (0.9f + 0.2f * BirdFlight.Hash01(h, 9));
+            int tint = math.min((int)(BirdFlight.Hash01(h, 5) * BirdSpeciesInfo.Tints), BirdSpeciesInfo.Tints - 1);
+            return birdFirst + (sp * BirdSpeciesInfo.Tints + tint) * BirdSpeciesInfo.Poses + BirdFlight.Pose(sp, span, time, h);
+        }
 
         public void Execute()
         {
@@ -93,7 +105,12 @@ namespace Chaukanna.Scenario
                 if (l == CrowdLod.None) continue;
                 CrowdAgent a = agents[i];
                 int key = a.cls * CrowdGenerator.MaxVariants + a.variant;
-                if (l == CrowdLod.Model && modelFirst[key] >= 0 && modelParts[key] > 0)
+                if (l == CrowdLod.Model && a.cls == (byte)ContactClass.Bird && birdFirst >= 0)
+                {
+                    nModel++;
+                    counts[BirdBucket(a, i)]++;
+                }
+                else if (l == CrowdLod.Model && modelFirst[key] >= 0 && modelParts[key] > 0)
                 {
                     nModel++;
                     int f = modelFirst[key], n = modelParts[key];
@@ -110,7 +127,19 @@ namespace Chaukanna.Scenario
                 CrowdAgent a = agents[i];
                 float4x4 world = float4x4.TRS(pos[i], quaternion.RotateY(yaw[i]), new float3(a.size));
                 int key = a.cls * CrowdGenerator.MaxVariants + a.variant;
-                if (l == CrowdLod.Model && modelFirst[key] >= 0 && modelParts[key] > 0)
+                if (l == CrowdLod.Model && a.cls == (byte)ContactClass.Bird && birdFirst >= 0)
+                {
+                    int b = BirdBucket(a, i);
+                    int sp = a.variant % BirdSpeciesInfo.Count;
+                    float span = BirdSpeciesInfo.Span(sp) * (0.9f + 0.2f * BirdFlight.Hash01(BirdFlight.Mix(i, math.asuint(a.memberPhase)), 9));
+                    // Bank into the turn: the yaw rate over one second round now, from the closed-form heading.
+                    float dy = CrowdMath.Yaw(a, time + 0.5f) - CrowdMath.Yaw(a, time - 0.5f);
+                    dy = math.fmod(dy + 3f * math.PI, 2f * math.PI) - math.PI;
+                    float bank = BirdFlight.Bank(a.speed, dy);
+                    float3 s3 = new float3(a.size * span / BirdSpeciesInfo.Span(BirdSpeciesInfo.Kite));
+                    matrices[starts[b] + fill[b]++] = float4x4.TRS(pos[i], math.mul(quaternion.RotateY(yaw[i]), quaternion.RotateZ(-bank)), s3);
+                }
+                else if (l == CrowdLod.Model && modelFirst[key] >= 0 && modelParts[key] > 0)
                 {
                     int f = modelFirst[key], n = modelParts[key];
                     for (int k = 0; k < n; k++)

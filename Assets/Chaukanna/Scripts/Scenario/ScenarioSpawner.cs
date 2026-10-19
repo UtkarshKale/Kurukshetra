@@ -73,7 +73,9 @@ namespace Chaukanna.Scenario
         public List<GameObject> hostileFixedWingModels = new List<GameObject>();
         public List<GameObject> friendlyIsrModels = new List<GameObject>();
         public List<GameObject> civilianQuadModels = new List<GameObject>();
+        [Tooltip("Ignored: birds are always the code-built flapping bird (BirdMesh).")]
         public List<GameObject> birdModels = new List<GameObject>();
+        static readonly List<GameObject> noModels = new List<GameObject>();
 
         public List<GameObject> ModelsFor(ContactClass c)
         {
@@ -83,7 +85,7 @@ namespace Chaukanna.Scenario
                 case ContactClass.HostileFixedWing: return hostileFixedWingModels;
                 case ContactClass.FriendlyISR: return friendlyIsrModels;
                 case ContactClass.CivilianQuad: return civilianQuadModels;
-                default: return birdModels;
+                default: return noModels;      // birds never use model assets: they are the code-built flapping bird
             }
         }
 
@@ -114,6 +116,8 @@ namespace Chaukanna.Scenario
         float aSwarmTime = 60f, aSwarmBearing = 999f;
         SwarmTactic aSwarmTactic;
         public SwarmSky BigSwarm => GetComponent<SwarmSky>();
+        readonly List<SwarmSky> birdSkies = new List<SwarmSky>();     // big bird flocks of this run (children of this object)
+        public IReadOnlyList<SwarmSky> BigFlocks => birdSkies;
         SwarmProfile defaultSwarm, defaultFlock;
         public IEnumerable<SwarmGroup> Groups => groups.Values;
 
@@ -395,6 +399,7 @@ namespace Chaukanna.Scenario
             int withModel = 0;
             foreach (var p in plan)
             {
+                if (p.look.contactClass == ContactClass.Bird) { counts.TryGetValue("code-built bird", out int nb); counts["code-built bird"] = nb + 1; withModel++; continue; }
                 var prefab = ContactVisuals.PickPrefab(p.look, p.motionSeed / 7, ModelsFor(p.look.contactClass));
                 if (prefab == null) { missing.Add(p.look.contactClass); continue; }
                 withModel++;
@@ -414,6 +419,9 @@ namespace Chaukanna.Scenario
             groups.Clear();
             var bigSky = GetComponent<SwarmSky>();
             if (bigSky != null) bigSky.Stop();
+            foreach (var old in birdSkies)
+                if (old != null) { old.Stop(); if (Application.isPlaying) Destroy(old.gameObject); else DestroyImmediate(old.gameObject); }
+            birdSkies.Clear();
             var rng = new System.Random(active.seed ^ 0x5A17);
             float half = active.sectorArcDegrees * 0.5f, r = active.spawnRingRadius;
             int id = 0;
@@ -453,6 +461,20 @@ namespace Chaukanna.Scenario
                 float speed = Mathf.Lerp(bird.speedRange.x, bird.speedRange.y, (float)rng.NextDouble()) * activeSpeed;
                 float time = Range(rng, active.spawnWindowStart, Mathf.Min(active.spawnWindowEnd, active.duration));
                 var prof = flockProfile != null ? flockProfile : (defaultFlock != null ? defaultFlock : (defaultFlock = SwarmProfile.Birds()));
+                if (aFlockSize > SwarmSky.Threshold && !RunConditions.RangeDrill)
+                {
+                    // Big bird flock: the swarm engine with the bird profile (topological neighbours, banked turns, a roost to circle),
+                    // drawn instanced with flapping bird meshes. A bird picked out becomes a real Bird contact.
+                    int flockSeed = rng.Next();
+                    var go = new GameObject("BirdFlock_" + id);
+                    go.transform.SetParent(transform, false);
+                    var sky = go.AddComponent<SwarmSky>();
+                    birdSkies.Add(sky);
+                    Vector3 roost = OnSector(exit * 0.5f, Mathf.Min(r * 0.5f, 450f), altitude + 20f);
+                    int species = (flockSeed & 1) == 0 ? BirdSpeciesInfo.Pigeon : BirdSpeciesInfo.Sparrow;
+                    sky.BeginBirds(this, id++, bird, aFlockSize, centre, roost, time, flockSeed, species);
+                    continue;
+                }
                 AddGroup(list, id++, bird, aFlockSize, centre, OnSector(exit, r, altitude), speed, time, prof, rng.Next(), "ExitedSector");
             }
             if (aBirdFlocks > 0) log.Add($"{aBirdFlocks} bird flock{(aBirdFlocks > 1 ? "s" : "")} of {aFlockSize}");
@@ -623,6 +645,7 @@ namespace Chaukanna.Scenario
             if (p.group >= 0 && groups.TryGetValue(p.group, out var group))
             {
                 group.Add(motion);
+                contact.Data.groupId = p.group;
                 if (p.def.contactClass == ContactClass.HostileQuad || p.def.contactClass == ContactClass.HostileFixedWing) contact.Data.swarmId = p.group;
             }
             motion.rotors = ContactVisuals.FindRotors(go);

@@ -194,7 +194,8 @@ namespace Chaukanna.Scenario
                     double ox = rng.NextDouble() * 2 - 1, oy = rng.NextDouble() * 2 - 1, oz = rng.NextDouble() * 2 - 1, mp = rng.NextDouble();
                     a.offset = new float3((float)ox * spread, (float)oy * 10f, (float)oz * spread);
                     a.memberPhase = (float)mp * 6.2831853f;
-                    a.variant = (byte)(spec[Bird].variants <= 1 ? 0 : rng.Next(Math.Min(spec[Bird].variants, MaxVariants)));
+                    int memberLook = spec[Bird].variants <= 1 ? 0 : rng.Next(Math.Min(spec[Bird].variants, MaxVariants));   // drawn to keep the stream; a flock is one species
+                    a.variant = anchor.variant;
                     a.iff = 1;
                     agents[k++] = a;
                 }

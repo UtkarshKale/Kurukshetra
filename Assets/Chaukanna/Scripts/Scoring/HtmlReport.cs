@@ -84,6 +84,7 @@ namespace Chaukanna.Scoring
             if (s.quietWatch) h.Append("<p><b>Quiet watch vigilance:</b> ").Append(Esc(s.vigilance.summary)).Append("</p>");
             if (s.cardChange != null && s.cardChange.happened) h.Append("<p><b>Card change:</b> ").Append(Esc(s.cardChange.summary)).Append("</p>");
             if (s.swarm != null && s.swarm.happened) h.Append("<p><b>Swarm triage:</b> ").Append(Esc(s.swarm.summary)).Append("</p>");
+            if (s.groupCall != null && s.groupCall.happened) h.Append("<p><b>Group calls:</b> ").Append(Esc(s.groupCall.summary)).Append("</p>");
             h.Append("</section>");
 
             Timeline(h, s, records);

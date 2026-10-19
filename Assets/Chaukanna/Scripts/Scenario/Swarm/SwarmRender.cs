@@ -83,6 +83,42 @@ namespace Chaukanna.Scenario
         Mesh dotMesh;
         bool disposed;
 
+        public NativeArray<int> bucketOf;
+        public readonly bool IsBird;
+        public readonly int Species;
+
+        // A bird flock: bucket 0 = far silhouette, then Tints x Poses buckets of the code-built bird (BirdMesh). Meshes are the shared
+        // cache (not owned); the materials are this renderer's own Lit copies, one per tint.
+        public SwarmRenderer(int species, int agents)
+        {
+            IsBird = true; Species = species;
+            Size = BirdSpeciesInfo.Span(species);
+            dotMesh = CrowdRenderer.SilhouetteMesh(Silhouette.Bird);
+            var dotMat = CrowdRenderer.MakeMaterial(null);
+            CrowdRenderer.SetColour(dotMat, new Color(0.13f, 0.13f, 0.14f));
+            var meshList = new List<Mesh> { dotMesh };
+            var matList = new List<Material> { dotMat };
+            for (int t = 0; t < BirdSpeciesInfo.Tints; t++)
+            {
+                var mat = BirdKit.MakeMaterial(species, t);
+                for (int p = 0; p < BirdSpeciesInfo.Poses; p++) { meshList.Add(BirdMesh.Get(species, p)); matList.Add(mat); }
+            }
+            BucketCount = meshList.Count;
+            meshes = meshList.ToArray(); mats = matList.ToArray();
+            subs = new int[BucketCount];
+            partLocal = new NativeArray<float4x4>(BucketCount, Allocator.Persistent);
+            for (int i = 0; i < BucketCount; i++) partLocal[i] = float4x4.identity;
+            counts = new NativeArray<int>(BucketCount, Allocator.Persistent);
+            starts = new NativeArray<int>(BucketCount, Allocator.Persistent);
+            fill = new NativeArray<int>(BucketCount, Allocator.Persistent);
+            stats = new NativeArray<int>(4, Allocator.Persistent);
+            int cap = Math.Max(1, agents);
+            matrices = new NativeArray<float4x4>(cap, Allocator.Persistent);
+            vis = new NativeArray<byte>(cap, Allocator.Persistent);
+            drawPos = new NativeArray<float3>(cap, Allocator.Persistent);
+            bucketOf = new NativeArray<int>(cap, Allocator.Persistent);
+        }
+
         public SwarmRenderer(ContactDefinition def, List<GameObject> models, int agents)
         {
             Size = def != null ? def.size : 1f;
@@ -182,6 +218,7 @@ namespace Chaukanna.Scenario
             if (stats.IsCreated) stats.Dispose();
             if (vis.IsCreated) vis.Dispose();
             if (drawPos.IsCreated) drawPos.Dispose();
+            if (bucketOf.IsCreated) bucketOf.Dispose();
             if (mats != null) { var seen = new HashSet<Material>(); foreach (var m in mats) if (m != null && seen.Add(m)) Kill(m); }
             if (dotMesh != null) Kill(dotMesh);
         }

@@ -348,6 +348,12 @@ namespace Chaukanna.Trainer
                 GUI.Label(new Rect(x, y, w, 20f), $"<b><color=#{sc}>Swarm triage</color></b>  {s.swarm.summary}", C.Label);
                 y += 24f;
             }
+            if (s.groupCall != null && s.groupCall.happened)
+            {
+                string gc = ColorUtility.ToHtmlStringRGB(s.groupCall.wrong > 0 ? C.Warn : C.Good);
+                GUI.Label(new Rect(x, y, w, 20f), $"<b><color=#{gc}>Group calls</color></b>  {s.groupCall.summary}", C.Label);
+                y += 24f;
+            }
             if (s.cardChange != null && s.cardChange.happened)
             {
                 string colour = ColorUtility.ToHtmlStringRGB(s.cardChange.staleErrors > 0 || s.cardChange.adaptationSeconds < 0f ? C.Warn : C.Good);

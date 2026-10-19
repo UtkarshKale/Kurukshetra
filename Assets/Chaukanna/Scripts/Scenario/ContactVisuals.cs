@@ -29,6 +29,7 @@ namespace Chaukanna.Scenario
         // A non-empty override list (the spawner's "Models" lists) replaces the definition's own prefab and variants.
         public static GameObject PickPrefab(ContactDefinition def, int variantSeed, System.Collections.Generic.List<GameObject> overrideModels = null)
         {
+            if (def.contactClass == ContactClass.Bird) return null;      // birds are the code-built flapping bird (BirdMesh), never a model asset
             var choices = new System.Collections.Generic.List<GameObject>();
             if (overrideModels != null)
                 foreach (var m in overrideModels) if (m != null) choices.Add(m);
@@ -44,6 +45,7 @@ namespace Chaukanna.Scenario
         // How many different looks PickPrefab chooses between (1 when only the grey placeholder is available).
         public static int ChoiceCount(ContactDefinition def, System.Collections.Generic.List<GameObject> overrideModels = null)
         {
+            if (def.contactClass == ContactClass.Bird) return BirdSpeciesInfo.Count;   // kite, pigeon, small bird
             int n = 0;
             if (overrideModels != null)
                 foreach (var m in overrideModels) if (m != null) n++;
@@ -62,8 +64,10 @@ namespace Chaukanna.Scenario
             System.Collections.Generic.List<GameObject> overrideModels = null)
         {
             GameObject prefab = PickPrefab(def, variantSeed, overrideModels);
-            GameObject root = prefab != null ? Fit(Object.Instantiate(prefab)) : BuildPlaceholder(def.silhouette, def.cue);
-            root.transform.localScale = Vector3.one * def.size;
+            bool bird = def.contactClass == ContactClass.Bird;
+            GameObject root = bird ? BirdKit.BuildObject(variantSeed) : prefab != null ? Fit(Object.Instantiate(prefab)) : BuildPlaceholder(def.silhouette, def.cue);
+            // A bird is drawn at its species' size relative to the class size (the class size is the kite's), so a pigeon is smaller than a kite.
+            root.transform.localScale = Vector3.one * (bird ? def.size * BirdSpeciesInfo.Span(root.GetComponent<BirdBody>().Species) / BirdSpeciesInfo.Span(BirdSpeciesInfo.Kite) : def.size);
             wingL = FindDeep(root.transform, WingLeftName);
             wingR = FindDeep(root.transform, WingRightName);
 

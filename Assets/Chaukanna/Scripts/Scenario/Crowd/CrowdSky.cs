@@ -229,7 +229,7 @@ namespace Chaukanna.Scenario
                 {
                     agents = agents, lod = lod, pos = pos, yaw = yaw, alive = alive,
                     modelFirst = renderer.modelFirst, modelParts = renderer.modelParts, partLocal = renderer.partLocal, dotBucket = renderer.dotBucket,
-                    bucketCount = renderer.BucketCount, counts = renderer.counts, starts = renderer.starts, fill = renderer.fill,
+                    bucketCount = renderer.BucketCount, birdFirst = renderer.BirdFirst, time = t, counts = renderer.counts, starts = renderer.starts, fill = renderer.fill,
                     matrices = renderer.matrices, stats = renderer.stats,
                 };
                 h = b.Schedule(h);

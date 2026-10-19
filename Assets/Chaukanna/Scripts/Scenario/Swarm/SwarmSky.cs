@@ -10,8 +10,9 @@ namespace Chaukanna.Scenario
     public struct BigSwarmSummary
     {
         public int size, arrived, promoted, flying;
+        public bool birds;
         public SwarmTactic tactic;
-        public override string ToString() => $"Big swarm of {size} ({tactic}): {arrived} reached the post, {flying} still flying at the end, {promoted} picked out as real contacts";
+        public override string ToString() => birds ? $"Bird flock of {size}: {flying} still flying at the end, {promoted} picked out as real contacts" : $"Big swarm of {size} ({tactic}): {arrived} reached the post, {flying} still flying at the end, {promoted} picked out as real contacts";
     }
 
     // The big swarm of a run (more than SwarmSky.Threshold members): agents are data stepped by Burst jobs at 50 Hz (SwarmSim) and drawn
@@ -21,7 +22,8 @@ namespace Chaukanna.Scenario
     [DefaultExecutionOrder(-40)]
     public class SwarmSky : MonoBehaviour
     {
-        public static SwarmSky Active { get; private set; }
+        public static readonly List<SwarmSky> All = new List<SwarmSky>();   // the drone swarm and every big bird flock of this run
+        public static SwarmSky Active => All.Count > 0 ? All[0] : null;
         public const int Threshold = 64;                    // a swarm of more than this many goes through this system
         public const int TrackBase = 200000;
         const int PickCandidates = 4;
@@ -34,6 +36,9 @@ namespace Chaukanna.Scenario
         public float LastStepMs { get; private set; }
         public int DrawnInstances { get; private set; }
         public bool Started => sim != null;
+        public bool IsBirds => birds;
+        public int Species => species;
+        public int Count => count;
 
         ScenarioSpawner spawner;
         SwarmSim sim;
@@ -44,6 +49,8 @@ namespace Chaukanna.Scenario
         Vector3 centre, target;
         float speed, startT;
         SwarmTactic tactic;
+        bool birds;
+        int species;
         ContactSensor sensor;
         float alpha;
         bool noted, hasResults;
@@ -59,15 +66,24 @@ namespace Chaukanna.Scenario
             spawner = owner; GroupId = groupId; def = definition; models = modelList; count = agents; centre = start; target = aim;
             speed = cruiseSpeed; startT = startTime; seed = seedValue; tactic = how;
             Promoted = 0; noted = false; hasResults = false;
-            Active = this;
+            if (!All.Contains(this)) All.Add(this);
             enabled = true;
+        }
+
+        // A big bird flock (more than Threshold birds): the same engine with the bird profile. It starts at start, flies to the roost and
+        // circles it. Birds are never hostile; a bird picked out becomes a real Bird contact.
+        public void BeginBirds(ScenarioSpawner owner, int groupId, ContactDefinition definition, int agents, Vector3 start, Vector3 roostPoint,
+            float startTime, int seedValue, int speciesIndex)
+        {
+            Begin(owner, groupId, definition, null, agents, start, roostPoint, BirdSpeciesInfo.Cruise(speciesIndex), startTime, seedValue, SwarmTactic.Direct);
+            birds = true; species = speciesIndex;
         }
 
         public void Stop()
         {
             if (sim != null) { sim.Dispose(); sim = null; }
             if (rend != null) { rend.Dispose(); rend = null; }
-            if (Active == this) Active = null;
+            All.Remove(this);
             hasResults = false;
         }
 
@@ -78,6 +94,7 @@ namespace Chaukanna.Scenario
 
         void Create()
         {
+            if (birds) { CreateBirds(); return; }
             var p = SwarmParams.Drones(Mathf.Max(5f, speed));
             var prof = SwarmProfile.Drones();
             prof.spawnSpacing = p.spacing;
@@ -93,6 +110,26 @@ namespace Chaukanna.Scenario
             });
             rend = new SwarmRenderer(def, models, count);
             Debug.Log($"[Swarm] {count} drones ({tactic}) appear at {startT:F0} s; {rend.BucketCount - 1} model parts, grid height field {side:F0} m wide.");
+        }
+
+        void CreateBirds()
+        {
+            var p = SwarmParams.Birds(Mathf.Max(5f, speed), BirdSpeciesInfo.Spacing(species));
+            var prof = SwarmProfile.Birds();
+            prof.spawnSpacing = p.spacing; prof.altitudeSpread = Mathf.Max(20f, p.spacing * 6f);
+            var offsets = SwarmPlanner.Layout(count, seed, prof, target - centre);
+            var arr = new float3[count];
+            for (int i = 0; i < count; i++) arr[i] = new float3(offsets[i].x, offsets[i].y, offsets[i].z);
+            sim = new SwarmSim(centre, target, arr, p, SwarmTactic.Direct) { Seed = (uint)seed };
+            float side = Mathf.Max(3f * Vector3.Distance(centre, target), 2f * sim.Radius + 2000f);
+            sim.SetHeights(new float2((centre.x + target.x) * 0.5f, (centre.z + target.z) * 0.5f), side, (x, z) =>
+            {
+                float g = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(new Vector3(x, 0f, z));
+                return float.IsNaN(g) ? 0f : g;
+            });
+            sim.EnableRoost(new float3(target.x, target.y, target.z), 220f);
+            rend = new SwarmRenderer(species, count);
+            Debug.Log($"[Swarm] {count} {BirdSpeciesInfo.Name(species).ToLower()}s (a bird flock) appear at {startT:F0} s and circle a roost; {rend.BucketCount - 1} flap-pose buckets.");
         }
 
         Camera PlayerCamera()
@@ -135,6 +172,21 @@ namespace Chaukanna.Scenario
         public void Refresh(Camera cam, float maxRange)
         {
             float vfov = cam.fieldOfView * Mathf.Deg2Rad;
+            if (birds)
+            {
+                var bj = new BirdDrawJob
+                {
+                    prevPos = sim.PrevPos, curPos = sim.Pos, prevVel = sim.PrevVel, curVel = sim.Vel, state = sim.State,
+                    agents = sim.Count, bucketCount = rend.BucketCount, species = species, seed = (uint)seed, alpha = alpha, dt = sim.P.dt,
+                    time = sim.Time + alpha * sim.P.dt, span = rend.Size, maxRange = maxRange, minPx = 0.3f, modelPx = 6f,
+                    pxPerMetreAtOne = cam.pixelHeight / (2f * Mathf.Tan(vfov * 0.5f)), camPos = cam.transform.position,
+                    viewProj = (float4x4)(cam.projectionMatrix * cam.worldToCameraMatrix),
+                    counts = rend.counts, starts = rend.starts, fill = rend.fill, stats = rend.stats, bucketOf = rend.bucketOf, vis = rend.vis, drawPos = rend.drawPos, matrices = rend.matrices,
+                };
+                bj.Run();
+                hasResults = true;
+                return;
+            }
             var job = new SwarmDrawJob
             {
                 prevPos = sim.PrevPos, curPos = sim.Pos, vel = sim.Vel, state = sim.State, partLocal = rend.partLocal,
@@ -148,10 +200,11 @@ namespace Chaukanna.Scenario
         }
 
         // Self-test hook: a sky with a sim and a renderer made by hand, no spawner.
-        public void AttachForTest(SwarmSim s, SwarmRenderer r, ContactDefinition d) { Stop(); sim = s; rend = r; def = d; Active = null; }
+        public void AttachForTest(SwarmSim s, SwarmRenderer r, ContactDefinition d) { Stop(); sim = s; rend = r; def = d; All.Remove(this); }
 
         public BigSwarmSummary Summary() => new BigSwarmSummary
         {
+            birds = birds,
             size = count, tactic = tactic, promoted = Promoted,
             arrived = sim != null ? sim.ArrivedCount : 0, flying = sim != null ? sim.FlyingCount + sim.PromotedFlying : 0,
         };
@@ -198,7 +251,7 @@ namespace Chaukanna.Scenario
             for (int k = 0; k < found; k++)
             {
                 int i = pickIndex[k];
-                if (sense.CanSeePoint(PointOf(i), def != null ? def.size : 1f, out _, out _))
+                if (sense.CanSeePoint(PointOf(i), SizeForSense, out _, out _))
                 {
                     angle = pickAngle[k];
                     return i;
@@ -206,6 +259,8 @@ namespace Chaukanna.Scenario
             }
             return -1;
         }
+
+        float SizeForSense => birds && rend != null ? rend.Size : def != null ? def.size : 1f;
 
         Vector3 PointOf(int i) { float3 p = rend.drawPos[i]; return new Vector3(p.x, p.y, p.z); }
 
@@ -224,7 +279,7 @@ namespace Chaukanna.Scenario
                 Vector3 sp = cam.WorldToScreenPoint(p);
                 if (sp.z <= 0f || sp.x < min.x || sp.x > max.x || sp.y < min.y || sp.y > max.y) continue;
                 if (!LassoMath.InsidePrepared(sp.x, sp.y, n)) continue;
-                if (!sense.CanSeePoint(p, def != null ? def.size : 1f, out _, out _, false)) continue;
+                if (!sense.CanSeePoint(p, SizeForSense, out _, out _, false)) continue;
                 result.Add(i);
             }
             Vector3 tp = target;
@@ -255,7 +310,7 @@ namespace Chaukanna.Scenario
             if (contact == null) return null;
             sim.SetState(index, SwarmSim.Promoted);
             Promoted++;
-            contact.Data.swarmId = GroupId;
+            if (birds) contact.Data.groupId = GroupId; else { contact.Data.swarmId = GroupId; contact.Data.groupId = GroupId; }
             contact.gameObject.AddComponent<SwarmFollower>().Init(this, index);
             return contact;
         }

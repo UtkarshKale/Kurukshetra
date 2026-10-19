@@ -49,6 +49,8 @@ namespace Chaukanna.Scenario
         // Swarm triage: which swarm it belonged to, and how near to the post it was among the swarm when first acted on (0 = nearest).
         public int swarmId = -1;
         public int swarmRank = -1;
+        // The swarm or flock (planned group, big swarm or big bird flock) it flew in; -1 = on its own. Used by the group call (K key).
+        public int groupId = -1;
 
         // Evidence and conditions at decision time (for the process node and N2's light rule).
         public bool opticsVerified;                 // seen through the binoculars (zoomed in) while in view
@@ -193,6 +195,7 @@ namespace Chaukanna.Scenario
             Live.Clear();
             Events.Clear();
             Records.Clear();
+            Chaukanna.Scoring.GroupCalls.Reset();
             Feed.Clear();
             RoeChanges.Clear();
             RunLog.Clear();

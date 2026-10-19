@@ -152,6 +152,7 @@ namespace Chaukanna.Scoring
         public CardChangeResult cardChange = new CardChangeResult();
 
         public SwarmTriageResult swarm = new SwarmTriageResult();
+        public GroupCallResult groupCall = new GroupCallResult();   // K key: the trainee's call on whole swarms / flocks
 
         // Full scoring roll-up.
         public float processScore = -1f;            // mean of the decided contacts' process scores
@@ -323,7 +324,7 @@ namespace Chaukanna.Scoring
         static Chaukanna.Net.SeatRole roleForRun;      // Any = classic scoring; Sentry / Commander = the team chain (doc §5.4.7)
 
         public static SessionResult Calculate(IList<ContactRecord> records, RuleSet rules, float runEndTime, int seed = 0, IList<RoeChange> roeChanges = null, RoeCard startCard = RoeCard.WeaponsHold,
-            Chaukanna.Net.SeatRole role = Chaukanna.Net.SeatRole.Any)
+            Chaukanna.Net.SeatRole role = Chaukanna.Net.SeatRole.Any, IList<GroupCallRecord> groupCalls = null)
         {
             startCardForRun = startCard;
             changesForRun = roeChanges;
@@ -403,6 +404,8 @@ namespace Chaukanna.Scoring
             PrevalenceAndVigilance(s, records, runEndTime, rules);
             s.swarm = Triage(records, rules);
             if (s.swarm.happened) { s.totalPoints += s.swarm.points; s.maxPoints += s.swarm.maxPoints; }
+            s.groupCall = GroupCalls.Evaluate(groupCalls);
+            if (s.groupCall.happened) { s.totalPoints += s.groupCall.points; s.maxPoints += s.groupCall.maxPoints; }
             if (roeChanges != null && roeChanges.Count > 0)
             {
                 s.cardChange = CardChange(records, rules, roeChanges[0], s.contacts);
@@ -1110,6 +1113,7 @@ namespace Chaukanna.Scoring
             sb.AppendLine($"[Score] Unresolved {s.unresolved}, false engagements {s.falseEngagements}, missed hostiles {s.missedHostiles}");
             if (s.cardChange != null && s.cardChange.happened) sb.AppendLine("[Score] Card change: " + s.cardChange.summary);
             if (s.swarm != null && s.swarm.happened) sb.AppendLine("[Score] Swarm triage: " + s.swarm.summary);
+            if (s.groupCall != null && s.groupCall.happened) sb.AppendLine("[Score] Group calls: " + s.groupCall.summary);
             sb.AppendLine($"[Score] Process {(s.processScore < 0f ? "-" : F(s.processScore))} / 100. Grid: sound-successful {s.gridSoundSuccessful}, sound-unlucky {s.gridSoundUnlucky}, lucky {s.gridLucky}, unsound {s.gridUnsound}. Clock misses {s.clockMisses}, correct rejections {s.correctRejections}, unverified engagements {s.unverifiedEngagements}, search failures {s.searchFailures}, perception failures {s.perceptionFailures}");
             sb.AppendLine("[Score] " + s.reportSdt.Describe("Report (is there a drone?)"));
             sb.AppendLine("[Score] " + s.engageSdt.Describe("Engage (is it hostile?)"));

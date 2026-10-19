@@ -37,6 +37,8 @@ player view and a trainer panel, plus a TrainerMenu scene. Unity 6000.6.3f1, URP
 12. Style the owner asked for: short visible progress keywords while working; critical-thinking partner (no flattery,
     weakest link first, end substantive answers with one hard question) until the owner says "stand down".
 
+13. Tokens (owner, 2026-10-19): no long or recurring self-test suites, long Play-mode runs, multi-minute builds or stress runs without asking the owner first. After a change run a compile check and at most the one small test for that code.
+
 ## How to work in this project
 - Drive the open Editor with the Unity CLI (`unity command ...`, needs the `com.unity.pipeline` package, already in the
   project): `unity command recompile` then poll `unity command recompile_status`; run C# with

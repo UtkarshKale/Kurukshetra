@@ -54,6 +54,16 @@ namespace Chaukanna.Player
 
             var kb = Keyboard.current;
             if (kb == null || ContactRegistry.InputBlocked) return;
+            if (kb.kKey.wasPressedThisFrame) { if (GroupMenuOpen) GroupMenuOpen = false; else OpenGroupMenu(); }
+            if (GroupMenuOpen)
+            {
+                // The group strip is open: 1 / 2 / 3 call the whole group (and are not per-contact calls); Esc or K closes it.
+                if (kb.digit1Key.wasPressedThisFrame) CallGroup(Chaukanna.Scoring.GroupCall.DroneSwarm);
+                else if (kb.digit2Key.wasPressedThisFrame) CallGroup(Chaukanna.Scoring.GroupCall.BirdFlock);
+                else if (kb.digit3Key.wasPressedThisFrame) CallGroup(Chaukanna.Scoring.GroupCall.Mixed);
+                else if (kb.escapeKey.wasPressedThisFrame) GroupMenuOpen = false;
+                return;
+            }
             if (kb.digit1Key.wasPressedThisFrame) Classify(PlayerCall.HostileQuad);
             if (kb.digit2Key.wasPressedThisFrame) Classify(PlayerCall.HostileFixedWing);
             if (kb.digit3Key.wasPressedThisFrame) Classify(PlayerCall.OwnIsrDrone);
@@ -64,6 +74,35 @@ namespace Chaukanna.Player
             if (kb.jKey.wasPressedThisFrame) Act(PlayerAction.Jam);
             if (kb.fKey.wasPressedThisFrame) Act(PlayerAction.Engage);
             if (kb.iKey.wasPressedThisFrame) Challenge();
+        }
+
+        // K: call the whole selected group (lasso, G, Ctrl+click) as a drone swarm, a bird flock or a mix. Needs at least 2 selected.
+        public bool GroupMenuOpen { get; private set; }
+
+        public bool OpenGroupMenu()
+        {
+            if (sensor == null) sensor = GetComponent<ContactSensor>();
+            if (sensor.Targets.Count < Chaukanna.Scoring.GroupCalls.MinMembers) { sensor.Say("GROUP CALL: select a group first (hold Tab and drag, or G)", 2f); return false; }
+            GroupMenuOpen = true;
+            return true;
+        }
+
+        // One record per group: the first call counts. Returns true when it was recorded.
+        public bool CallGroup(Chaukanna.Scoring.GroupCall call)
+        {
+            GroupMenuOpen = false;
+            if (sensor == null) sensor = GetComponent<ContactSensor>();
+            var members = new System.Collections.Generic.List<ContactRecord>();
+            foreach (var c in sensor.Targets) if (c != null) members.Add(c.Data);
+            var rec = Chaukanna.Scoring.GroupCalls.Declare(Chaukanna.Scoring.GroupCalls.Records, members, call, ContactRegistry.ScenarioTime, out var existing);
+            if (rec == null)
+            {
+                sensor.Say(existing != null ? $"That group is already called: {existing.call}" : "GROUP CALL: select at least 2", 2f);
+                return false;
+            }
+            foreach (var c in sensor.Targets) if (c != null) c.Data.Log($"group call: {Chaukanna.Scoring.GroupCalls.Label(call)} ({members.Count} selected)");
+            sensor.Say($"GROUP CALLED: {Chaukanna.Scoring.GroupCalls.Label(call)} ({members.Count})", 2.5f);
+            return true;
         }
 
         // I: challenge the locked contact, or every selected one, for IFF / Remote ID. The answer comes back 0.6 to 1.4 s later.
@@ -276,7 +315,8 @@ namespace Chaukanna.Player
                     ? $"ACTION\n<color={off}>H Hold</color>\n<color={(canAct ? on : off)}>R Report</color>\n<color={off}>J Jam\nF Engage</color>"
                     : $"<color={(canAct ? on : off)}>ACTION\nH Hold\nR Report\nJ Jam</color>\n" +
                       $"<color={(canFire ? on : off)}>F Engage{(c != null && c.CanFireAgain ? " (fire again)" : "")}</color>");
-            if (many) text += $"\n\nGROUP of {targets.Count}";
+            if (GroupMenuOpen) text = $"<b>GROUP CALL ({targets.Count})</b>\n1 Drone swarm\n2 Bird flock\n3 Mixed\nEsc / K cancel";
+            else if (many) text += $"\n\nGROUP of {targets.Count}\nK call the group";
             else if (c != null && c.Resolved) text += $"\n\n#{c.Id:00} resolved\n" + (c.CanChangeAction ? "any key changes it" : "1-5 changes the call");
             else if (c != null && c.OnHold) text += $"\n\n#{c.Id:00} held: R / J / F";
             text += "\n\n<color=#FFFFFFAA>I check IFF / Remote ID\nHold Tab + drag: lasso\nCtrl+click add to group\nG all in view   X clear</color>";

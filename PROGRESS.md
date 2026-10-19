@@ -2,6 +2,10 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Phase 2: birds (prototype)
+- Old bird art unlinked (Contact_Bird.asset prefab/variants cleared; code ignores bird model lists). Code-built bird mesh (kite / pigeon / sparrow, 3 tints, size 0.9-1.1), 9 cached flap poses, flap rate by size (2.5 / 5.5 / 8 Hz), flap-and-glide, banking, per-bird phase. Flocks over 64 run on the swarm engine (7 topological neighbours, Ballerini 2008; StarDisplay-like roost circling; banked-turn limit). Small flocks and single birds flap on the CPU. Crowd birds use the pose buckets. K key: group call Drone swarm / Bird flock / Mixed on a selected group, scored once per group (10 points), on the dashboard and in the HTML report.
+- Verified: BirdSelfTest 38/38 plus swarm, crowd, scoring, report, dashboard tests; live 3000-bird flock to 125 s, no exceptions, group call scored; a picture shows a flock with flapping birds. 3000-bird step 1.24 ms. Not verified: the K strip on screen, pigeon and kite flocks by eye, a build, LAN (proxies do not flap; group calls not sent).
+
 ## 2026-10-20 - Phase 1: big drone swarm (prototype) + delete downloaded terrains
 - Scripts/Scenario/Swarm/: SwarmSim (NativeArrays, Burst, fixed 50 Hz, hash grid, nearest 7; Reynolds + Olfati-Saber spacing + Vasarhelyi limits; tactics Direct / Saturate / Split; terrain floor), SwarmRender (GPU instancing, model near / silhouette far), SwarmSky (promote to a real Contact on lock / lasso), SwarmJobSelfTest (16 checks). Swarms above 64 use it. Tactic button in menu, F6 and editor.
 - Step: 0.39 ms at 1000, 1.05 ms at 3000, 1.73 ms at 5000, 2.81 ms at 10000 (Editor, Burst). Zero GC per step. Live: 3000 drones at 25 s, 7053 instances drawn, 1.64 ms main thread, no exceptions (after fixing a WriteOnly job bug found live). Not verified: Saturate/Split live, promotion by aiming, GPU time, LAN team clients (big swarm not shown there).

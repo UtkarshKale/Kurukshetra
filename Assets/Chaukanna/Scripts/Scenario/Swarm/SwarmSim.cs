@@ -20,6 +20,24 @@ namespace Chaukanna.Scenario
         public float spacing, neighbourRadius, kPair, attractFactor, kSep, kAlign, kGoal;
         public float aMax, vCruise, vMax, vMin, arriveDist, minAbove, dt;
         public int maxNeighbours;
+        // Bird profile (StarDisplay-like, Hildenbrandt 2010): bird != 0 turns on banked-turn limits and a small random perturbation.
+        // aLat = most sideways acceleration (g * tan(max bank)), aLong = most acceleration along the flight direction, noise = m/s^2.
+        public int bird;
+        public float aLat, aLong, noise;
+
+        // A flock: topological nearest 7 neighbours (Ballerini 2008), cohesion to them, alignment, a cruise speed to return to,
+        // banked turns, a roost to circle (set with SwarmSim.EnableRoost), a little noise. spacing = metres between neighbours.
+        public static SwarmParams Birds(float cruise = 10f, float spacing = 4f)
+        {
+            return new SwarmParams
+            {
+                spacing = spacing, neighbourRadius = math.max(12f, spacing * 3.5f), maxNeighbours = 7,
+                kPair = 5f, attractFactor = 0.8f, kSep = 25f, kAlign = 1.2f, kGoal = 0.5f,
+                aMax = 14f, vCruise = cruise, vMax = cruise * 1.35f, vMin = cruise * 0.65f,
+                arriveDist = 0f, minAbove = 20f, dt = 0.02f,
+                bird = 1, aLat = 12f, aLong = 4f, noise = 0.6f,
+            };
+        }
 
         public static SwarmParams Drones(float cruise = 20f)
         {
@@ -112,6 +130,8 @@ namespace Chaukanna.Scenario
         public uint mask;
         public float2 hOrigin;
         public float hInvCell;
+        public int stepIndex;
+        public uint seed;
 
         public void Execute(int i)
         {
@@ -184,7 +204,21 @@ namespace Chaukanna.Scenario
             float rl = math.length(rest);
             if (rl > budget) rest = rest / math.max(rl, 1e-6f) * budget;
 
-            vel += (sep + rest) * p.dt;
+            float3 acc = sep + rest;
+            if (p.bird != 0)
+            {
+                // A bird turns by banking: sideways acceleration is limited (g * tan(bank)), and so is the push along its heading.
+                float sp0 = math.length(vel);
+                float3 vd = sp0 > 1e-3f ? vel / sp0 : new float3(0f, 0f, 1f);
+                var rn = new Unity.Mathematics.Random(math.hash(new uint2((uint)i + 1u, (uint)stepIndex * 2654435761u + seed)) | 1u);
+                acc += rn.NextFloat3Direction() * p.noise;
+                float along = math.clamp(math.dot(acc, vd), -p.aLong, p.aLong);
+                float3 perp = acc - math.dot(acc, vd) * vd;
+                float pl = math.length(perp);
+                if (pl > p.aLat) perp *= p.aLat / pl;
+                acc = along * vd + perp;
+            }
+            vel += acc * p.dt;
             float s2 = math.length(vel);
             if (s2 > p.vMax) vel = vel / s2 * p.vMax;
             else if (s2 < math.min(p.vMin, 0.8f * cruise)) vel = (s2 > 1e-4f ? vel / s2 : (dist > 1e-3f ? toGoal / dist : new float3(0f, 0f, 1f))) * math.min(p.vMin, 0.8f * cruise);
@@ -251,6 +285,7 @@ namespace Chaukanna.Scenario
         public float3 Goal(int g) => goals[g];
         public float TacticRange;                            // m from the target where Saturate spreads / Split divides; 0 = from the size
         public float SpreadDegrees = 140f;
+        public uint Seed;                                    // bird noise stream
 
         NativeArray<float3>[] pos = new NativeArray<float3>[2], vel = new NativeArray<float3>[2];
         int cur;
@@ -268,10 +303,15 @@ namespace Chaukanna.Scenario
         float3 start;
         float waypointSwitch;
         bool disposed;
+        bool roostMode;
+        float3 roost;
+        float roostR;
 
         public NativeArray<float3> Pos => pos[cur];
         public NativeArray<float3> PrevPos => pos[1 - cur];
         public NativeArray<float3> Vel => vel[cur];
+        public NativeArray<float3> PrevVel => vel[1 - cur];
+        public bool RoostMode => roostMode;
         public NativeArray<byte> State => state;
         public float Time => StepCount * P.dt;
 
@@ -402,9 +442,37 @@ namespace Chaukanna.Scenario
             for (int g = 0; g < Groups; g++) goalSpeed[g] = P.vCruise * math.clamp(len[g] / longest, 0.5f, 1f);
         }
 
+        // Bird flocks do not seek a target: each group heads for a roost and then circles it (the aim point runs ahead of the group on a
+        // circle round the roost, which itself drifts slowly), so the flock wanders over the sky and never arrives anywhere.
+        public void EnableRoost(float3 centre, float radius)
+        {
+            roostMode = true; roost = centre; roostR = math.max(radius, 30f);
+            UpdateRoost();
+        }
+
+        void UpdateRoost()
+        {
+            float t = Time;
+            for (int g = 0; g < Groups; g++)
+            {
+                float3 c = groupCount[g] > 0 ? centroid[g] : start;
+                float2 rc = roost.xz + new float2(math.sin(t * 0.021f + g), math.cos(t * 0.017f + 2f * g)) * roostR * 0.4f;
+                float R = roostR * (1f + 0.25f * math.sin(t * 0.03f + g));
+                float2 d = c.xz - rc;
+                float len = math.length(d);
+                float2 aim;
+                if (len > 1.6f * R) aim = rc;
+                else { float ang = math.atan2(d.y, d.x) + 0.6f; aim = rc + R * new float2(math.cos(ang), math.sin(ang)); }
+                goals[g] = new float3(aim.x, roost.y + 10f * math.sin(t * 0.05f + g), aim.y);
+                goalFinal[g] = 0;
+                goalSpeed[g] = P.vCruise;
+            }
+        }
+
         // Moves a group on to its next phase when its centre has reached the current waypoint.
         void UpdateTactics()
         {
+            if (roostMode) { UpdateRoost(); return; }
             if (Tactic == SwarmTactic.Direct) return;
             for (int g = 0; g < Groups; g++)
             {
@@ -433,7 +501,7 @@ namespace Chaukanna.Scenario
             {
                 posIn = read, velIn = vel[cur], group = group, goals = goals, goalFinal = goalFinal, goalSpeed = goalSpeed, cellStart = cellStart, order = order,
                 heights = heights, state = state, posOut = write, velOut = vel[1 - cur], p = P, invCell = invCell, mask = mask,
-                hOrigin = hOrigin, hInvCell = hInvCell,
+                hOrigin = hOrigin, hInvCell = hInvCell, stepIndex = StepCount, seed = Seed,
             };
             var cen = new SwarmCentroidJob { pos = write, state = state, group = group, centroid = centroid, count = groupCount, stats = stats, agents = n };
             JobHandle h = grid.Schedule();

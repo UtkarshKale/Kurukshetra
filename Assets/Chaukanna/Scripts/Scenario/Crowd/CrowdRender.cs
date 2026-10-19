@@ -23,6 +23,7 @@ namespace Chaukanna.Scenario
         Mesh[] dotMeshes = new Mesh[DotBuckets];
         Material dotMaterial;
 
+        public int BirdFirst { get; private set; } = -1;   // first flap-pose bucket of the code-built bird: first + (species * Tints + tint) * Poses + pose
         public NativeArray<int> modelFirst, modelParts, dotBucket, counts, starts, fill, stats;
         public NativeArray<float4x4> partLocal, matrices;
         public int MaxParts { get; private set; } = 1;
@@ -64,6 +65,19 @@ namespace Chaukanna.Scenario
                 var def = c < defs.Length ? defs[c] : null;
                 if (def == null) continue;
                 var list = models != null && c < models.Length ? models[c] : null;
+                if (c == (int)ContactClass.Bird)
+                {
+                    // Birds are the code-built flapping bird: one bucket per (species, tint, flap pose), instanced.
+                    BirdFirst = meshList.Count;
+                    for (int sp = 0; sp < BirdSpeciesInfo.Count; sp++)
+                        for (int tn = 0; tn < BirdSpeciesInfo.Tints; tn++)
+                        {
+                            var bm = BirdKit.MakeMaterial(sp, tn);
+                            for (int po = 0; po < BirdSpeciesInfo.Poses; po++) { meshList.Add(BirdMesh.Get(sp, po)); subList.Add(0); matList.Add(bm); local.Add(float4x4.identity); }
+                        }
+                    ModelCount[c] = BirdSpeciesInfo.Count;
+                    continue;
+                }
                 int looks = Math.Min(ContactVisuals.ChoiceCount(def, list), CrowdGenerator.MaxVariants);
                 for (int v = 0; v < looks; v++)
                 {

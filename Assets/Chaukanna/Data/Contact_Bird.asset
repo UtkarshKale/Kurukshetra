@@ -14,9 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Scenario.ContactDefinition
   contactClass: 4
   displayName: Bird
-  prefab: {fileID: 7265075498263598713, guid: d9383b20b3fcbb24ab27b75e0a7fa0e5, type: 3}
-  variants:
-  - {fileID: 4640924105453129835, guid: 68c8ea198acc1fb439e99268cdef928f, type: 3}
+  prefab: {fileID: 0}
+  variants: []
   silhouette: 2
   cue: 0
   size: 1.8

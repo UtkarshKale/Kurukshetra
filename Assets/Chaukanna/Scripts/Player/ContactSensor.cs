@@ -207,8 +207,7 @@ namespace Chaukanna.Player
                 }
             }
             // Big swarm: same idea.
-            var swarm = SwarmSky.Active;
-            if (swarm != null)
+            foreach (var swarm in SwarmSky.All)
             {
                 int index = swarm.Pick(Cam, aimDir, bestAngle, this, out float swarmAngle);
                 if (index >= 0 && swarmAngle < bestAngle)

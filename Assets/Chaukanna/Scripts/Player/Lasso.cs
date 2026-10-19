@@ -322,14 +322,15 @@ namespace Chaukanna.Player
                 LassoMath.Pick(candidates, cam, loop, Near, Far, picked);
                 // Dense sky: crowd drones in the loop become real contacts (up to 48, nearest the post first).
                 if (crowd != null && mode != LassoMode.Remove) crowdMade = crowd.PromoteForLasso(cam, loop, Near, Far, sensor, picked, out crowdTotal);
-                var swarmSky = SwarmSky.Active;
-                if (swarmSky != null && mode != LassoMode.Remove) { crowdMade += swarmSky.PromoteForLasso(cam, loop, Near, Far, sensor, picked, out int swarmTotal); crowdTotal += swarmTotal; }
+                if (mode != LassoMode.Remove)
+                    foreach (var swarmSky in SwarmSky.All) { crowdMade += swarmSky.PromoteForLasso(cam, loop, Near, Far, sensor, picked, out int swarmTotal); crowdTotal += swarmTotal; }
             }
             else
             {
                 PickNearCursor();
                 if (picked.Count == 0 && crowd != null && mode != LassoMode.Remove) PickCrowdNearCursor(crowd);
-                if (picked.Count == 0 && SwarmSky.Active != null && mode != LassoMode.Remove) PickSwarmNearCursor(SwarmSky.Active);
+                if (mode != LassoMode.Remove)
+                    foreach (var swarmSky in SwarmSky.All) { if (picked.Count > 0) break; PickSwarmNearCursor(swarmSky); }
             }
             sensor.ApplyLasso(picked, mode, "lasso");
             LastPicked = picked.Count;
@@ -444,7 +445,7 @@ namespace Chaukanna.Player
                     int crowdInLoop = 0;
                     var crowd = CrowdSky.Active;
                     if (crowd != null && loop.Count >= 3) { crowd.InLoop(cam, loop, Near, Far, sensor, crowdScratch); crowdInLoop = crowdScratch.Count; }
-                    if (SwarmSky.Active != null && loop.Count >= 3) { SwarmSky.Active.InLoop(cam, loop, Near, Far, sensor, crowdScratch); crowdInLoop += crowdScratch.Count; }
+                    if (loop.Count >= 3) foreach (var sky in SwarmSky.All) { sky.InLoop(cam, loop, Near, Far, sensor, crowdScratch); crowdInLoop += crowdScratch.Count; }
                     GUI.Label(badge, $"{mode}{picked.Count + crowdInLoop} in loop", style);
                 }
             }

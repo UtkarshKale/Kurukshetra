@@ -29,3 +29,4 @@ The full rules are in CLAUDE.md and apply to every agent; the full project conte
 ## Testing
 There is no Test Framework package. Each area has a static self-test with `Run()` returning bool; run them from the
 Editor through the Unity CLI (`unity command eval_file`). The list and expected counts are in CONTEXT.md.
+- Ask the owner before any expensive test (full self-test suite, long Play-mode run, long build, stress run); otherwise only a compile check and the one test for the changed code.

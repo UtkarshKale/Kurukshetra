@@ -46,7 +46,7 @@ namespace Chaukanna.Scoring
             if (live == null || Time.unscaledTime >= nextLiveTime)
             {
                 nextLiveTime = Time.unscaledTime + 0.5f;
-                live = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart, RunConditions.SeatRole);
+                live = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart, RunConditions.SeatRole, GroupCalls.Records);
                 StampConditions(live);
             }
             return live;
@@ -75,7 +75,7 @@ namespace Chaukanna.Scoring
 
         void Finish()
         {
-            Last = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart, RunConditions.SeatRole);
+            Last = ScoreCalculator.Calculate(ContactRegistry.Records, Rules, spawner.ScenarioTime, spawner.ActiveSeed, ContactRegistry.RoeChanges, ContactRegistry.RoeAtStart, RunConditions.SeatRole, GroupCalls.Records);
             Last.timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             StampConditions(Last);
             Debug.Log($"[Score] Conditions: {Last.timeOfDay}, {Last.visibility}, night vision {Last.nightVisionPercent:F0}% of the run. Difficulty: {(Last.difficulty.Length > 0 ? Last.difficulty : "none")}");
