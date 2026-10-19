@@ -2,6 +2,14 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-19 - Pulled dev/modules-2026-10-19; Kurukshetra name; Credits tab removed
+- Pulled Arpit's branch (9d95535), merged the solution-v3 docs branch (f421ccd) as fbc1cf3. Unity imported the two VR packages; 0 compile errors. All 21 self-tests pass on this PC, including CrowdSelfTest 27/27 (H-10 was a Burst setting on the other PC).
+- Player- and report-visible name is now Kurukshetra (menu header, loading screen, HTML report title and heading, board title). Code namespace, folders, ChaukannaData and .chaukanna unchanged. Left on purpose: the web User-Agent and the terrain generator's metadata source string.
+- Credits tab removed from the menu. Attribution (CC-BY models, data sources) is now written to CREDITS.txt next to the exe by the post-build step, and the HTML report footer points to it. ReportSelfTest 20/20 (new check).
+- Verified: compile, all self-tests, and a real Windows build (23 min, the first with the XR packages) wrote CREDITS.txt. Not seen by eye: the six-tab menu.
+- Unity re-enables Unity Connect during builds; reverted again, not committed. Unity also added switched-off Meta Quest (Android) entries to OpenXR Package Settings: left uncommitted.
+- Work split this round: planning on Opus (high), building on Sonnet (high) subagents; effortless 1.71.0 is enabled (it picks effort per prompt in interactive sessions).
+
 ## 2026-10-19 (later) - Docs: Kurukshetra name, solution v3, STATUS.md (no code change)
 - Project renamed Kurukshetra by the owner. Changed in CLAUDE.md, AGENTS.md, CONTEXT.md (new section 11) and the solution doc only; code namespace, folders and data paths keep "Chaukanna" on purpose.
 - Added Assets/Chaukanna/Docs/solution-v3.md: council v2 plus the faculty review (items F1-F33, new sections 1.15-1.21 and 5.0-5.1d, risks K22-K29, build list 11.5). It carries no build status.

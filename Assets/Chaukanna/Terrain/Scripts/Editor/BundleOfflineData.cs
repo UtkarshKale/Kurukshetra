@@ -22,7 +22,16 @@ namespace Chaukanna.TerrainGen.EditorTools
             string bundle = Path.Combine(buildDir, ElevationDownloader.BundleFolderName);
             long tiles = Copy(ElevationDownloader.CacheFolder, Path.Combine(bundle, "tiles"), false);
             long areas = Copy(Path.GetFullPath(Path.Combine(Application.dataPath, "Chaukanna", "Terrain", "RealData")), Path.Combine(bundle, "RealData"), true);
+            WriteCredits(buildDir);
             Debug.Log($"[Build] Offline data copied to {bundle}: map tiles {tiles / 1024} KB, downloaded areas {areas / 1024} KB. Copy the whole build folder to the other PC.");
+        }
+
+        // The CC BY models need their credit to ship with the game: Credits.cs is the single source of the text.
+        static void WriteCredits(string buildDir)
+        {
+            string text = "Kurukshetra - asset and data credits\n\n" + Chaukanna.Trainer.Credits.PlainText + "\n";
+            File.WriteAllText(Path.Combine(buildDir, "CREDITS.txt"), text.Replace("\n", "\r\n"), new System.Text.UTF8Encoding(true));
+            Debug.Log("[Build] CREDITS.txt written next to the game.");
         }
 
         static long Copy(string from, string to, bool skipMeta)

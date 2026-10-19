@@ -71,6 +71,7 @@ namespace Chaukanna.Scoring
             RunLog.post = savedPost;
             RunLog.sectorYaw = savedYaw;
             Check("report carries the 'Training use only' line at the top and in the footer", html.IndexOf(HtmlReport.Disclaimer) > 0 && html.IndexOf(HtmlReport.Disclaimer) != html.LastIndexOf(HtmlReport.Disclaimer));
+            Check("report footer points to CREDITS.txt and the report is titled Kurukshetra", html.Contains("CREDITS.txt") && html.Contains("<h1>Kurukshetra after-action review</h1>") && !html.Contains("Chaukanna"));
             Check("report has every section: debrief, decision quality, timeline, replay, every contact, confusion",
                 html.Contains("<h2>Debrief</h2>") && html.Contains("<h2>Decision quality</h2>") && html.Contains("Timeline: in view") && html.Contains("<h2>Replay</h2>") && html.Contains("<h2>Every contact</h2>") && html.Contains("Confusion"));
             Check("names are escaped (no raw <Test>)", !html.Contains("<Test>") && html.Contains("Sepoy &lt;Test&gt; &amp; Co"));

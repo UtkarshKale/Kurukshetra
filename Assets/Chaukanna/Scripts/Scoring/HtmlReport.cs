@@ -39,11 +39,11 @@ namespace Chaukanna.Scoring
         {
             var h = new StringBuilder(64 * 1024);
             h.Append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-            h.Append("<title>Chaukanna AAR ").Append(Esc(s.timestamp)).Append("</title><style>").Append(Css).Append("</style></head><body>");
+            h.Append("<title>Kurukshetra AAR ").Append(Esc(s.timestamp)).Append("</title><style>").Append(Css).Append("</style></head><body>");
 
             // Header.
             h.Append("<header><div class=\"disclaimer\">").Append(Disclaimer).Append("</div>");
-            h.Append("<h1>Chaukanna after-action review</h1>");
+            h.Append("<h1>Kurukshetra after-action review</h1>");
             h.Append("<p class=\"meta\">").Append(Esc(player)).Append(" &middot; ").Append(Esc(s.timestamp ?? "")).Append(" &middot; seed ").Append(s.seed)
                 .Append(" &middot; ").Append(F0(s.duration)).Append(" s &middot; ").Append(Esc(s.timeOfDay)).Append(", ").Append(Esc(s.visibility))
                 .Append(" &middot; difficulty ").Append(Esc(string.IsNullOrEmpty(s.difficulty) ? "none" : s.difficulty))
@@ -94,7 +94,7 @@ namespace Chaukanna.Scoring
                 h.Append("<p class=\"meta\">Terrain layers: ").Append(Esc(s.terrainLayers ?? "")).Append(string.IsNullOrEmpty(s.mapCredit) ? "" : "<br>" + Esc(s.mapCredit)).Append("</p>");
 
             h.Append("<footer>").Append(Disclaimer).Append(" Cards A / B / C, release points, deadlines and bands are placeholders, not Indian doctrine; an officer must set them. ")
-                .Append("\"In view\" means on the player's screen and passing the detection test, never \"saw\". The sound call is an annotated replay of the logged run, not a re-simulation.</footer>");
+                .Append("\"In view\" means on the player's screen and passing the detection test, never \"saw\". The sound call is an annotated replay of the logged run, not a re-simulation. Asset and data credits: see CREDITS.txt next to the game.</footer>");
             h.Append("<script>").Append(ReplayScript).Append("</script></body></html>");
             return h.ToString();
         }

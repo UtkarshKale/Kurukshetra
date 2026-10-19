@@ -294,3 +294,9 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] H-7. CONTEXT.md section 8 check counts are out of date: TrainerSelfTest has 56 (not 51), DashboardSelfTest 23 (not "about 15"), VrSelfTest 19 in Edit mode (22 only in Play mode). Fix the table.
 - [ ] H-8. The first eval_file calls after the Editor opens can hit the pipeline's 5 s main-thread limit (Score, FullScoring and Report timed out once, then passed on retry). Retry once before calling a test failed.
 - [ ] H-9. Assets/Chaukanna/Docs.meta and Docs/*.md.meta are not in git, so each PC makes its own GUIDs. Owner to decide whether to commit them.
+
+## Round 2026-10-19 (owner's list, VR last)
+- [x] R1. Rename to Kurukshetra (visible names only).
+- [x] R2. Remove Credits tab; attribution to CREDITS.txt + report footer.
+- [x] H-10. Crowd speed check passes on this PC (27/27); Burst setting on the other PC.
+- [ ] R3. Plan doc plan-round-2026-10-19.md for: realistic drone swarm, realistic flapping bird flocks classifiable as swarms, working multiplayer, AAR cards + export, black-box 3D replay with proximity voice and comms review, procedural trees/bushes/buildings, VR (last). Owner approves before building.

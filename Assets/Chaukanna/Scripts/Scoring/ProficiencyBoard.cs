@@ -208,7 +208,7 @@ namespace Chaukanna.Scoring
         public static string Html(IList<BoardCell> cells, IList<string> notYet, IList<BoardFlag> flags)
         {
             var h = new StringBuilder();
-            h.Append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Chaukanna proficiency board</title><style>")
+            h.Append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Kurukshetra proficiency board</title><style>")
              .Append("body{font:14px system-ui,Segoe UI,Arial;margin:16px;color:#14181f}table{border-collapse:collapse}td,th{border-bottom:1px solid #ccc;padding:4px 8px;text-align:left}.d{background:#7a1f1f;color:#fff;font-weight:700;padding:4px 10px;display:inline-block}@media print{@page{size:A4;margin:10mm}}")
              .Append("</style></head><body><div class=\"d\">").Append(Disclaimer).Append("</div><h1>Sim proficiency board</h1>")
              .Append("<p>Locked reference packages only, Director off. Scores are the sim's, not a measure of real-sky performance.</p>")

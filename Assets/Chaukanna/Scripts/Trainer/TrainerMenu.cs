@@ -34,7 +34,7 @@ namespace Chaukanna.Trainer
         public readonly List<Vector2> SpawnPoints = new List<Vector2>();
         public string Message { get; private set; } = "";
 
-        enum Tab { Terrain, Scenario, Map, Editor, Board, Lobby, Credits }
+        enum Tab { Terrain, Scenario, Map, Editor, Board, Lobby }
         enum MapTool { PlacePost, AddSpawn, RemoveSpawn }
 
         Tab tab;
@@ -59,10 +59,7 @@ namespace Chaukanna.Trainer
         List<string> areas = new List<string>();
         float areasCheckedAt = -100f;
 
-        // The CREDITS tab is hidden for now (the owner will add it back): set ShowCredits to true to restore it. It is the last tab, so no index moves.
-        const bool ShowCredits = false;
-        static readonly string[] AllTabNames = { "1  TERRAIN", "2  SCENARIO", "3  MAP", "EDITOR", "BOARD", "4  LOBBY", "CREDITS" };
-        static readonly string[] TabNames = ShowCredits ? AllTabNames : System.Array.FindAll(AllTabNames, n => n != "CREDITS");
+        static readonly string[] TabNames = { "1  TERRAIN", "2  SCENARIO", "3  MAP", "EDITOR", "BOARD", "4  LOBBY" };
         static readonly string[] ModeNames = { "Real world\naccurate", "Real world\n+ subtle detail", "Real world\n+ major variations", "Pure\nprocedural", "Custom\nhybrid" };
 
         void Awake()
@@ -380,7 +377,7 @@ namespace Chaukanna.Trainer
             // Top bar: title, tabs, START.
             const float pad = 14f, barH = 54f;
             Fill(new Rect(0f, 0f, w, barH), new Color(0.09f, 0.11f, 0.14f));
-            GUI.Label(new Rect(pad, 8f, 300f, 38f), "CHAUKANNA  TRAINER", title);
+            GUI.Label(new Rect(pad, 8f, 300f, 38f), "KURUKSHETRA  TRAINER", title);
             tab = (Tab)GUI.Toolbar(new Rect(320f, 10f, Mathf.Min(900f, w - 320f - 200f), 34f), (int)tab, TabNames, button);
             var problems = StartProblems();
             var old = GUI.backgroundColor;
@@ -402,7 +399,6 @@ namespace Chaukanna.Trainer
                 case Tab.Map: MapTab(body); break;
                 case Tab.Editor: EditorTab(body); break;
                 case Tab.Board: BoardTab(body); break;
-                case Tab.Credits: GUI.Label(new Rect(body.x, body.y, Mathf.Min(980f, body.width), body.height), Credits.Text, label); break;
                 default: LobbyTab(body); break;
             }
             GUI.matrix = saved;

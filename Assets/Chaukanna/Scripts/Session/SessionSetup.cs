@@ -232,7 +232,7 @@ namespace Chaukanna.Session
 
             float w = Mathf.Min(Screen.width * 0.6f, 760f * ui), x = (Screen.width - w) * 0.5f, y = Screen.height * 0.40f;
             GUI.color = new Color(1f, 1f, 1f, fade);
-            GUI.Label(new Rect(x, y - 70f * ui, w, 50f * ui), "CHAUKANNA", title);
+            GUI.Label(new Rect(x, y - 70f * ui, w, 50f * ui), "KURUKSHETRA", title);
             GUI.Label(new Rect(x, y - 18f * ui, w, 30f * ui), Step + (closing ? "" : new string('.', 1 + (int)(Time.unscaledTime * 2f) % 3)), text);
 
             var bar = new Rect(x, y + 20f * ui, w, 10f * ui);

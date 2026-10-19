@@ -1,6 +1,6 @@
 namespace Chaukanna.Trainer
 {
-    // Third-party work used in the project, shown on the trainer menu's Credits tab.
+    // Third-party work used in the project, written to CREDITS.txt next to every Windows build (BundleOfflineData post-build step) and pointed to from the report footer.
     // CC BY items MUST also be credited at the end of any video. Keep this list in step with what is actually used:
     // authors and licences are as given on the download pages named in the project's asset list (checked 2026-10-13),
     // and by the folder names the files arrived in. Nothing here is guessed.
@@ -31,5 +31,8 @@ namespace Chaukanna.Trainer
             "sky HDRIs from Poly Haven (CC0); icons from game-icons.net (CC BY 3.0, credit each icon's author when used); " +
             "Sonniss GDC Game Audio Bundle (royalty-free).\n\n" +
             "CC BY 3.0: creativecommons.org/licenses/by/3.0   CC0: creativecommons.org/publicdomain/zero/1.0";
+
+        // Text with the rich-text tags removed, for CREDITS.txt.
+        public static string PlainText => System.Text.RegularExpressions.Regex.Replace(Text, "</?[a-zA-Z][^>]*>", "");
     }
 }
