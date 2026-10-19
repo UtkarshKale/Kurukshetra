@@ -1,10 +1,15 @@
-# CLAUDE.md: Chaukanna (Unity project "Chanakya")
+# CLAUDE.md: Kurukshetra (Unity project "Chanakya", code namespace Chaukanna)
 
 Read this first, then CONTEXT.md (everything a fresh session would otherwise lose), TODO.md (the queue) and PROGRESS.md
 (what was done, newest first). HANDOFF.md explains how this project moves to another PC.
 
+Four docs, one job each (do not mix them):
+- `Assets/Chaukanna/Docs/solution-v3.md`: the design (what and why). No build status in it.
+- `Assets/Chaukanna/Docs/STATUS.md`: what the prototype does today, per feature. Update its row in the same commit as the code.
+- `TODO.md`: the queue. `PROGRESS.md`: the history.
+
 ## What this is
-Chaukanna is a Unity counter-drone recognition trainer for Smart India Hackathon PS 26247 ("AI-Enabled Drone &
+Kurukshetra (the project name since 2026-10-19; formerly "Chaukanna", which stays as the code namespace and folder name) is a Unity counter-drone recognition trainer for Smart India Hackathon PS 26247 ("AI-Enabled Drone &
 Counter-Drone Threat Simulation Trainer", MoD / DSSC). The prototype is "Module 1": a field scene (MixedSky) with a
 player view and a trainer panel, plus a TrainerMenu scene. Unity 6000.6.3f1, URP, Input System, IMGUI for all UI.
 

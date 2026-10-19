@@ -184,3 +184,18 @@ paint in an unfocused Editor). 5. Frame time: layers cost about 3 ms (telaviv) t
 untested on a GTX 1650. 6. Do not render hundreds of thousands of terrain trees in a camera loop: it reset the GPU once.
 7. Git author on the machine that wrote this was not Utkarsh Kale; the commits here are authored as Utkarsh Kale per
 CLAUDE.md rule 7.
+
+## 11. 2026-10-19 (later): name, solution v3, STATUS.md
+- The project is now called **Kurukshetra** (owner, 2026-10-19). Code namespace, folders, `ChaukannaData/` and
+  `%USERPROFILE%\.chaukanna\` keep the old name on purpose; do not rename code.
+- The solution doc is now `Assets/Chaukanna/Docs/solution-v3.md`: the council v2 doc plus the faculty (professor's)
+  review, mapped as items F1-F33 in its section 0.2 (IFF interrogator, procedural motor sound, EO zoom sight + reticle +
+  laser rangefinder, thermal, RF spectrum, radar + coastal site, deception tactics, black box at 10 Hz + scrubber + raw
+  telemetry download, operator station HMI, stereo fallback + IPD, layer spec, zero network dependencies, latency budget).
+  It carries no build status. Its recommended build order is section 11.5; the live queue is TODO.md "FACULTY REVIEW".
+- `Assets/Chaukanna/Docs/STATUS.md` is the single place for prototype status (rows keyed to F-numbers). It supersedes
+  sections 4 and 5 of this file for status questions.
+- Six design questions wait for the owner (defaults in solution-v3 are the recommendations): Q1 rename cards to Weapons
+  Free / Tight / Hold, Q2 radar on all sites + coastal site, Q3 "cockpit" = ground operator station, Q4 NV without scan
+  lines (scan lines only on an analog video feed), Q5 HUD readout of AZ/EL/RNG/ZOOM at sensor toggle, Q6 stereo
+  fallback = Cardboard side-by-side.
