@@ -267,6 +267,64 @@ namespace Chaukanna.Scenario
         }
     }
 
+    // The minimum on-screen size of a bird. A kite at 300 m is 0.3 degrees wide and a sparrow at 100 m less. Drawn as the true model
+    // its flat wings are seen almost edge on from the ground, so their triangles are under a pixel thick and nothing is rasterised:
+    // the birds looked invisible. Under ModelPx pixels a bird is therefore drawn as the flat far silhouette turned to face the
+    // camera, and never narrower than MinSpanPx pixels (it is made bigger, never smaller). Detection and scoring use the true size.
+    public static class BirdView
+    {
+        public const float MinSpanPx = 7f, ModelPx = 8f;
+        static Camera cam;
+        static Mesh dot;
+        static Material dotMat;
+
+        public static Camera PlayerCamera()
+        {
+            if (cam == null || !cam.isActiveAndEnabled)
+            {
+                var sensor = Object.FindAnyObjectByType<Chaukanna.Player.ContactSensor>();
+                cam = sensor != null ? sensor.GetComponent<Camera>() : Camera.main;
+            }
+            return cam;
+        }
+
+        public static float PxPerMetreAtOne(Camera c) => c.pixelHeight / (2f * Mathf.Tan(c.fieldOfView * Mathf.Deg2Rad * 0.5f));
+
+        // Scale factor (1 = true size) that gives a bird of `trueSpan` metres at `pos` at least MinSpanPx pixels across on `c`.
+        public static float Boost(Camera c, Vector3 pos, float trueSpan)
+        {
+            if (c == null || trueSpan <= 1e-4f) return 1f;
+            float need = MinSpanPx * Vector3.Distance(c.transform.position, pos) / Mathf.Max(PxPerMetreAtOne(c), 1e-3f);
+            return Mathf.Clamp(need / trueSpan, 1f, 60f);
+        }
+
+        public static Mesh DotMesh { get { if (dot == null) dot = CrowdRenderer.SilhouetteMesh(Silhouette.Bird); return dot; } }
+
+        public static Material DotMaterial
+        {
+            get
+            {
+                if (dotMat == null)
+                {
+                    dotMat = CrowdRenderer.MakeMaterial(null);
+                    CrowdRenderer.SetColour(dotMat, new Color(0.10f, 0.10f, 0.11f));
+                    dotMat.hideFlags = HideFlags.HideAndDontSave;
+                }
+                return dotMat;
+            }
+        }
+
+        // The flat silhouette's face (+Y) to the camera, its wings level across the screen (so it reads as a V, not a smear).
+        public static Quaternion Facing(Vector3 toCam)
+        {
+            toCam.Normalize();
+            Vector3 x = Vector3.Cross(Vector3.up, toCam);
+            if (x.sqrMagnitude < 1e-4f) x = Vector3.right;
+            x.Normalize();
+            return Quaternion.LookRotation(Vector3.Cross(x, toCam), toCam);
+        }
+    }
+
     // Animates a GameObject bird: flap-glide pose by phase, pitch along the climb, bank into turns. Runs in LateUpdate so it also
     // works for contacts moved by something else (ContactMotion, a group, a swarm follower, a LAN proxy).
     public class BirdBody : MonoBehaviour
@@ -277,8 +335,10 @@ namespace Chaukanna.Scenario
         MeshFilter mf;
         uint seed;
         float span;
-        Vector3 lastPos, vel, lastVel;
-        bool started;
+        Vector3 lastPos, vel, lastVel, baseScale;
+        bool started, baseKnown;
+        MeshRenderer mr;
+        Material trueMat;
 
         public void Init(int species, int seedValue)
         {
@@ -314,6 +374,26 @@ namespace Chaukanna.Scenario
                 transform.rotation = Quaternion.LookRotation(vel.normalized, Vector3.up) * Quaternion.Euler(0f, 0f, -Bank * Mathf.Rad2Deg);
             Pose = BirdFlight.Pose(Species, span, Time.time, seed);
             if (mf != null) mf.sharedMesh = BirdMesh.Get(Species, Pose);
+
+            // Minimum on-screen size (see BirdView): far away the bird is the flat silhouette facing the camera, made no narrower
+            // than MinSpanPx pixels; near it is the true model.
+            if (!baseKnown) { baseScale = transform.localScale; baseKnown = true; mr = GetComponent<MeshRenderer>(); trueMat = mr != null ? mr.sharedMaterial : null; }
+            var cam = BirdView.PlayerCamera();
+            if (cam == null) return;
+            float dist = Mathf.Max(Vector3.Distance(cam.transform.position, p), 0.01f), ppm = BirdView.PxPerMetreAtOne(cam);
+            bool far = baseScale.x * ppm / dist < BirdView.ModelPx;
+            if (far)
+            {
+                if (mf != null) mf.sharedMesh = BirdView.DotMesh;
+                if (mr != null) mr.sharedMaterial = BirdView.DotMaterial;
+                transform.localScale = Vector3.one * Mathf.Clamp(BirdView.MinSpanPx * dist / Mathf.Max(ppm, 1e-3f), baseScale.x, baseScale.x * 60f);
+                transform.rotation = BirdView.Facing(cam.transform.position - p);
+            }
+            else
+            {
+                if (mr != null && trueMat != null && mr.sharedMaterial != trueMat) mr.sharedMaterial = trueMat;
+                transform.localScale = baseScale;
+            }
         }
     }
 
@@ -327,7 +407,7 @@ namespace Chaukanna.Scenario
         [ReadOnly] public NativeArray<byte> state;
         public int agents, bucketCount, species;
         public uint seed;
-        public float alpha, dt, time, span, maxRange, minPx, modelPx, pxPerMetreAtOne;
+        public float alpha, dt, time, span, maxRange, minPx, modelPx, pxPerMetreAtOne, minSpanPx;
         public float3 camPos;
         public float4x4 viewProj;
         public NativeArray<int> counts, starts, fill, stats, bucketOf;
@@ -350,7 +430,9 @@ namespace Chaukanna.Scenario
                 float px = size * pxPerMetreAtOne / math.max(dist, 0.01f);
                 byte l = 0;
                 int bucket = 0;
-                if (dist <= maxRange && px >= minPx)
+                // Minimum on-screen size: a real wingspan this far away is under a pixel and the triangles vanish, so a bird is never
+                // drawn smaller than minSpanPx wide (px >= minPx is only the old cull, kept when minSpanPx is 0).
+                if (dist <= maxRange && (px >= minPx || minSpanPx > 0f))
                 {
                     float4 clip = math.mul(viewProj, new float4(p, 1f));
                     float m = clip.w * 1.05f;
@@ -378,7 +460,17 @@ namespace Chaukanna.Scenario
                 float size = span * (0.9f + 0.2f * BirdFlight.Hash01(h, 9));
                 float3 v = math.lerp(prevVel[i], curVel[i], alpha);
                 float speed = math.length(v);
+                float dist = math.max(math.distance(drawPos[i], camPos), 0.01f);
+                size = math.max(size, minSpanPx * dist / math.max(pxPerMetreAtOne, 1e-3f));
                 quaternion rot = quaternion.RotateY(math.atan2(v.x, v.z));
+                if (vis[i] == 1)
+                {
+                    // The far silhouette is a flat shape: turn its face to the camera, wings level across the screen.
+                    float3 tc = (camPos - drawPos[i]) / dist;
+                    float3 xw = math.cross(new float3(0f, 1f, 0f), tc);
+                    xw = math.lengthsq(xw) < 1e-4f ? new float3(1f, 0f, 0f) : math.normalize(xw);
+                    rot = new quaternion(new float3x3(xw, tc, math.cross(xw, tc)));
+                }
                 if (vis[i] == 2 && speed > 0.5f)
                 {
                     float3 a = prevVel[i], b2 = curVel[i];

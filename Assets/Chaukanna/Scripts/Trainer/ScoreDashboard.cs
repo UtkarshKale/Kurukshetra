@@ -34,40 +34,26 @@ namespace Chaukanna.Trainer
         SessionResult totalsFor;
         int totalAttempts, totalHolds;
         List<TrendPoint> trend = new List<TrendPoint>();
+        ChartModel[] trendModels;
+        int trendModelsFor = -1;
         int trendRealCount = -1;
 
         // The flowchart decision tree: which checkpoints are folded, whether it is shown at all, and whose path is lit.
         public readonly TreeViewState Tree = new TreeViewState();
 
-        // Charts tab: drawn by the optional XCharts panel (Assets/Chaukanna/Charts), found by name so this script never
-        // depends on it. Without it the tab says so and the built-in drawing on the Overview tab is still there.
+        // Charts tab: the six charts of ChartModels, drawn with IMGUI by ChartKit (the same layout as the HTML report's Charts view).
         public bool ChartsActive { get; private set; }
-        Component chartsPanel;
-        bool chartsLookedFor;
-        float nextChartSend;
-        string lastChartJson = "";
+        float chartScroll, chartPageHeight;
+        List<ChartModel> chartModels = new List<ChartModel>();
+        float nextChartBuild;
+        object chartsBuiltFor;
 
-        // Switch between the built-in Overview and the XCharts tab (also what the header button does).
+        // Switch between the built-in Overview and the Charts tab (also what the header button does).
         public void ShowCharts(bool on)
         {
             ChartsActive = on;
-            nextChartSend = 0f;
-            if (!on) SetChartsVisible(false);
-        }
-
-        Component ChartsPanel()
-        {
-            if (chartsPanel != null || chartsLookedFor) return chartsPanel;
-            chartsLookedFor = true;
-            var type = System.Type.GetType("Chaukanna.Charts.XChartsPanel, Chaukanna.Charts");
-            if (type != null) chartsPanel = new GameObject("ScoreCharts").AddComponent(type);
-            return chartsPanel;
-        }
-
-        void SetChartsVisible(bool visible)
-        {
-            if (chartsPanel != null) chartsPanel.SendMessage("SetVisible", visible, SendMessageOptions.DontRequireReceiver);
-
+            chartScroll = 0f;
+            nextChartBuild = 0f;
         }
 
         // Cards (default) or the detailed sections.
@@ -101,7 +87,6 @@ namespace Chaukanna.Trainer
         {
             SetExpanded(false);
             IsOpen = false;
-            SetChartsVisible(false);
         }
 
         // Expanded = fills the whole window and hides the player view, so player input is ignored while it is up.
@@ -201,39 +186,13 @@ namespace Chaukanna.Trainer
             if (reportNote.Length > 0) GUI.Label(noteR, reportNote, C.Small);
             if (GUI.Button(chartsR, ChartsActive ? "Overview" : "Charts"))
             {
-                ChartsActive = !ChartsActive;
-                nextChartSend = 0f;
-                if (!ChartsActive) SetChartsVisible(false);
+                ShowCharts(!ChartsActive);
             }
             C.Fill(new Rect(0f, headH, region.width, 1f), new Color(1f, 1f, 1f, 0.15f));
 
             if (ChartsActive)
             {
-                var panel = ChartsPanel();
-                if (panel == null)
-                {
-                    C.Fill(new Rect(0f, headH + 2f, region.width, region.height - headH - 2f), C.Background);
-                    GUI.Label(new Rect(pad, headH + 12f, region.width - pad * 2f, 60f), "The XCharts panel is not available (Assets/Chaukanna/Charts or XCharts is missing). The Overview tab has the built-in charts.", C.Label);
-                }
-                else if (Event.current.type == EventType.Repaint)
-                {
-                    // The panel renders the charts into a texture of exactly this size; it is painted here like any picture.
-                    var area = new Rect(0f, headH + 2f, region.width, region.height - headH - 2f);
-                    panel.SendMessage("SetRectPixels", new Vector4(0f, 0f, area.width * ui, area.height * ui));
-                    SetChartsVisible(true);
-                    var chartCamera = panel.GetComponentInChildren<Camera>(true);
-                    if (chartCamera != null && chartCamera.targetTexture != null) GUI.DrawTexture(area, chartCamera.targetTexture, ScaleMode.StretchToFill, false);
-                    if (Time.unscaledTime >= nextChartSend)
-                    {
-                        // Refresh every two seconds, and only when something changed.
-                        nextChartSend = Time.unscaledTime + 2f;
-                        selected = Mathf.Clamp(selected, 0, Mathf.Max(0, Players.Count - 1));
-                        var who = Players.Count > 0 ? Players.Get(selected) : null;
-                        var history = TrendData.PadWithSamples(who != null ? who.history : new List<TrendPoint>(), TrendData.ChartSessions);
-                        string json = JsonUtility.ToJson(ChartPayload.Build(who != null ? who.name : "", who != null ? who.current : null, history));
-                        if (json != lastChartJson) { lastChartJson = json; panel.SendMessage("SetJson", json); }
-                    }
-                }
+                ChartsTab(region, headH, pad);
                 GUI.EndGroup();
                 GUI.matrix = saved;
                 return;
@@ -310,13 +269,66 @@ namespace Chaukanna.Trainer
 
         // --- Cards / Details switch and the exports. ---
 
+        // The saved sessions of this player, oldest first. Real sessions only: no sample points are mixed in.
         void EnsureTrend(PlayerEntry player)
         {
             int real = player != null ? player.history.Count : 0;
             if (real != trendRealCount)
             {
                 trendRealCount = real;
-                trend = TrendData.PadWithSamples(player != null ? player.history : new List<TrendPoint>(), TrendData.ChartSessions);
+                trend = player != null ? new List<TrendPoint>(player.history) : new List<TrendPoint>();
+            }
+        }
+
+        // The Charts tab: players on top, then the three trends over saved sessions and the three charts of this run.
+        void ChartsTab(Rect region, float headH, float pad)
+        {
+            var view = new Rect(0f, headH + 2f, region.width, region.height - headH - 2f);
+            viewHeight = view.height;
+            if (Event.current.type == EventType.ScrollWheel && view.Contains(Event.current.mousePosition))
+            {
+                chartScroll += Event.current.delta.y * 24f;
+                Event.current.Use();
+            }
+            chartScroll = Mathf.Clamp(chartScroll, 0f, Mathf.Max(0f, chartPageHeight - view.height));
+            GUI.BeginGroup(view);
+            float w = view.width - pad * 2f, y = pad - chartScroll;
+            selected = Mathf.Clamp(selected, 0, Mathf.Max(0, Players.Count - 1));
+            var player = Players.Count > 0 ? Players.Get(selected) : null;
+            if (!ReferenceEquals(chartsBuiltFor, player != null ? player.current : null) || Time.unscaledTime >= nextChartBuild)
+            {
+                chartsBuiltFor = player != null ? player.current : null;
+                nextChartBuild = Time.unscaledTime + 0.5f;
+                chartModels = ChartModels.All(player != null ? player.current : null, player != null ? player.history : null);
+            }
+            y = Roster(pad, y, w);
+
+            int cols = w >= 1000f ? 3 : w >= 640f ? 2 : 1;
+            const float gap = 10f, chartH = 290f;
+            float cw = (w - gap * (cols - 1)) / cols;
+            int real = player != null ? player.history.Count : 0;
+            for (int section = 0; section < 2; section++)
+            {
+                C.SectionTitle(new Rect(pad, y, w, 26f), section == 0 ? $"TRENDS: {real} saved session{(real == 1 ? "" : "s")}" : "THIS RUN");
+                y += 32f;
+                for (int k = 0; k < 3; k++)
+                {
+                    int idx = section * 3 + k;
+                    if (idx >= chartModels.Count) break;
+                    int col = k % cols, row = k / cols;
+                    ChartKit.Draw(new Rect(pad + col * (cw + gap), y + row * (chartH + gap), cw, chartH), chartModels[idx]);
+                }
+                y += Mathf.CeilToInt(3f / cols) * (chartH + gap) + 8f;
+            }
+            GUI.Label(new Rect(pad, y, w, 20f), "Hover a bar or a point for the exact numbers. Green, amber and red mean the same thing on every chart.", C.Small);
+            y += 30f;
+            chartPageHeight = y + chartScroll + pad;
+            GUI.EndGroup();
+            if (chartPageHeight > view.height)
+            {
+                float barH = view.height * view.height / chartPageHeight;
+                float barY = view.y + (view.height - barH) * chartScroll / (chartPageHeight - view.height);
+                C.Fill(new Rect(region.width - 5f, barY, 4f, barH), new Color(1f, 1f, 1f, 0.35f));
             }
         }
 
@@ -919,27 +931,20 @@ namespace Chaukanna.Trainer
 
         float Trends(float x, float y, float w, PlayerEntry player, bool sideBySide)
         {
-            C.SectionTitle(new Rect(x, y, w, 26f), $"TRENDS: last {TrendData.ChartSessions} sessions");
-            y += 30f;
             int real = player != null ? player.history.Count : 0;
-            if (real != trendRealCount)
+            C.SectionTitle(new Rect(x, y, w, 26f), $"TRENDS: {real} saved session{(real == 1 ? "" : "s")}");
+            y += 32f;
+            var hist = player != null ? player.history : null;
+            if (trendModels == null || real != trendModelsFor)
             {
-                trendRealCount = real;
-                trend = TrendData.PadWithSamples(player != null ? player.history : new List<TrendPoint>(), TrendData.ChartSessions);
+                trendModelsFor = real;
+                trendModels = new[] { ChartModels.ScoreTrend(hist), ChartModels.DetectionTrend(hist), ChartModels.AccuracyTrend(hist) };
             }
-            int samples = TrendData.ChartSessions - Mathf.Min(real, TrendData.ChartSessions);
-            GUI.Label(new Rect(x, y, w, 18f), samples > 0
-                ? $"Solid = {TrendData.ChartSessions - samples} saved session{(TrendData.ChartSessions - samples == 1 ? "" : "s")}.  Dashed, lighter = {samples} generated points (sample data)."
-                : "All points are saved sessions.", C.Small);
-            y += 22f;
-
-            float gap = 8f, h = 120f;
-            float cw = sideBySide && w >= 560f ? (w - gap * 2f) / 3f : w;
-            bool row = cw < w;
-            C.TrendChart(new Rect(x, y, cw, h), "Avg detection time (lower is better)", trend, p => p.detectionSeconds, 0f, 20f, " s", false);
-            C.TrendChart(row ? new Rect(x + cw + gap, y, cw, h) : new Rect(x, y + h + gap, cw, h), "Classification accuracy", trend, p => p.classificationAccuracy, 0f, 100f, " %", true);
-            C.TrendChart(row ? new Rect(x + (cw + gap) * 2f, y, cw, h) : new Rect(x, y + (h + gap) * 2f, cw, h), "Engagement decision score", trend, p => p.engagementScore, 0f, 100f, " %", true);
-            return y + (row ? h : h * 3f + gap * 2f) + 16f;
+            float gap = 8f, h = 250f;
+            float cw = sideBySide && w >= 900f ? (w - gap * 2f) / 3f : sideBySide && w >= 560f ? (w - gap) / 2f : w;
+            int cols = Mathf.Max(1, Mathf.FloorToInt((w + gap) / (cw + gap)));
+            for (int i = 0; i < 3; i++) ChartKit.Draw(new Rect(x + (i % cols) * (cw + gap), y + (i / cols) * (h + gap), cw, h), trendModels[i]);
+            return y + Mathf.CeilToInt(3f / cols) * (h + gap) + 8f;
         }
 
         float UnitPanel(float x, float y, float w)

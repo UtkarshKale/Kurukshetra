@@ -50,16 +50,20 @@ namespace Chaukanna.Trainer
             GUI.color = old;
         }
 
+        // Everything that draws a line goes through GuiDraw (clipped, and never a rotated strip under the dashboard's scaled GUI.matrix:
+        // that put diagonal lines in the wrong place and over the game view). `clip` limits where it may land.
+        static readonly Rect Everywhere = new Rect(-100000f, -100000f, 200000f, 200000f);
+
         public static void Line(Vector2 a, Vector2 b, Color c, float thickness = 2f)
         {
             if (Event.current.type != EventType.Repaint) return;
-            Vector2 d = b - a;
-            float length = d.magnitude;
-            if (length < 0.01f) return;
-            var saved = GUI.matrix;
-            GUIUtility.RotateAroundPivot(Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, a);
-            Fill(new Rect(a.x, a.y - thickness * 0.5f, length, thickness), c);
-            GUI.matrix = saved;
+            GuiDraw.Line(a, b, thickness, c, Everywhere);
+        }
+
+        public static void Line(Vector2 a, Vector2 b, Color c, float thickness, Rect clip)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            GuiDraw.Line(a, b, thickness, c, clip);
         }
 
         public static void DashedLine(Vector2 a, Vector2 b, Color c, float thickness = 2f, float dash = 6f)
@@ -129,42 +133,6 @@ namespace Chaukanna.Trainer
                 case "NoCall": return "No call";
                 default: return name;
             }
-        }
-
-        // Line chart of `total` sessions. Sample points are dashed and dimmer; real ones solid.
-        public static void TrendChart(Rect r, string title, List<TrendPoint> points, System.Func<TrendPoint, float> value, float min, float max, string unit, bool higherIsBetter)
-        {
-            Fill(r, Panel);
-            GUI.Label(new Rect(r.x + 8f, r.y + 2f, r.width - 16f, 20f), title, Small);
-            var plot = new Rect(r.x + 10f, r.y + 26f, r.width - 20f, r.height - 48f);
-            Fill(new Rect(plot.x, plot.yMax, plot.width, 1f), new Color(1f, 1f, 1f, 0.2f));
-            Fill(new Rect(plot.x, plot.y + plot.height * 0.5f, plot.width, 1f), new Color(1f, 1f, 1f, 0.07f));
-            if (points == null || points.Count == 0) return;
-
-            Vector2 previous = Vector2.zero;
-            for (int i = 0; i < points.Count; i++)
-            {
-                float v = Mathf.InverseLerp(min, max, value(points[i]));
-                var p = new Vector2(points.Count > 1 ? plot.x + plot.width * i / (points.Count - 1) : plot.center.x, plot.yMax - v * plot.height);
-                bool sample = points[i].sample;
-                Color colour = sample ? new Color(Accent.r, Accent.g, Accent.b, 0.4f) : Accent;
-                if (i > 0)
-                {
-                    if (sample || points[i - 1].sample) DashedLine(previous, p, new Color(Accent.r, Accent.g, Accent.b, 0.4f));
-                    else Line(previous, p, Accent);
-                }
-                Fill(new Rect(p.x - 3f, p.y - 3f, 6f, 6f), colour);
-                previous = p;
-            }
-
-            var last = points[points.Count - 1];
-            string trend = "";
-            if (points.Count > 1)
-            {
-                int t = TrendData.Trend(value(points[points.Count - 2]), value(last), higherIsBetter, (max - min) * 0.02f);
-                trend = $"   <color=#{ColorUtility.ToHtmlStringRGB(t > 0 ? Good : t < 0 ? Bad : Dim)}>{(t > 0 ? "better" : t < 0 ? "worse" : "flat")}</color>";
-            }
-            GUI.Label(new Rect(r.x + 8f, r.yMax - 22f, r.width - 16f, 20f), $"latest {value(last):F0}{unit}{(last.sample ? " (sample)" : "")}{trend}", Small);
         }
 
         // DETECTED > CLASSIFIED > ACTION as three boxes; lit green for a pass, red for a fail, grey when skipped.

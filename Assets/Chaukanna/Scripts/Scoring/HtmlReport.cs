@@ -59,7 +59,7 @@ namespace Chaukanna.Scoring
             h.Append("</section>");
 
             h.Append("<div class=\"actions noprint\"><button type=\"button\" onclick=\"window.print()\">Print / Save as PDF</button><button type=\"button\" id=\"dl-json\">Download data (JSON)</button></div>");
-            AarCardsHtml.Append(h, AarCards.Build(s, trend, weakest));
+            AarCardsHtml.Append(h, AarCards.Build(s, trend, weakest), s, trend);
 
             Debrief(h, s);
 

@@ -24,7 +24,7 @@ Status words:
 | ROE cards A / B / C with scheduled or random flips, banner + tone | §5.4.4, F18 | Built | Rename to Weapons Free / Tight / Hold (F18) not done; waits on owner Q1 |
 | PID rule per card | §1.17a, F11 | Planned | |
 | Day / dusk / night, fog, NV (N key) | §1.15c, F32 | Hand-tested (early) | Image-intensifier look (scintillation, halo) not built |
-| Swarms + bird flocks (boids) | F9, F13 | Built | Flock count typeable; density parameter Planned |
+| Swarms + bird flocks (boids) | F9, F13 | Built | Flock count typeable; density parameter Planned. Birds (single, small flock, big flock) are never drawn narrower than 7 px: far away they become a flat silhouette facing the camera (fix 2026-10-20: true-size flat wings were under a pixel thick and vanished). Crowd-pattern birds (CrowdJobs) and the replay do not have this yet |
 | Urban / rural site (watchtower, cantonment) | §1.17d | Built | Hand test U1 open. Coastal site (F12) Planned |
 | Terrain: generator, real-terrain download, map picker, satellite drape | §1.17d | Hand-tested | |
 | Terrain layers: trees, bushes, grass, buildings (OSM or procedural) | §1.17d | Built (2026-10-17; bushes + real art 2026-10-20) | Hand test TL-2 open; Kargil OSM fetch failed (504). Four layers, each Off / Realistic / Procedural |
@@ -71,7 +71,8 @@ Status words:
 | Full scoring (decision clock, process x outcome, report / engage d' and c with a gate) | §5.4 | Built | Hand test F4 open |
 | Learner model, prevalence, Quiet Watch, Director, scenario editor, proficiency board | v2 §1.9-1.11 | Built | Hand test H9 open; validator V5 / V10 only partial |
 | AAR replay with slider + "your call vs the sound call" (annotated, not re-simulated) | F17, F26 | Built | Replay green-lines bug open (FIX-2b). Backward-drag scrubber with keyframes and operator graphs Planned |
-| HTML report | F17 | Built | Hand test A4 open |
+| HTML report | F17 | Built | Hand test A4 open. Has a Cards / Charts switch (CSS only, no script): the Charts view is the same six charts as the dashboard, inline SVG, hover titles, works offline |
+| Dashboard charts (F6 > SCORE > Charts tab, trends section, histogram and trend cards) | F17 | Built (2026-10-20) | One ChartModel + ChartLayout drawn by IMGUI (ChartKit) and by SVG (ChartSvg). Real saved sessions and this run only, never sample points; axis titles with units, legend, value labels, pass-mark / target lines, 3-session average, called-as-by-true-class stacked bars, detection histogram with median, hover tooltips, empty-state text. XCharts is no longer used by the dashboard (package and Charts folder left in place). Stray-line bug fixed: all chart lines go through GuiDraw (clipped). Hand test CH-1 open |
 | Black box: view + flags at 2 Hz, decisions | F17 | Partial | 10 Hz operator state, every zoom / sensor toggle / trigger pull: Planned |
 | Raw-telemetry download (zip of JSONL / CSV + manifest) | F17 | Planned | |
 | Retry (R), back to lobby | F26 | Built | "Practice from this moment" and free arena Planned |

@@ -34,6 +34,7 @@ namespace Chaukanna.Scoring
         public int[] counts;                        // grid (4), ticks (0 = in time, 1 = missed, 2 = correct rejection)
         public bool[] sample;                       // line: generated filler points
         public SdtResult[] sdt;                     // sliders
+        public ChartModel model;                    // Histogram and Line cards: the shared chart (same drawing as the dashboard's Charts tab)
 
         public string StatusWord => status == CardStatus.Good ? "GOOD" : status == CardStatus.Warn ? "WATCH" : status == CardStatus.Bad ? "PROBLEM" : "NO DATA";
     }
@@ -90,6 +91,8 @@ namespace Chaukanna.Scoring
         static AarCard Detection(SessionResult s)
         {
             var c = Make("detection", "DETECTION TIME", CardChart.Histogram, s);
+            c.tall = true;
+            c.model = ChartModels.DetectionHistogram(s);
             var times = new List<float>();
             foreach (var k in s.contacts) if (k.scored && k.detected && k.detectionSeconds >= 0f) times.Add(k.detectionSeconds);
             c.values = times.ToArray();
@@ -318,6 +321,8 @@ namespace Chaukanna.Scoring
         static AarCard Trends(IList<TrendPoint> trend)
         {
             var c = Make("trends", "TREND OVER SESSIONS", CardChart.Line, null);
+            c.tall = true;
+            c.model = ChartModels.ScoreTrend(trend);
             c.footer = "score per session";
             if (trend == null || trend.Count == 0) { c.verdict = "No earlier sessions to compare."; c.footer = "n = 0"; return c; }
             c.values = new float[trend.Count];

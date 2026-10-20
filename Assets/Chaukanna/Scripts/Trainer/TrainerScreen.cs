@@ -200,9 +200,7 @@ namespace Chaukanna.Trainer
             var saved = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(ui, ui, 1f));
             float w = Screen.width * PlayerView.TrainerFraction / ui, h = 720f;
-            // With the dashboard's Charts tab open, paint only the header so the charts canvas underneath is not covered.
-            bool chartsOpen = dashboard != null && dashboard.IsOpen && dashboard.ChartsActive;
-            Fill(new Rect(0f, 0f, w, chartsOpen ? ScoreDashboard.TrainerHeaderHeight : h), new Color(0.05f, 0.06f, 0.08f, 1f));
+            Fill(new Rect(0f, 0f, w, h), new Color(0.05f, 0.06f, 0.08f, 1f));
 
             const float pad = 10f, row = 24f, headerH = 30f;
             float footerH = row * 1.5f + 16f;            // START / SCORE / status: pinned under the scrolling controls, always reachable

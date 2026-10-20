@@ -73,6 +73,42 @@ namespace Chaukanna.Trainer
             Check("HTML keeps the replay and the contact table", html.Contains("id=\"rp\"") && html.Contains("Every contact"));
             Check("HTML cards carry inline SVG charts", CountOf(html, "<svg class=\"chart\"") == cards.Count);
 
+            // Charts (shared by the dashboard Charts tab, the cards and the HTML report): real data only, empty states, layout inside the box.
+            var real = new List<TrendPoint>();
+            for (int i = 0; i < 6; i++) real.Add(new TrendPoint { scorePercent = new[] { 40f, 52f, 47f, 66f, 71f, 75f }[i], detectionSeconds = 12f - i, classificationAccuracy = 50f + i * 5f, engagementScore = 45f + i * 6f, noDetection = i == 2, label = "2026-10-1" + i });
+            var models = ChartModels.All(s, real);
+            Check("six chart models", models.Count == 6);
+            Check("every chart of the sample run has data", models.TrueForAll(m => m.HasData));
+            var scoreTrend = models[0];
+            Check("score trend has the pass mark and a 3-session average", scoreTrend.refs.Count == 1 && scoreTrend.refs[0].value == ChartModels.PassPercent && scoreTrend.series.Count == 2 && scoreTrend.series[1].dashed);
+            Check("detection trend leaves a gap (NaN) where nothing was seen", float.IsNaN(models[1].series[0].values[2]));
+            var calls = models[4];
+            float rightSeg = 0f; for (int i = 0; i < calls.cats.Length; i++) if (calls.cats[i] == "Hostile quad") rightSeg = calls.series[0].values[i];
+            Check("calls chart is stacked by what was called: hostile quad called hostile quad = 2", calls.kind == ChartKind.Stacked && rightSeg == 2f && calls.series.Count == 6 && calls.series[0].ToneAt(0) == ChartTone.Good);
+            var hist = models[5];
+            float binned = 0f; foreach (float v in hist.series[0].values) binned += v;
+            Check("histogram counts every scored contact (6 seen + 2 never = 8)", binned == 8f, binned.ToString());
+            Check("histogram marks the median and the target", hist.refs.Count == 2 && hist.refs.Exists(r => r.label.StartsWith("median")) && hist.refs.Exists(r => r.label.StartsWith("target")));
+            var none = ChartModels.All(new SessionResult(), new List<TrendPoint>());
+            Check("with no data every chart says so and has no series", none.TrueForAll(m => !m.HasData && !string.IsNullOrEmpty(m.empty)));
+            var sampleOnly = ChartModels.ScoreTrend(new List<TrendPoint> { new TrendPoint { scorePercent = 50f, sample = true } });
+            Check("a sample-flagged point is never charted (no invented data)", !sampleOnly.HasData);
+            bool inside = true; string where = "";
+            foreach (var m in models)
+                foreach (var box in new[] { new Vector2(560f, 300f), new Vector2(320f, 150f), new Vector2(430f, 290f) })
+                    foreach (var p in ChartLayout.Build(m, box.x, box.y, 12f, box.x < 400f && box.y < 200f))
+                    {
+                        if (p.kind == PrimKind.Text) { if (p.y < 0f || p.y > box.y + 1f) { inside = false; where = m.id + " text " + p.text; } continue; }
+                        float x0 = p.kind == PrimKind.Line ? Mathf.Min(p.x, p.x2) : p.kind == PrimKind.Dot ? p.x - p.w * 0.5f : p.x, x1 = p.kind == PrimKind.Line ? Mathf.Max(p.x, p.x2) : p.kind == PrimKind.Dot ? p.x + p.w * 0.5f : p.x + p.w;
+                        float y0 = p.kind == PrimKind.Line ? Mathf.Min(p.y, p.y2) : p.kind == PrimKind.Dot ? p.y - p.w * 0.5f : p.y, y1 = p.kind == PrimKind.Line ? Mathf.Max(p.y, p.y2) : p.kind == PrimKind.Dot ? p.y + p.w * 0.5f : p.y + p.h;
+                        if (x0 < -0.5f || y0 < -0.5f || x1 > box.x + 0.5f || y1 > box.y + 0.5f || float.IsNaN(x0 + x1 + y0 + y1)) { inside = false; where = m.id + " " + p.kind; }
+                    }
+            Check("every line, bar and dot of every chart stays inside its box", inside, where);
+            string html2 = HtmlReport.Build(s, new ContactRecord[0], "Test Player", real, weakest);
+            Check("HTML has a Charts view beside the cards (tabs, six inline SVG charts)", html2.Contains("id=\"v-charts\"") && html2.Contains("class=\"chartsec\"") && CountOf(html2, "<svg class=\"ckchart\"") == 6);
+            Check("HTML charts carry hover titles and axis labels", html2.Contains("<title>") && html2.Contains("seconds until first seen") && html2.Contains("pass mark 70 %"));
+            Check("HTML charts need no network or external script", !html2.Contains("src=\"http") && !html2.Contains("href=\"http") && !html2.Contains("<script src"));
+
             // Layout: 1, 2 or 3 columns by width.
             Check("grid columns by width", AarCardsView.ColumnsFor(500f) == 1 && AarCardsView.ColumnsFor(700f) == 2 && AarCardsView.ColumnsFor(1200f) == 3);
 
@@ -154,10 +190,10 @@ namespace Chaukanna.Trainer
             return n;
         }
 
-        static void Check(string name, bool ok)
+        static void Check(string name, bool ok, string detail = "")
         {
             if (!ok) failures++;
-            lines.Add((ok ? "PASS  " : "FAIL  ") + name);
+            lines.Add((ok ? "PASS  " : "FAIL  ") + name + (detail.Length > 0 ? "  [" + detail + "]" : ""));
         }
     }
 }

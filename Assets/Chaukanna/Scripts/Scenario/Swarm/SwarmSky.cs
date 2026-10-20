@@ -178,7 +178,7 @@ namespace Chaukanna.Scenario
                 {
                     prevPos = sim.PrevPos, curPos = sim.Pos, prevVel = sim.PrevVel, curVel = sim.Vel, state = sim.State,
                     agents = sim.Count, bucketCount = rend.BucketCount, species = species, seed = (uint)seed, alpha = alpha, dt = sim.P.dt,
-                    time = sim.Time + alpha * sim.P.dt, span = rend.Size, maxRange = maxRange, minPx = 0.3f, modelPx = 6f,
+                    time = sim.Time + alpha * sim.P.dt, span = rend.Size, maxRange = maxRange, minPx = 0.3f, modelPx = BirdView.ModelPx, minSpanPx = BirdView.MinSpanPx,
                     pxPerMetreAtOne = cam.pixelHeight / (2f * Mathf.Tan(vfov * 0.5f)), camPos = cam.transform.position,
                     viewProj = (float4x4)(cam.projectionMatrix * cam.worldToCameraMatrix),
                     counts = rend.counts, starts = rend.starts, fill = rend.fill, stats = rend.stats, bucketOf = rend.bucketOf, vis = rend.vis, drawPos = rend.drawPos, matrices = rend.matrices,

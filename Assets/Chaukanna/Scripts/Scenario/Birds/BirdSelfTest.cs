@@ -196,6 +196,15 @@ namespace Chaukanna.Scenario
             var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<ContactDefinition>("Assets/Chaukanna/Data/Contact_Bird.asset");
             if (asset != null) Check("Contact_Bird.asset no longer links the old pigeon / jay", asset.prefab == null && (asset.variants == null || asset.variants.Count == 0), "prefab " + (asset.prefab != null ? asset.prefab.name : "none"));
 #endif
+            // Minimum on-screen size: a far bird is made wide enough to be rasterised, a near one is left alone; the silhouette faces the camera.
+            var camGo = new GameObject("BirdTestCam"); var tc = camGo.AddComponent<Camera>(); tc.fieldOfView = 60f; tc.targetTexture = new RenderTexture(1920, 1080, 16);
+            float ppm = BirdView.PxPerMetreAtOne(tc);
+            float kFar = BirdView.Boost(tc, new Vector3(0, 0, 900f), 1.8f), kNear = BirdView.Boost(tc, new Vector3(0, 0, 20f), 1.8f);
+            Check("a kite at 900 m is drawn at least the minimum width", 1.8f * kFar * ppm / 900f >= BirdView.MinSpanPx - 0.01f, $"{1.8f * kFar * ppm / 900f:F1} px, x{kFar:F1}");
+            Check("a kite at 20 m keeps its true size", Mathf.Approximately(kNear, 1f), $"x{kNear:F2}");
+            var face = BirdView.Facing(new Vector3(0.3f, 0.5f, -1f));
+            Check("the far silhouette faces the camera", Vector3.Dot(face * Vector3.up, new Vector3(0.3f, 0.5f, -1f).normalized) > 0.999f);
+            tc.targetTexture.Release(); Object.DestroyImmediate(tc.targetTexture); Object.DestroyImmediate(camGo);
             Object.DestroyImmediate(root);
             foreach (var m in mats) Object.DestroyImmediate(m);
             Object.DestroyImmediate(spawnerGo);

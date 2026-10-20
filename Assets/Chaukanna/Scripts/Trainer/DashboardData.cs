@@ -58,6 +58,9 @@ namespace Chaukanna.Trainer
         public float engagementScore;
         public float scorePercent;
         public bool sample;             // generated filler, never a real session
+        public string label;            // when the session was played (shown in chart tooltips); may be empty
+        public bool noData;             // the session had no scored contact: no score, no accuracy
+        public bool noDetection;        // nothing was brought into view: no average detection time
     }
 
     public static class TrendData
@@ -68,6 +71,9 @@ namespace Chaukanna.Trainer
         {
             return new TrendPoint
             {
+                label = s.timestamp ?? "",
+                noData = s.maxPoints <= 0,
+                noDetection = s.averageDetectionSeconds < 0f,
                 detectionSeconds = Mathf.Max(0f, s.averageDetectionSeconds),
                 classificationAccuracy = s.classificationAccuracy,
                 engagementScore = s.engagementDecisionScore,

@@ -103,14 +103,14 @@ namespace Chaukanna.Trainer
             switch (c.chart)
             {
                 case CardChart.Bars: Bars(r, c); break;
-                case CardChart.Histogram: Histogram(r, c); break;
+                case CardChart.Histogram: if (c.model != null) ChartKit.Draw(r, c.model, true); else NoData(r, "no data"); break;
                 case CardChart.Heatmap: if (c.session != null && c.session.confusion != null && c.session.confusionRows != null) C.Heatmap(r, c.session); else NoData(r, "nothing classified"); break;
                 case CardChart.Stacked: Stacked(r, c); break;
                 case CardChart.Grid: GridChart(r, c); break;
                 case CardChart.Sliders: Sliders(r, c); break;
                 case CardChart.Ticks: Ticks(r, c); break;
                 case CardChart.Timeline: TimelineChart(r, c); break;
-                case CardChart.Line: LineChart(r, c); break;
+                case CardChart.Line: if (c.model != null) ChartKit.Draw(r, c.model, true); else NoData(r, "no data"); break;
                 case CardChart.CardChange: CardChangeChart(r, c); break;
             }
         }
@@ -135,25 +135,6 @@ namespace Chaukanna.Trainer
                 C.Fill(new Rect(r.x + labelW, y + 4f, barW * f, rowH - 8f), StatusColour(c.barStatus != null ? c.barStatus[i] : CardStatus.Neutral));
                 GUI.Label(new Rect(r.x + labelW + barW + 6f, y, valueW, rowH), c.valueText != null ? c.valueText[i] : c.values[i].ToString("F0"), C.Small);
             }
-        }
-
-        void Histogram(Rect r, AarCard c)
-        {
-            if (c.values == null || c.values.Length == 0) { NoData(r, "nothing detected"); return; }
-            int n = Mathf.Min(c.values.Length, 40);
-            float max = 1f, sum = 0f;
-            for (int i = 0; i < n; i++) { max = Mathf.Max(max, c.values[i]); sum += c.values[i]; }
-            var plot = new Rect(r.x, r.y + 2f, r.width, r.height - 16f);
-            float bw = Mathf.Min(22f, plot.width / n), gap = Mathf.Min(3f, bw * 0.2f);
-            for (int i = 0; i < n; i++)
-            {
-                float v = c.values[i], bh = plot.height * v / max;
-                C.Fill(new Rect(plot.x + i * bw, plot.yMax - bh, bw - gap, bh), v > 10f ? C.Bad : v > 6f ? C.Warn : C.Good);
-            }
-            C.Fill(new Rect(plot.x, plot.yMax, plot.width, 1f), new Color(1f, 1f, 1f, 0.3f));
-            float avg = sum / n, ay = plot.yMax - plot.height * avg / max;
-            for (float x = plot.x; x < plot.xMax; x += 10f) C.Fill(new Rect(x, ay, 6f, 1.5f), C.Accent);
-            GUI.Label(new Rect(r.x, r.yMax - 14f, r.width, 14f), $"one bar per contact, seconds; dashed = average {avg:F1} s (max {max:F0})", tiny);
         }
 
         void Stacked(Rect r, AarCard c)
@@ -237,26 +218,6 @@ namespace Chaukanna.Trainer
                 if (k.actionTime >= 0f) C.Fill(new Rect(r.x + r.width * Mathf.Clamp01(k.actionTime / dur) - 1.5f, y, 3f, rowH - 1f), k.nodes.Count > 2 && k.nodes[2].passed ? C.Good : C.Bad);
             }
             GUI.Label(new Rect(r.x, r.yMax - 14f, r.width, 14f), "grey = in the air, blue = in view, bar = action", tiny);
-        }
-
-        void LineChart(Rect r, AarCard c)
-        {
-            if (c.values == null || c.values.Length == 0) { NoData(r, "no earlier sessions"); return; }
-            var plot = new Rect(r.x + 4f, r.y + 4f, r.width - 8f, r.height - 22f);
-            C.Fill(new Rect(plot.x, plot.yMax, plot.width, 1f), new Color(1f, 1f, 1f, 0.3f));
-            C.Fill(new Rect(plot.x, plot.center.y, plot.width, 1f), new Color(1f, 1f, 1f, 0.08f));
-            int n = c.values.Length;
-            Vector2 prev = Vector2.zero;
-            for (int i = 0; i < n; i++)
-            {
-                var pt = new Vector2(n > 1 ? plot.x + plot.width * i / (n - 1) : plot.center.x, plot.yMax - plot.height * Mathf.Clamp01(c.values[i] / 100f));
-                bool smp = c.sample[i];
-                if (i > 0 && Event.current.type == EventType.Repaint)
-                    Chaukanna.Player.LassoMath.Line(prev, pt, 2f, c.sample[i] || c.sample[i - 1] ? new Color(C.Accent.r, C.Accent.g, C.Accent.b, 0.4f) : C.Accent);
-                C.Fill(new Rect(pt.x - 3f, pt.y - 3f, 6f, 6f), smp ? new Color(C.Accent.r, C.Accent.g, C.Accent.b, 0.45f) : C.Accent);
-                prev = pt;
-            }
-            GUI.Label(new Rect(r.x, r.yMax - 16f, r.width, 16f), "score %, oldest on the left; faint = sample data", tiny);
         }
 
         void CardChangeChart(Rect r, AarCard c)

@@ -15,6 +15,16 @@ namespace Chaukanna.Scoring
 
         public const string GridMarker = "class=\"cards\"";
 
+        // The report's two views, switched by a pair of radio buttons (no script): Cards, and Charts (the same six charts as the dashboard).
+        public static void Append(StringBuilder h, List<AarCard> cards, SessionResult s, IList<Chaukanna.Trainer.TrendPoint> history)
+        {
+            h.Append("<input type=\"radio\" name=\"view\" id=\"v-cards\" class=\"vt\" checked><input type=\"radio\" name=\"view\" id=\"v-charts\" class=\"vt\">");
+            h.Append("<div class=\"viewtabs noprint\"><label for=\"v-cards\">Cards</label><label for=\"v-charts\">Charts</label></div><div class=\"viewbody\">");
+            Append(h, cards);
+            ChartSvg.Section(h, s, history);
+            h.Append("</div>");
+        }
+
         public static void Append(StringBuilder h, List<AarCard> cards)
         {
             h.Append("<section class=\"cardsec\"><h2>Cards: weakest problem first</h2><div ").Append(GridMarker).Append(">");
@@ -43,6 +53,7 @@ namespace Chaukanna.Scoring
 
         static void Chart(StringBuilder h, AarCard c)
         {
+            if (c.model != null && (c.chart == CardChart.Histogram || c.chart == CardChart.Line)) { ChartSvg.Draw(h, c.model, 320f, 150f, 10f, true); return; }
             switch (c.chart)
             {
                 case CardChart.Bars: Bars(h, c); break;
@@ -245,7 +256,9 @@ namespace Chaukanna.Scoring
         }
 
         // Card CSS. The report page puts these tokens on :root (see HtmlReport.Css).
-        public const string Css = @"
+        public static string Css => ChartSvg.Css() + CardsCss;
+
+        const string CardsCss = @"
 .cardsec{margin-top:8px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--dim);border-radius:8px;padding:10px 12px;break-inside:avoid;page-break-inside:avoid;display:flex;flex-direction:column}
