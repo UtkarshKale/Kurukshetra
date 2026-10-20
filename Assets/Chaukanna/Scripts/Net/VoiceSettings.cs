@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Chaukanna.Scenario;
+using Chaukanna.Trainer;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -21,7 +22,10 @@ namespace Chaukanna.Net
         static string device = "";
         static float outVolume = 1f;
 
+        static VoiceSettings inst;
         public static bool Open { get; private set; }
+        // Opens the window (the Settings buttons in the trainer menu and the F6 panel).
+        public static void OpenWindow() { if (inst != null) inst.SetOpen(true); }
         public static float InputLevel { get; private set; }          // 0..1, smoothed
         static float levelAt = -10f;
 
@@ -104,7 +108,12 @@ namespace Chaukanna.Net
         Vector2 scroll;
         string[] devices = new string[0];
         float nextDeviceScan;
-        GUIStyle label, small, button, box;
+        GUIStyle label, small, button, box, field;
+        int tab;
+        GraphicsState pend;
+        string gfxNote = "";
+
+        void Awake() { inst = this; }
 
         void Update()
         {
@@ -139,6 +148,7 @@ namespace Chaukanna.Net
                 ContactRegistry.InputBlocked = true;
                 Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
                 nextDeviceScan = 0f;
+                pend = GraphicsPrefs.Current; gfxNote = "";
             }
             else
             {
@@ -195,16 +205,29 @@ namespace Chaukanna.Net
                 small = new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true };
                 button = new GUIStyle(GUI.skin.button);
                 box = new GUIStyle(GUI.skin.box);
+                field = new GUIStyle(GUI.skin.textField) { alignment = TextAnchor.MiddleCenter };
             }
             int fs = Mathf.RoundToInt(15f * ui);
-            label.fontSize = fs; small.fontSize = Mathf.RoundToInt(13f * ui); button.fontSize = fs;
-            float w = Mathf.Min(Screen.width - 20f, 560f * ui), h = Mathf.Min(Screen.height - 20f, 470f * ui);
+            label.fontSize = fs; small.fontSize = Mathf.RoundToInt(13f * ui); button.fontSize = fs; field.fontSize = fs;
+            float w = Mathf.Min(Screen.width - 20f, 600f * ui), h = Mathf.Min(Screen.height - 20f, 560f * ui);
             var r = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
             GUI.Box(r, "", box);
             GUI.Box(r, "", box);
             GUILayout.BeginArea(new Rect(r.x + 14f * ui, r.y + 10f * ui, r.width - 28f * ui, r.height - 20f * ui));
             scroll = GUILayout.BeginScrollView(scroll);
             float row = 28f * ui;
+            tab = GUILayout.Toolbar(tab, new[] { "Voice", "Graphics" }, button, GUILayout.Height(row));
+            GUILayout.Space(6f);
+            if (tab == 1) DrawGraphics(ui, row);
+            else DrawVoice(ui, row);
+            GUILayout.Space(8f);
+            if (GUILayout.Button("Close", button, GUILayout.Width(120f * ui), GUILayout.Height(row))) SetOpen(false);
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
+        }
+
+        void DrawVoice(float ui, float row)
+        {
             GUILayout.Label("<b>Voice settings</b>", label);
             GUILayout.Space(4f);
 
@@ -251,11 +274,90 @@ namespace Chaukanna.Net
             float ov = GUILayout.HorizontalSlider(OutputVolume, 0f, 1f, GUILayout.Height(row));
             if (!Mathf.Approximately(ov, OutputVolume)) OutputVolume = ov;
             GUILayout.EndHorizontal();
+        }
+
+        bool Pick(string text, bool on, float row) => GUILayout.Toggle(on, text, button, GUILayout.Height(row)) && !on;
+
+        void DrawGraphics(float ui, float row)
+        {
+            GUILayout.Label("<b>Graphics settings</b>", label);
+            if (Application.isEditor) GUILayout.Label("In the Unity Editor the resolution and window mode do not change; everything else does.", small);
+            var g = pend;
+
+            GUILayout.Label("Resolution", label);
+            var res = GraphicsPrefs.Resolutions();
+            int ri = res.FindIndex(v => v.x == g.width && v.y == g.height);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("<", button, GUILayout.Width(40f * ui), GUILayout.Height(row)))
+            { ri = ri < 0 ? res.Count - 1 : Mathf.Max(0, ri - 1); g.width = res[ri].x; g.height = res[ri].y; }
+            GUILayout.Label($"{g.width} x {g.height}" + (ri < 0 ? "  (current)" : ""), label, GUILayout.Width(220f * ui), GUILayout.Height(row));
+            if (GUILayout.Button(">", button, GUILayout.Width(40f * ui), GUILayout.Height(row)))
+            { ri = ri < 0 ? res.Count - 1 : Mathf.Min(res.Count - 1, ri + 1); g.width = res[ri].x; g.height = res[ri].y; }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label("Window mode", label);
+            GUILayout.BeginHorizontal();
+            if (Pick("Fullscreen", g.mode == 0, row)) g.mode = 0;
+            if (Pick("Borderless", g.mode == 1, row)) g.mode = 1;
+            if (Pick("Windowed", g.mode == 2, row)) g.mode = 2;
+            GUILayout.EndHorizontal();
+
+            var names = QualitySettings.names;
+            GUILayout.Label("Quality preset", label);
+            GUILayout.BeginHorizontal();
+            for (int i = 0; i < names.Length; i++) if (Pick(names[i], g.quality == i, row)) g.quality = i;
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("V-sync", label, GUILayout.Width(150f * ui), GUILayout.Height(row));
+            if (Pick("On", g.vsync, row)) g.vsync = true;
+            if (Pick("Off", !g.vsync, row)) g.vsync = false;
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("FPS cap (0 = none)", label, GUILayout.Width(150f * ui), GUILayout.Height(row));
+            g.fps = NumberEntry.Field("gfx.fps", g.fps, 0, int.MaxValue, field, GUILayout.Width(90f * ui), GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            if (g.vsync && g.fps > 0) GUILayout.Label("V-sync is on, so the screen refresh rate limits the frame rate first.", small);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Render scale %", label, GUILayout.Width(150f * ui), GUILayout.Height(row));
+            g.renderScalePct = NumberEntry.Field("gfx.scale", g.renderScalePct, 25, 1000, field, GUILayout.Width(90f * ui), GUILayout.Height(row));
+            GUILayout.Label("100 = native, lowest 25, the pipeline stops at 200", small, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Shadows", label, GUILayout.Width(150f * ui), GUILayout.Height(row));
+            if (Pick("On", g.shadows, row)) g.shadows = true;
+            if (Pick("Off", !g.shadows, row)) g.shadows = false;
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Shadow distance (m)", label, GUILayout.Width(150f * ui), GUILayout.Height(row));
+            g.shadowDist = NumberEntry.Field("gfx.shadowdist", g.shadowDist, 1, int.MaxValue, field, GUILayout.Width(90f * ui), GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label("Anti-aliasing (MSAA)", label);
+            GUILayout.BeginHorizontal();
+            if (Pick("Off", g.msaa == 1, row)) g.msaa = 1;
+            if (Pick("2x", g.msaa == 2, row)) g.msaa = 2;
+            if (Pick("4x", g.msaa == 4, row)) g.msaa = 4;
+            if (Pick("8x", g.msaa == 8, row)) g.msaa = 8;
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("View distance %", label, GUILayout.Width(150f * ui), GUILayout.Height(row));
+            g.viewDistPct = NumberEntry.Field("gfx.view", g.viewDistPct, 1, int.MaxValue, field, GUILayout.Width(90f * ui), GUILayout.Height(row));
+            GUILayout.Label("100 = unchanged; stored for later optimisation", small, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            pend = g;
 
             GUILayout.Space(8f);
-            if (GUILayout.Button("Close", button, GUILayout.Width(120f * ui), GUILayout.Height(row))) SetOpen(false);
-            GUILayout.EndScrollView();
-            GUILayout.EndArea();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Apply", button, GUILayout.Width(120f * ui), GUILayout.Height(row))) { GraphicsPrefs.ApplyAndSave(pend); pend = GraphicsPrefs.Current; gfxNote = "Applied and saved on this PC."; }
+            if (GUILayout.Button("Reset to defaults", button, GUILayout.Width(160f * ui), GUILayout.Height(row))) { GraphicsPrefs.ResetToDefaults(); pend = GraphicsPrefs.Current; gfxNote = "Back to the defaults this game started with."; }
+            GUILayout.EndHorizontal();
+            if (gfxNote.Length > 0) GUILayout.Label(gfxNote, small);
         }
 
         void Choice(string text, MicMode m, float row)

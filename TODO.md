@@ -16,6 +16,11 @@ SCOPE SOURCE: module-1-demo.md (the agreed Module 1 demo; the user rejected the 
 First restructured 2026-10-14 against the solution doc (solution-v2-council.md: §2 PS coverage table R1a-R9, §11.1 M1 scope, §12 demo script). No item was deleted; items were moved and tagged. New items from the gap check are numbered N1 and up.
 Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo moments in §12: (1) cold open, night, own drone engaged, "your call vs the sound call"; (2) the card flip mid-mission; (3) night 24-swarm with a wrong AI cue. Shot 5b is the VR sentry.
 
+## GRAPHICS SETTINGS 2026-10-20
+- [x] GFX-1 (compile only; hand test open). Graphics tab in the F10 window, Settings buttons in the menu bar and F6 footer.
+- [ ] GFX-2. Optimisation, after the owner picks graphics presets (named Low / Medium / High / Ultra do not exist yet; QualitySettings has only Mobile and PC). View distance % (GraphicsPrefs.ViewDistanceScale) is stored but not applied anywhere.
+- [ ] GFX-3. Shadows off uses shadowDistance 0; a real main-light-shadows switch needs the asset setter (internal) if wanted.
+
 ## OWNER ROUND 2026-10-20 (items 1 to 4)\n- [x] DQ-1. Process score renamed Decision quality, no-action hostiles count as 0, n shown, n/a when empty.\n- [x] UNIT-1 (compile only; needs a LAN hand test). Individual and unit scores in dashboard and HTML report.\n- [x] OSM-PB-1 (compile only). Progress on the OpenStreetMap fetch button.\n- [x] SPAWN-1 (compile only; hand test open).
 - [ ] SPAWN-2. Loading a package from the package list (not "Use for START") does not move the map posts; scenario presets (ScenarioPreset assets) do not carry posts yet. Player posts and drone spawn points in 2D and 3D, saved, sent over LAN.
 

@@ -487,7 +487,7 @@ namespace Chaukanna.Trainer
             float titleW = Mathf.Min(300f, Mathf.Ceil(title.CalcSize(new GUIContent(titleText)).x) + 6f);
             GUI.Label(new Rect(pad, 8f, titleW, 38f), titleText, title);
             float tabsX = pad + titleW + 12f;
-            float tabsW = Mathf.Min(900f, w - (ShowDemo ? 290f : 180f) - 14f - tabsX);       // START begins at w - 180 (DEMO at w - 290 when shown)
+            float tabsW = Mathf.Min(900f, w - 290f - 14f - tabsX);       // START begins at w - 180 (DEMO at w - 290 when shown)
             if (tabStyle == null) tabStyle = new GUIStyle(button);
             tabStyle.fontSize = tabsW < 700f ? Mathf.Max(10, fontSize - 3) : fontSize;
             tab = (Tab)GUI.Toolbar(new Rect(tabsX, 10f, Mathf.Max(200f, tabsW), 34f), (int)tab, TabNames, tabStyle);
@@ -498,6 +498,7 @@ namespace Chaukanna.Trainer
             GUI.backgroundColor = new Color(0.95f, 0.75f, 0.25f);
             if (ShowDemo && GUI.Button(new Rect(w - 290f, 8f, 104f, 38f), new GUIContent("<b>DEMO</b>", "One click: the best terrain on this PC, a curated 3.5-minute scenario (hostile quads, a swarm of 200, a bird flock, own ISR, a civilian, an ROE card change, two paths), sound on, and START. The presenter checklist shows in the run (F8 hides it)."), new GUIStyle(button) { fontSize = fontSize + 4 })) StartDemo();
             GUI.backgroundColor = old;
+            if (GUI.Button(new Rect(w - 290f, 8f, 104f, 38f), new GUIContent("Settings", "Voice and graphics settings (also F10)."), new GUIStyle(button) { fontSize = fontSize })) Chaukanna.Net.VoiceSettings.OpenWindow();
 
             // Message strip along the bottom.
             const float msgH = 62f;

@@ -423,6 +423,7 @@ namespace Chaukanna.Trainer
             // The only way into the score dashboard. It opens in this half; the player's view is untouched unless the trainer expands it.
             if (dashboard != null && GUILayout.Button("SCORE", new GUIStyle(button) { fontSize = fontSize + 2 }, GUILayout.Width(120f), GUILayout.Height(row * 1.5f)))
                 dashboard.Open();
+            if (GUILayout.Button("Settings", new GUIStyle(button) { fontSize = fontSize }, GUILayout.Width(100f), GUILayout.Height(row * 1.5f))) Chaukanna.Net.VoiceSettings.OpenWindow();
             GUILayout.Label("  " + Status(), statusStyle, GUILayout.Height(footerH - 4f));
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
