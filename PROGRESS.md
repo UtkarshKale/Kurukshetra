@@ -2,6 +2,11 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Owner round, item 3: progress on the OpenStreetMap fetch button (compile check only)
+- Changed: TrainerMenu terrain tab. While fetching, the "Fetch map features (OpenStreetMap) for this area" button shows a blue fill bar, the percent and the step text (from OsmFetcher's progress callback, non-blocking coroutine). On failure the button reads "Failed: <reason> (click to retry)"; on success the button is replaced by the usual data line and the status message. The map area download button already has its own progress display (downloadProgress / downloadStep) and does not share this code path, so it was left alone.
+- Verified: compile only. Not verified: on screen, a real fetch.
+- NEXT: item 4 (player posts and drone spawn points 2D / 3D).
+
 ## 2026-10-20 - Owner round, item 2: individual and unit scores in dashboard and HTML report (compile check only)
 - Existing and kept: SessionFilter (All / unit / player), the dashboard SHOW chips (roster click = one player), the HTML Show drop-down. Verified in code that unit comes from the lobby (LanSession -> RunConditions.UnitId -> session.unitId / PlayerEntry.unit).
 - Added: SessionFilter.Compare (per unit: players, contacts, detection = seen / scored, decision quality with n, good-result share from the grid, average score = points won / possible; each unit followed by its players). Dashboard: the table under the SHOW chips, a row click selects that unit or player. HTML: "Units and players" table under the tiles. Solo: one line "Unit views need a LAN run".

@@ -674,6 +674,8 @@ namespace Chaukanna.Trainer
 
         string layerInfoFor = "\u0001", layerInfo = "";
         bool fetchingFeatures;
+        float featProgress;
+        string featStep = "", featFailed = "";
         static readonly string[] LayerModeNames = { "OFF", "REALISTIC", "PROCEDURAL" };
 
         // Four layers, each Off / Realistic / Procedural, and the numbers behind them. Realistic = the real place
@@ -739,9 +741,24 @@ namespace Chaukanna.Trainer
                 if (layerInfo.Length > 0) GUILayout.Label(layerInfo + " Map features © OpenStreetMap contributors (ODbL).", small);
                 else if (needsData) GUILayout.Label("<color=#FFB040>No OSM data for this area yet: Realistic uses satellite colour for trees and grass, no buildings.</color>", small);
                 if (layerInfo.Length == 0 && Dem != null && demLoadedFrom == Terrain.demPath)
+                {
+                    // The progress is drawn on the button itself: a fill bar, the percent and the step, then done / failed.
+                    string idle = featFailed.Length > 0 ? "Failed: " + featFailed + "  (click to retry)" : "Fetch map features (OpenStreetMap) for this area";
+                    string text = fetchingFeatures ? $"Fetching map features  {Mathf.RoundToInt(featProgress * 100f)} %  {featStep}" : idle;
                     using (new GUIEnabledScope(!fetchingFeatures && !Downloading))
-                        if (GUILayout.Button(fetchingFeatures ? "Fetching map features..." : "Fetch map features (OpenStreetMap) for this area", button, GUILayout.Height(row)))
-                            StartCoroutine(FetchFeatures());
+                    {
+                        var br = GUILayoutUtility.GetRect(new GUIContent(text), button, GUILayout.Height(row));
+                        if (GUI.Button(br, GUIContent.none, button)) { featFailed = ""; StartCoroutine(FetchFeatures()); }
+                        if (fetchingFeatures)
+                        {
+                            var old = GUI.color;
+                            GUI.color = new Color(0.25f, 0.6f, 0.9f, 0.55f);
+                            GUI.DrawTexture(new Rect(br.x + 2f, br.y + 2f, (br.width - 4f) * Mathf.Clamp01(featProgress), br.height - 4f), Texture2D.whiteTexture);
+                            GUI.color = old;
+                        }
+                        GUI.Label(br, text, button);
+                    }
+                }
             }
         }
 
@@ -750,8 +767,10 @@ namespace Chaukanna.Trainer
             fetchingFeatures = true;
             string raw = ElevationDownloader.Resolve(Terrain.demPath);
             OsmFetchResult result = null;
-            yield return OsmFetcher.Fetch(raw, (f, what) => { Message = what; }, r => result = r);
+            featProgress = 0f; featStep = ""; featFailed = "";
+            yield return OsmFetcher.Fetch(raw, (f, what) => { featProgress = f; featStep = what; Message = what; }, r => result = r);
             fetchingFeatures = false;
+            featFailed = result != null && result.ok ? "" : (result?.error ?? "not fetched");
             layerInfoFor = "\u0001";
             Message = result != null && result.ok ? "Map features (OpenStreetMap): " + result.file.CountsLine() + "." + (result.note.Length > 0 ? " " + result.note : "") : "No map features: " + (result?.error ?? "not fetched");
         }
