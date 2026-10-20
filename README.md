@@ -5,6 +5,18 @@
 Built for **Smart India Hackathon, PS 26247: AI-Enabled Drone & Counter-Drone Threat Simulation Trainer** (Ministry of
 Defence / DSSC).
 
+<p align="center">
+  <a href="https://utkarshkale.itch.io/kurukshetra">
+    <img src="https://img.shields.io/badge/%E2%96%B6%20PLAY%20IT%20NOW-Download%20for%20Windows%20on%20itch.io-FA5C5C?style=for-the-badge&logo=itchdotio&logoColor=white" alt="Download the Windows build on itch.io">
+  </a>
+</p>
+
+> [!TIP]
+> ## 🎮 Try Kurukshetra yourself
+> **You can test this project yourself by downloading the Windows executable build from itch.io:**
+> ### 👉 [utkarshkale.itch.io/kurukshetra](https://utkarshkale.itch.io/kurukshetra)
+> No Unity install needed: download, unzip, run, and press **DEMO**.
+
 Kurukshetra puts a soldier at an observation post, on real downloaded terrain or seeded procedural ground, and fills the
 sky with hostile quadcopters and fixed-wings, the unit's own patrol drones, civilian drones, birds and swarms of
 hundreds. The soldier has to pick the threat out of the clutter and decide, under the rules of engagement in force,
@@ -13,9 +25,6 @@ gets a full after-action review: a scored decision tree for every contact, a lea
 HTML report.
 
 It runs fully offline, on a single PC or an air-gapped LAN, on mid-range hardware.
-
-> You can test this project yourself by downloading the Windows executable build from itch.io:
-> **[utkarshkale.itch.io/kurukshetra](https://utkarshkale.itch.io/kurukshetra)**
 
 ![Binocular view: a swarm under jamming, sensor panel and classification menu](docs/images/binoculars-swarm.jpg)
 
