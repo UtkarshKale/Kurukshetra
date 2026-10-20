@@ -53,7 +53,7 @@ Status words:
 | RF spectrum waterfall, jammer blinds own detector | F23 | Planned | |
 | Radar (Desk) | F12 | Planned | |
 | Track table with evidence chips + PID counter | §1.15g | Planned | |
-| Procedural drone sound / any audio | F5 | Planned | No AudioSource in the project yet. Steam Audio (HRTF) would need the owner's yes |
+| Procedural drone sound / any audio | F5 | Built | SoundEngine rebuilds its pool after a recompile in Play (2026-10-20). Original note: no AudioSource at first. Steam Audio (HRTF) would need the owner's yes |
 
 ## 3. Multiplayer, VR, HMI
 

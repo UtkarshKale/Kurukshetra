@@ -100,9 +100,16 @@ namespace Chaukanna.Audio
         void Awake() { Instance = this; }
         void OnDestroy() { if (Instance == this) Instance = null; }
 
-        void Start()
+        void Start() { Build(); }
+
+        // Builds the voice/bed pool. Also called from Update when the pool is missing: a script recompile during Play
+        // reloads the domain, which wipes these non-serialized fields (voices[] all null) without running Start again.
+        void Build()
         {
             Instance = this;
+            var old = transform.Find("Chaukanna_Sound");
+            if (old != null) Destroy(old.gameObject);
+            oneShots.Clear();
             sampleRate = AudioSettings.outputSampleRate;
             sensor = GetComponent<SensorController>();
             if (FindFirstObjectByType<AudioListener>() == null) gameObject.AddComponent<AudioListener>();
@@ -191,6 +198,7 @@ namespace Chaukanna.Audio
         void Update()
         {
             float t0 = Time.realtimeSinceStartup;
+            if (voices[0] == null) Build();
             float master = Master;
             if (master <= 0f)
             {
