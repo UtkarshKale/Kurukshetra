@@ -351,3 +351,4 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] LOOP-1b. Deferred (nothing deleted): the trainer's lobby shows who is waiting vs ready with a Start-for-everyone button; a late joiner during a run is still refused; restart with changed settings; a trainee-side countdown on Restart scenario; per-seat result tabs on the end screen.
 
 - [ ] VR-HOLD. VR is on hold by the owner's decision (2026-10-20: "do not build vr"). No VR work, packages or tests until the owner says so.
+- [x] POLISH-FIX-LINES (2026-10-20). Stray lines on the MAP tab fixed (rotation-free GuiDraw.Line everywhere); 2D map reduced to paths + heights with a pointer to the 3D editor. Hand test pending.

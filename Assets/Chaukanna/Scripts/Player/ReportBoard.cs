@@ -320,15 +320,6 @@ namespace Chaukanna.Player
             GUI.color = old;
         }
 
-        static void Line(Vector2 a, Vector2 b, Color c, float width)
-        {
-            Vector2 d = b - a;
-            float len = d.magnitude;
-            if (len < 0.5f) return;
-            var saved = GUI.matrix;
-            GUIUtility.RotateAroundPivot(Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, a);
-            Fill(new Rect(a.x, a.y - width * 0.5f, len, width), c);
-            GUI.matrix = saved;
-        }
+        static void Line(Vector2 a, Vector2 b, Color c, float width) => Chaukanna.Trainer.GuiDraw.Line(a, b, width, c, new Rect(-100000f, -100000f, 200000f, 200000f));
     }
 }

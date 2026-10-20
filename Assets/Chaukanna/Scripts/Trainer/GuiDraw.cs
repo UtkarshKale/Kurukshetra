@@ -41,28 +41,38 @@ namespace Chaukanna.Trainer
             GUI.color = old;
         }
 
-        // Line clipped to `clip`. Under a scaled GUI.matrix (the dashboard) it is a row of small squares; otherwise a rotated strip.
+        // Line clipped to `clip`, drawn without any GUI rotation (rotation under a scaled GUI.matrix, a group or a scroll view
+        // puts the pivot in the wrong place: the "stray lines" bug). The line is cut into axis-aligned runs, one run per pixel
+        // step of the minor axis, so a nearly horizontal or vertical line is a few long quads and a diagonal is short steps.
         public static void Line(Vector2 a, Vector2 b, float width, Color c, Rect clip)
         {
             if (!ClipSegment(ref a, ref b, clip)) return;
             Vector2 d = b - a;
-            float len = d.magnitude;
             float half = width * 0.5f;
-            if (len < 0.01f) { Quad(Inside(new Rect(a.x - half, a.y - half, width, width), clip), c); return; }
-            if (DrawHook != null || !GUI.matrix.isIdentity)
+            float adx = Mathf.Abs(d.x), ady = Mathf.Abs(d.y);
+            if (adx < 0.01f && ady < 0.01f) { Quad(Inside(new Rect(a.x - half, a.y - half, width, width), clip), c); return; }
+            float minor = Mathf.Min(adx, ady);
+            int runs = Mathf.Clamp(Mathf.CeilToInt(minor / Mathf.Max(1f, width * 0.75f)), 1, 4096);
+            for (int i = 0; i < runs; i++)
             {
-                float step = Mathf.Max(1f, width * 0.75f);
-                for (float t = 0f; t <= len + 0.001f; t += step)
-                {
-                    Vector2 p = a + d * (Mathf.Min(t, len) / len);
-                    Quad(Inside(new Rect(p.x - half, p.y - half, width, width), clip), c);
-                }
-                return;
+                Vector2 p0 = a + d * ((float)i / runs), p1 = a + d * ((float)(i + 1) / runs);
+                Rect r = adx >= ady
+                    ? Rect.MinMaxRect(Mathf.Min(p0.x, p1.x) - half, (p0.y + p1.y) * 0.5f - half, Mathf.Max(p0.x, p1.x) + half, (p0.y + p1.y) * 0.5f + half)
+                    : Rect.MinMaxRect((p0.x + p1.x) * 0.5f - half, Mathf.Min(p0.y, p1.y) - half, (p0.x + p1.x) * 0.5f + half, Mathf.Max(p0.y, p1.y) + half);
+                r = Inside(r, clip);
+                if (r.width > 0f && r.height > 0f) Quad(r, c);
             }
-            var matrix = GUI.matrix;
-            GUIUtility.RotateAroundPivot(Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, a);
-            Quad(new Rect(a.x, a.y - half, len, width), c);
-            GUI.matrix = matrix;
+        }
+
+        // Dashed line: on/off lengths in GUI pixels, every dash clipped.
+        public static void Dashed(Vector2 a, Vector2 b, float width, float on, float off, Color c, Rect clip)
+        {
+            Vector2 d = b - a;
+            float len = d.magnitude;
+            if (len < 0.01f) return;
+            Vector2 u = d / len;
+            for (float t = 0f; t < len; t += on + off)
+                Line(a + u * t, a + u * Mathf.Min(t + on, len), width, c, clip);
         }
 
         // The part of r that lies inside clip (zero-size if none).

@@ -260,20 +260,7 @@ namespace Chaukanna.Trainer
 
         // --- Drawing ---
 
-        static void Line(Vector2 a, Vector2 b, float width, Color c, Rect clip)
-        {
-            if (!GuiDraw.ClipSegment(ref a, ref b, clip)) return;
-            Vector2 d = b - a;
-            float len = d.magnitude;
-            var old = GUI.color;
-            GUI.color = c;
-            if (len < 0.5f) { GUI.DrawTexture(new Rect(a.x - width * 0.5f, a.y - width * 0.5f, width, width), Texture2D.whiteTexture); GUI.color = old; return; }
-            var matrix = GUI.matrix;
-            GUIUtility.RotateAroundPivot(Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, a);
-            GUI.DrawTexture(new Rect(a.x, a.y - width * 0.5f, len, width), Texture2D.whiteTexture);
-            GUI.matrix = matrix;
-            GUI.color = old;
-        }
+        static void Line(Vector2 a, Vector2 b, float width, Color c, Rect clip) => GuiDraw.Line(a, b, width, c, clip);
 
         static void Square(Vector2 p, float size, Color c)
         {
@@ -319,10 +306,12 @@ namespace Chaukanna.Trainer
                     if (sel) size += 2f;
                     Square(s, size + 2f, Color.black);
                     Square(s, size, picked ? new Color(1f, 0.95f, 0.2f) : j == 0 ? Color.white : col);
-                    string text = (j == 0 ? "S " : j + ": ") + w.alt.ToString("F0") + " m" + (w.speed > 0f ? "  " + w.speed.ToString("F0") + " m/s" : "");
-                    if (sel || n <= 8) Tag(new Vector2(s.x + 8f, s.y - 18f), text, picked ? new Color(1f, 0.95f, 0.2f) : Color.white);
+                    // Uncluttered: other paths show the waypoint number only; the selected path shows its heights.
+                    string text = sel ? (j == 0 ? "S " : j + ": ") + w.alt.ToString("F0") + " m" + (w.speed > 0f ? "  " + w.speed.ToString("F0") + " m/s" : "")
+                                      : (j == 0 ? "S" : j.ToString());
+                    Tag(new Vector2(s.x + 8f, s.y - 18f), text, picked ? new Color(1f, 0.95f, 0.2f) : Color.white);
                 }
-                if (n > 0 && !string.IsNullOrEmpty(path.name))
+                if (sel && n > 0 && !string.IsNullOrEmpty(path.name))
                 {
                     Vector2 s0 = v.toScreen(path.points[0].Xz) + off;
                     Tag(new Vector2(s0.x + 8f, s0.y + 4f), path.name, new Color(col.r, col.g, col.b, 1f));

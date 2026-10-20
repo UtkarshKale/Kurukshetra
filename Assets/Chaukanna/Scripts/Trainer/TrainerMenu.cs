@@ -1260,38 +1260,17 @@ namespace Chaukanna.Trainer
             GUILayout.BeginArea(new Rect(map.xMax + 20f, body.y, body.width - size - 20f, body.height));
             mapPanelScroll = GUILayout.BeginScrollView(mapPanelScroll);
             const float row = 28f;
-            if (GUILayout.Button("<b>3D editor</b>   (F6)", button, GUILayout.Height(row))) Open3DEditor();
-            pathEd.ToolGrid(row, true, true);
-
-            GUILayout.Space(8f);
-            GUILayout.Label("<b>Players</b>   (drag a white square on the map to move it)", label);
-            for (int i = 0; i < Players.Count; i++)
-                if (GUILayout.Toggle(selectedPlayer == i, $"{Players[i].name}{(Players[i].isLocal ? " (this machine)" : "")}   at {Players[i].post.x:F0} E, {Players[i].post.y:F0} N", button, GUILayout.Height(row))) selectedPlayer = i;
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Add player", button, GUILayout.Height(row)))
-            {
-                Players.Add(new PlayerSlot { name = "Player " + (Players.Count + 1), post = new Vector2(150f * Players.Count, 0f) });
-                selectedPlayer = Players.Count - 1;
-                previewStale = true;
-            }
-            if (GUILayout.Button("Remove last", button, GUILayout.Height(row)) && Players.Count > 1)
-            {
-                Players.RemoveAt(Players.Count - 1);
-                selectedPlayer = Mathf.Min(selectedPlayer, Players.Count - 1);
-                previewStale = true;
-            }
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(8f);
-            GUILayout.Label($"<b>Drone spawn points: {SpawnPoints.Count}</b>   (drag a red square to move it)", label);
-            GUILayout.Label(SpawnPoints.Count == 0 ? $"None placed, so drones appear on a {Scenario.spawnRingRadius:F0} m ring in front of the post (the dotted circle)." : "Drones appear at these points, spread about 30 m around each. A drone, swarm or flock that has a path appears at the path's first waypoint instead.", small);
-            if (GUILayout.Button("Clear spawn points (use the ring)", button, GUILayout.Height(row))) SpawnPoints.Clear();
-
+            // The 2D map is kept simple (owner, 2026-10-20): draw paths and set each waypoint's height. Players, spawn points,
+            // drone and bird groups and objects are placed in the 3D editor.
+            pathEd.ToolGrid(row, false, false);
             GUILayout.Space(8f);
             pathEd.PathPanel(row);
-
             GUILayout.Space(8f);
-            GUILayout.Label("White square = player post, red = drone spawn, coloured lines = flight paths (the number beside a waypoint is its height above ground in metres). Only Player 1 is played on this machine until LAN multiplayer is added; the other posts are placed and flattened now so they are ready for it.", small);
+            if (Scenario.paths.Count > 0)
+                GUILayout.Label("<b>Want more control?</b> Click <b>3D editor</b> (F6) for player posts, spawn points, custom drones and birds, trees and buildings, and full scenario editing.", label);
+            if (GUILayout.Button("<b>3D editor</b>   (F6)", button, GUILayout.Height(row))) Open3DEditor();
+            GUILayout.Space(8f);
+            GUILayout.Label("Coloured lines = flight paths; the arrow shows the direction. Click a waypoint to see and type its height above ground (and speed). The strip under the map shows the selected path's height over the terrain.", small);
             GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
