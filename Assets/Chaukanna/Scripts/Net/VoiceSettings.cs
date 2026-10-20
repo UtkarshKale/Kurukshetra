@@ -216,9 +216,10 @@ namespace Chaukanna.Net
             GUILayout.BeginArea(new Rect(r.x + 14f * ui, r.y + 10f * ui, r.width - 28f * ui, r.height - 20f * ui));
             scroll = GUILayout.BeginScrollView(scroll);
             float row = 28f * ui;
-            tab = GUILayout.Toolbar(tab, new[] { "Voice", "Graphics" }, button, GUILayout.Height(row));
+            tab = GUILayout.Toolbar(tab, new[] { "Voice", "Graphics", "Controls" }, button, GUILayout.Height(row));
             GUILayout.Space(6f);
             if (tab == 1) DrawGraphics(ui, row);
+            else if (tab == 2) DrawControls(ui, row);
             else DrawVoice(ui, row);
             GUILayout.Space(8f);
             if (GUILayout.Button("Close", button, GUILayout.Width(120f * ui), GUILayout.Height(row))) SetOpen(false);
@@ -305,7 +306,7 @@ namespace Chaukanna.Net
             var names = QualitySettings.names;
             GUILayout.Label("Quality preset", label);
             GUILayout.BeginHorizontal();
-            for (int i = 0; i < names.Length; i++) if (Pick(names[i], g.quality == i, row)) g.quality = i;
+            for (int i = 0; i < names.Length; i++) if (Pick(names[i], g.quality == i, row)) g = GraphicsPrefs.WithPreset(g, i);
             GUILayout.EndHorizontal();
 
             GUILayout.Space(4f);
@@ -348,7 +349,7 @@ namespace Chaukanna.Net
             GUILayout.BeginHorizontal();
             GUILayout.Label("View distance %", label, GUILayout.Width(150f * ui), GUILayout.Height(row));
             g.viewDistPct = NumberEntry.Field("gfx.view", g.viewDistPct, 1, int.MaxValue, field, GUILayout.Width(90f * ui), GUILayout.Height(row));
-            GUILayout.Label("100 = unchanged; stored for later optimisation", small, GUILayout.Height(row));
+            GUILayout.Label($"preset default {GraphicsPrefs.PresetViewDistPct(g.quality)}; 100 = unchanged", small, GUILayout.Height(row));
             GUILayout.EndHorizontal();
             pend = g;
 
@@ -358,6 +359,32 @@ namespace Chaukanna.Net
             if (GUILayout.Button("Reset to defaults", button, GUILayout.Width(160f * ui), GUILayout.Height(row))) { GraphicsPrefs.ResetToDefaults(); pend = GraphicsPrefs.Current; gfxNote = "Back to the defaults this game started with."; }
             GUILayout.EndHorizontal();
             if (gfxNote.Length > 0) GUILayout.Label(gfxNote, small);
+        }
+
+        void DrawControls(float ui, float row)
+        {
+            GUILayout.Label("<b>Controls</b>", label);
+            GUILayout.Label("Mouse look. Changes apply at once and are saved on this PC. 1.0 is the normal feel; there is no upper limit.", small);
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Look sensitivity", label, GUILayout.Width(190f * ui), GUILayout.Height(row));
+            double ls = NumberEntry.FieldDouble("ctl.look", ControlsPrefs.LookSensitivity, 2, field, GUILayout.Width(90f * ui), GUILayout.Height(row));
+            if (ls > 0.0 && Math.Abs(ls - ControlsPrefs.LookSensitivity) > 1e-6) ControlsPrefs.LookSensitivity = (float)ls;
+            GUILayout.Label("multiplier, above 0", small, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Binocular / zoom sensitivity", label, GUILayout.Width(190f * ui), GUILayout.Height(row));
+            double zs = NumberEntry.FieldDouble("ctl.zoom", ControlsPrefs.ZoomSensitivity, 2, field, GUILayout.Width(90f * ui), GUILayout.Height(row));
+            if (zs > 0.0 && Math.Abs(zs - ControlsPrefs.ZoomSensitivity) > 1e-6) ControlsPrefs.ZoomSensitivity = (float)zs;
+            GUILayout.Label("extra, only while zoomed in", small, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Invert Y (up/down)", label, GUILayout.Width(190f * ui), GUILayout.Height(row));
+            if (Pick("On", ControlsPrefs.InvertY, row)) ControlsPrefs.InvertY = true;
+            if (Pick("Off", !ControlsPrefs.InvertY, row)) ControlsPrefs.InvertY = false;
+            GUILayout.EndHorizontal();
+            GUILayout.Space(6f);
+            if (GUILayout.Button("Reset to 1.0 / off", button, GUILayout.Width(180f * ui), GUILayout.Height(row))) ControlsPrefs.Reset();
         }
 
         void Choice(string text, MicMode m, float row)

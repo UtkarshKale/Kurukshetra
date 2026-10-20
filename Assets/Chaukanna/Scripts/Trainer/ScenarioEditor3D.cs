@@ -456,7 +456,7 @@ namespace Chaukanna.Trainer
             if (flying && !mouse.rightButton.isPressed) { flying = false; Cursor.lockState = CursorLockMode.None; Cursor.visible = true; }
             if (flying)
             {
-                Vector2 d = mouse.delta.ReadValue();
+                Vector2 d = ControlsPrefs.Look(mouse.delta.ReadValue());
                 yaw += d.x * 0.12f; pitch = Mathf.Clamp(pitch - d.y * 0.12f, -89f, 89f);
                 cam.transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
                 float sp = flySpeed * (kb.leftShiftKey.isPressed ? 4f : 1f) * dt;

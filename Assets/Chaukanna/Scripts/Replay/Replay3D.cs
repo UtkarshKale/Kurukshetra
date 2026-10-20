@@ -706,7 +706,7 @@ namespace Chaukanna.Replay
                     {
                         if (mouse.rightButton.isPressed && !MouseOverBar())
                         {
-                            var d = mouse.delta.ReadValue();
+                            var d = ControlsPrefs.Look(mouse.delta.ReadValue());
                             freeYaw += d.x * 0.12f; freePitch = Mathf.Clamp(freePitch - d.y * 0.12f, -89f, 89f);
                         }
                         var rot = Quaternion.Euler(freePitch, freeYaw, 0f);

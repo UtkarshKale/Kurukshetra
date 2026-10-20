@@ -21,6 +21,12 @@ Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo momen
 - [ ] GFX-2. Optimisation, after the owner picks graphics presets (named Low / Medium / High / Ultra do not exist yet; QualitySettings has only Mobile and PC). View distance % (GraphicsPrefs.ViewDistanceScale) is stored but not applied anywhere.
 - [ ] GFX-3. Shadows off uses shadowDistance 0; a real main-light-shadows switch needs the asset setter (internal) if wanted.
 
+## CONTROLS + QUALITY 2026-10-20
+- [x] CTL-1 (compile only). F10 > Controls: look / zoom sensitivity multipliers, invert Y.
+- [x] QUAL-1 (compile only). Quality levels Low / Medium / High / Ultra, per-preset view distance defaults.
+- [ ] QUAL-2. Apply ViewDistanceScale to camera far clip / LOD (still stored only). Tune preset values after a hand test.
+- [ ] CTL-2. Optional: sensitivity for VR radial aim and Lasso cursor (left out: menu pointing).
+
 ## OWNER ROUND 2026-10-20 (items 1 to 4)\n- [x] DQ-1. Process score renamed Decision quality, no-action hostiles count as 0, n shown, n/a when empty.\n- [x] UNIT-1 (compile only; needs a LAN hand test). Individual and unit scores in dashboard and HTML report.\n- [x] OSM-PB-1 (compile only). Progress on the OpenStreetMap fetch button.\n- [x] SPAWN-1 (compile only; hand test open).
 - [ ] SPAWN-2. Loading a package from the package list (not "Use for START") does not move the map posts; scenario presets (ScenarioPreset assets) do not carry posts yet. Player posts and drone spawn points in 2D and 3D, saved, sent over LAN.
 

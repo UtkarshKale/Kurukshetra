@@ -77,7 +77,7 @@ namespace Chaukanna
                 shadows = asset == null || asset.shadowDistance > 0f,
                 shadowDist = asset != null ? Mathf.Max(1, Mathf.RoundToInt(asset.shadowDistance)) : 50,
                 msaa = asset != null ? Mathf.Max(1, asset.msaaSampleCount) : 1,
-                viewDistPct = 100,
+                viewDistPct = PresetViewDistPct(startQuality),
             };
             current = defaults;
         }
@@ -100,6 +100,37 @@ namespace Chaukanna
                 msaa = SnapMsaa(PlayerPrefs.GetInt(KMsaa, d.msaa)),
                 viewDistPct = Mathf.Max(1, PlayerPrefs.GetInt(KView, d.viewDistPct)),
             };
+        }
+
+        // Default view distance of a quality level (percent). Low 60, Medium 80, High 100, Ultra 130; any other level 100.
+        public static int PresetViewDistPct(int level)
+        {
+            string[] names = QualitySettings.names;
+            if (level < 0 || level >= names.Length) return 100;
+            switch (names[level])
+            {
+                case "Low": return 60;
+                case "Medium": return 80;
+                case "Ultra": return 130;
+                default: return 100;
+            }
+        }
+
+        // Picking a preset in the window fills these from the level's own pipeline asset (and the view-distance table); each stays editable.
+        public static GraphicsState WithPreset(GraphicsState s, int level)
+        {
+            Capture();
+            s.quality = level;
+            var urp = level >= 0 && level < QualitySettings.names.Length ? QualitySettings.GetRenderPipelineAssetAt(level) as UniversalRenderPipelineAsset : null;
+            if (urp != null)
+            {
+                s.shadows = urp.shadowDistance > 0f;
+                s.shadowDist = Mathf.Max(1, Mathf.RoundToInt(urp.shadowDistance));
+                s.msaa = Mathf.Max(1, urp.msaaSampleCount);
+                s.renderScalePct = Mathf.RoundToInt(urp.renderScale * 100f);
+            }
+            s.viewDistPct = PresetViewDistPct(level);
+            return s;
         }
 
         public static int SnapMsaa(int v) => v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;

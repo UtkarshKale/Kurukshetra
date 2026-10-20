@@ -15,6 +15,7 @@ namespace Chaukanna.Scenario
 
         float yaw, pitch;
         Camera cam;
+        Chaukanna.Player.Binoculars binoc;
 
         // Headset: the head is tracked, so the mouse does not look. The body (this origin, the parent of the camera) turns instead:
         // the report slew and the snap turn both rotate it. Set by the headset rig, null otherwise.
@@ -97,7 +98,8 @@ namespace Chaukanna.Scenario
             if (Cursor.lockState != CursorLockMode.Locked) return;
             if (Chaukanna.Player.ViewRigSwitch.LookFrozen) return;     // VR radial menu open: the mouse is picking an item
 
-            Vector2 delta = mouse.delta.ReadValue();
+            if (binoc == null && cam != null) binoc = cam.GetComponent<Chaukanna.Player.Binoculars>();
+            Vector2 delta = ControlsPrefs.Look(mouse.delta.ReadValue(), binoc != null && binoc.ZoomBlend > 0.5f);
             float s = sensitivity * (cam != null ? cam.fieldOfView / referenceFov : 1f);
             if (maxPanDegreesPerSecond > 0f && Time.deltaTime > 0f)
             {
