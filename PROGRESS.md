@@ -2,6 +2,11 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-21 - Submission copy prepared, Unity re-saves committed
+- Committed Unity re-saves (vegetation materials, Low URP asset, Windows build profile quality levels, OpenXR settings), ccff03c. Not committed: the deleted RealData areas (Area, Jammu_AFS, Kargil, ladakh, telaviv), on_map_test, and the files HANDOFF.md lists.
+- Submission copy at C:\Users\dhruv\Kurukshetra (origin = UtkarshKale/Kurukshetra), not committed: agent and planning files removed, new README, key scan clean.
+- Verified: git only. Not verified: the copy opening in Unity.
+
 ## 2026-10-20 - Map features: backup OpenStreetMap servers
 - OsmFetcher tries overpass-api.de, then overpass.private.coffee, then maps.mail.ru (one try each, 60 s, 2 s between servers); the status line names the server; if all fail the area is kept without map features ("fetch them later"). Owner approved the mirrors.
 - Pink ground (earlier today): Windows build profile quality override lists only "PC"; the level is named PC again (aca9a20).
