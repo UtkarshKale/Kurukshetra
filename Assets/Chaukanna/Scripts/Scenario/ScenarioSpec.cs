@@ -35,7 +35,19 @@ namespace Chaukanna.Scenario
         public string fairnessId = "";
         public List<FlightPath> paths = new List<FlightPath>();     // custom paths from the 2D editor; empty = none (older packages)
 
-        public ScenarioSpec Clone() { var c = (ScenarioSpec)MemberwiseClone(); c.paths = FlightPath.CloneAll(paths); return c; }
+        public List<ManualObject> manualObjects = new List<ManualObject>();   // trees, bushes, rocks, buildings placed in the 3D editor (older packages: none)
+        public List<ClearArea> clearAreas = new List<ClearArea>();
+        public List<PlacedGroup> placedGroups = new List<PlacedGroup>();
+
+        public ScenarioSpec Clone()
+        {
+            var c = (ScenarioSpec)MemberwiseClone();
+            c.paths = FlightPath.CloneAll(paths);
+            c.manualObjects = ManualLayout.CloneObjects(manualObjects);
+            c.clearAreas = ManualLayout.CloneAreas(clearAreas);
+            c.placedGroups = ManualLayout.CloneGroups(placedGroups);
+            return c;
+        }
     }
 
     [Serializable]
@@ -108,6 +120,35 @@ namespace Chaukanna.Scenario
 
     public static class SpecExpander
     {
+        // Config -> spec, for "save as package" from the 3D editor. Only what the form holds; seconds and counts are rounded to whole numbers.
+        public static ScenarioSpec FromConfig(ScenarioConfig c, string name)
+        {
+            return new ScenarioSpec
+            {
+                name = string.IsNullOrEmpty(name) ? "Package" : name,
+                seed = c.seed,
+                durationMinutes = Mathf.Clamp(Mathf.RoundToInt(c.duration / 60f), 1, 120),
+                light = c.timeOfDay,
+                weather = c.visibility,
+                site = c.site,
+                roeStart = c.roeAtStart,
+                roeChangeSecond = c.roeFlip ? Mathf.RoundToInt(c.roeFlipTime) : -1,
+                roeAfter = c.roeFlipTo,
+                prevalence = c.prevalence,
+                prevalenceTotal = c.prevalenceTotal,
+                hostiles = c.hostileCount, ownDrones = c.friendlyCount, civilDrones = c.civilianCount, birds = c.birdCount,
+                swarmSize = c.swarmSize, swarmSecond = Mathf.RoundToInt(c.swarmTime), birdFlocks = c.birdFlocks, swarmTactic = c.swarmTactic,
+                ringMetres = Mathf.RoundToInt(c.spawnRingRadius),
+                sensorsDegraded = c.sensorsDegraded,
+                quietWatch = c.quietWatch, watchMinutes = Mathf.RoundToInt(c.watchMinutes), contactsPerHour = Mathf.RoundToInt(c.contactsPerHour),
+                director = c.director, reference = false, fairnessId = "",
+                paths = FlightPath.CloneAll(c.paths),
+                manualObjects = ManualLayout.CloneObjects(c.manualObjects),
+                clearAreas = ManualLayout.CloneAreas(c.clearAreas),
+                placedGroups = ManualLayout.CloneGroups(c.placedGroups),
+            };
+        }
+
         // Spec -> config. Deterministic: same spec, same config.
         public static ScenarioConfig Expand(ScenarioSpec s)
         {
@@ -143,6 +184,9 @@ namespace Chaukanna.Scenario
                 packageId = s.name,
                 fairnessId = s.fairnessId,
                 paths = FlightPath.CloneAll(s.paths),
+                manualObjects = ManualLayout.CloneObjects(s.manualObjects),
+                clearAreas = ManualLayout.CloneAreas(s.clearAreas),
+                placedGroups = ManualLayout.CloneGroups(s.placedGroups),
             };
             c.spawnWindowStart = 3f;
             c.spawnWindowEnd = c.duration * 0.8f;

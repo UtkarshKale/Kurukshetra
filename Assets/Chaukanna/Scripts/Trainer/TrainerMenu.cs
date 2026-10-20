@@ -75,12 +75,65 @@ namespace Chaukanna.Trainer
             demPath = Terrain.demPath ?? "";
             Scenario = presets.Count > 0 && presets[0] != null ? presets[0].config.Clone().Validate() : new ScenarioConfig();
             Players.Add(new PlayerSlot { name = "Player 1", isLocal = true });
+            AdoptEditorSession();
             if (Chaukanna.Net.LanSession.Active) tab = Tab.Lobby;
             bool haveCentre = Terrain.centreLatitude != 0.0 || Terrain.centreLongitude != 0.0;
             Map = new MapPicker(this, haveCentre ? Terrain.centreLatitude : 32.6875, haveCentre ? Terrain.centreLongitude : 74.8375, 12);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             SessionSetup.Clear();       // back in the menu: the previous session is over
+        }
+
+        // Back from the 3D editor (or from a test run started in it): the terrain, the scenario with its paths, objects and groups, the posts and
+        // the spawn points are what the trainer left them, not the defaults.
+        void AdoptEditorSession()
+        {
+            if (!SessionSetup.fromEditor || SessionSetup.terrain == null || SessionSetup.scenario == null) return;
+            if (Terrain != null) Destroy(Terrain);
+            Terrain = SessionSetup.terrain;
+            Terrain.name = "Session terrain";
+            Scenario = SessionSetup.scenario.Validate();
+            difficultyIndex = SessionSetup.difficultyIndex;
+            Dem = SessionSetup.dem; Picture = SessionSetup.imagery;
+            SurroundDem = SessionSetup.surroundDem; SurroundPicture = SessionSetup.surroundImagery;
+            demPath = Terrain.demPath ?? ""; demLoadedFrom = Dem != null ? Terrain.demPath : ""; imageryPath = Terrain.imageryPath ?? "";
+            Players.Clear();
+            foreach (var p in SessionSetup.players) Players.Add(new PlayerSlot { name = p.name, post = p.post, ready = p.ready, isLocal = p.isLocal });
+            if (Players.Count == 0) Players.Add(new PlayerSlot { name = "Player 1", isLocal = true });
+            SpawnPoints.Clear();
+            SpawnPoints.AddRange(SessionSetup.spawnPoints);
+            previewStale = true;
+            tab = Tab.Scenario;
+            Message = $"Back from the 3D editor: {Scenario.paths.Count} paths, {Scenario.manualObjects.Count} placed objects, {Scenario.placedGroups.Count} placed groups.";
+        }
+
+        // Builds the field like START does, then opens the 3D scenario editor in it instead of starting the run.
+        public bool Open3DEditor()
+        {
+            var problems = Terrain.Validate();
+            if (Terrain.UsesDem && problems.Count == 0 && (Dem == null || demLoadedFrom != Terrain.demPath)) problems.Add("Load the elevation file on the Terrain tab first.");
+            if (Players.Count == 0) problems.Add("Add at least one player on the Map tab.");
+            if (Chaukanna.Net.LanSession.Current != Chaukanna.Net.LanSession.Role.None) problems.Add("Leave the LAN lobby first: the 3D editor is for one PC.");
+            if (Downloading) problems.Add("Wait for the download to finish.");
+            if (problems.Count > 0) { Message = "3D editor: " + string.Join(" ", problems); return false; }
+
+            SessionSetup.Clear();
+            SessionSetup.terrain = Instantiate(Terrain);
+            SessionSetup.terrain.name = "Session terrain";
+            SessionSetup.dem = Dem;
+            SessionSetup.imagery = Picture;
+            SessionSetup.surroundDem = Terrain.UsesDem ? SurroundDem : null;
+            SessionSetup.surroundImagery = Terrain.UsesDem ? SurroundPicture : null;
+            SessionSetup.scenario = Scenario.Clone().Validate();
+            SessionSetup.difficultyIndex = difficultyIndex;
+            foreach (var p in Players) SessionSetup.players.Add(new PlayerSlot { name = p.name, post = p.post, ready = p.ready, isLocal = p.isLocal });
+            SessionSetup.spawnPoints.AddRange(SpawnPoints);
+            SessionSetup.menuScenePath = menuScenePath;
+            SessionSetup.fromEditor = true;
+            SessionSetup.editorMode = true;
+            SessionSetup.Ready = true;
+            SessionSetup.LoadWithScreen(fieldScenePath);
+            return true;
         }
 
         void OnDestroy()
@@ -982,6 +1035,7 @@ namespace Chaukanna.Trainer
             if (GUILayout.Button("Randomize from this seed", button, GUILayout.Height(row))) Scenario = ScenarioRandomizer.Randomize(Scenario.seed, randomizeBounds, Scenario, Difficulty);
             GUILayout.EndHorizontal();
             GUILayout.Label($"Scenario: {Scenario.presetName}", small);
+            if (GUILayout.Button("<b>3D editor</b>   fly over the terrain; paths, drone and bird groups, trees, bushes and buildings in 3D   (F6)", button, GUILayout.Height(row))) Open3DEditor();
 
             GUILayout.Space(6f);
             GUILayout.BeginHorizontal();
@@ -1206,6 +1260,7 @@ namespace Chaukanna.Trainer
             GUILayout.BeginArea(new Rect(map.xMax + 20f, body.y, body.width - size - 20f, body.height));
             mapPanelScroll = GUILayout.BeginScrollView(mapPanelScroll);
             const float row = 28f;
+            if (GUILayout.Button("<b>3D editor</b>   (F6)", button, GUILayout.Height(row))) Open3DEditor();
             pathEd.ToolGrid(row, true, true);
 
             GUILayout.Space(8f);
@@ -1390,6 +1445,9 @@ namespace Chaukanna.Trainer
         // A trainee's PC: the host pressed START. Adopt its terrain, scenario and seats, then load the field like a solo run.
         void Update()
         {
+            // F6: the 3D editor (nothing is running in the menu).
+            var kb = UnityEngine.InputSystem.Keyboard.current;
+            if (kb != null && kb.f6Key.wasPressedThisFrame && !NumberEntry.AnyFocused && !Downloading) Open3DEditor();
             var lan = Chaukanna.Net.LanSession.Instance;
             if (lan == null || lan.PendingStart == null) return;
             var packet = lan.PendingStart;

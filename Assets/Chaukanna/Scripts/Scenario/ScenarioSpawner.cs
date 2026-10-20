@@ -424,6 +424,7 @@ namespace Chaukanna.Scenario
             for (int i = 0; i < active.birdCount; i++) Add(list, rng, ContactClass.Bird);
 
             PlanGroups(list);
+            PlanPlaced(list);
             plan = list.OrderBy(p => p.time).ToList();   // stable sort
             ReportModels();
             ReportBlockedStarts();
@@ -462,6 +463,88 @@ namespace Chaukanna.Scenario
             if (blendIn > 0) Debug.Log($"[Scenario] {blendIn} hostile{(blendIn > 1 ? "s" : "")} will blend in as own drones before breaking off ({activeBlendIn:F0} % of hostiles).");
             foreach (var c in missing)
                 Debug.LogWarning($"[Scenario] {c} has no model: it will spawn as a grey placeholder. Drag a prefab into the spawner's Models list for it, or into its Contact Definition.", this);
+        }
+
+        // Groups the 3D editor dropped at a point (ScenarioConfig.placedGroups). Own random stream, so they never shift the rest of the plan.
+        // A group with a path appears at its first waypoint and flies it; without one, hostiles fly at the post, own / civilian drones and
+        // single birds loiter over the point, and swarms and flocks cross over it to the far side of the post.
+        void PlanPlaced(List<PlannedSpawn> list)
+        {
+            var cfg = TrainerConfig;
+            if (cfg == null || cfg.placedGroups == null || cfg.placedGroups.Count == 0 || RunConditions.RangeDrill) return;
+            var rng = new System.Random(active.seed ^ 0x71ACED);
+            Vector3 post = defendedPoint != null ? defendedPoint.position : transform.position;
+            int gid = 1000, made = 0;
+            foreach (var g in cfg.placedGroups)
+            {
+                var kind = g.Kind;
+                FlightPath route = g.path >= 0 && cfg.paths != null && g.path < cfg.paths.Count && cfg.paths[g.path] != null && cfg.paths[g.path].Usable ? cfg.paths[g.path] : null;
+                float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(new Vector3(g.x, 0f, g.z));
+                Vector3 at = new Vector3(g.x, (float.IsNaN(ground) ? 0f : ground) + Mathf.Max(0f, g.alt), g.z);
+                if (route != null) at = route.World(0);
+                float time = Mathf.Clamp(g.time, 0f, Mathf.Max(0f, active.duration - 1f));
+                Vector3 across = post + (post - at); across.y = at.y;     // the far side of the post
+                int count = Mathf.Max(1, g.count);
+                if (kind == PlacedKind.Swarm || kind == PlacedKind.Flock)
+                {
+                    bool swarm = kind == PlacedKind.Swarm;
+                    var def = swarm ? (active.GetDefinition(ContactClass.HostileQuad) ?? active.GetDefinition(ContactClass.HostileFixedWing)) : active.GetDefinition(ContactClass.Bird);
+                    if (def == null) continue;
+                    float speed = Mathf.Lerp(def.speedRange.x, def.speedRange.y, 0.5f) * activeSpeed;
+                    Vector3 aim = route != null ? route.EndWorld() : swarm ? post + Vector3.up * 10f : across;
+                    int seed = rng.Next();
+                    if (!swarm && count > SwarmSky.Threshold)
+                    {
+                        var go = new GameObject("PlacedFlock_" + gid);
+                        go.transform.SetParent(transform, false);
+                        var sky = go.AddComponent<SwarmSky>();
+                        birdSkies.Add(sky);
+                        sky.BeginBirds(this, gid++, def, count, at, aim, time, seed, g.species);
+                        if (route != null) sky.SetPath(route, activeSpeed);
+                    }
+                    else
+                    {
+                        int n = Mathf.Min(count, SwarmSky.Threshold);   // a bigger drone swarm is the scenario's single big swarm, not a placed one
+                        var prof = swarm ? (defaultSwarm != null ? defaultSwarm : (defaultSwarm = SwarmProfile.Drones())) : (defaultFlock != null ? defaultFlock : (defaultFlock = SwarmProfile.Birds()));
+                        int before = list.Count;
+                        var group = AddGroup(list, gid++, def, n, at, aim, speed, time, prof, seed, swarm ? "ReachedDefendedPoint" : "ExitedSector");
+                        if (route != null) group.SetPath(route, activeSpeed);
+                        if (!swarm) for (int i = before; i < list.Count; i++) list[i].motionSeed = BirdSeed(g.species, rng);
+                    }
+                    made++;
+                    continue;
+                }
+                var cls = kind == PlacedKind.Bird ? ContactClass.Bird : (ContactClass)(int)kind;
+                var single = active.GetDefinition(cls);
+                if (single == null) continue;
+                bool hostile = cls == ContactClass.HostileQuad || cls == ContactClass.HostileFixedWing;
+                for (int i = 0; i < count; i++)
+                {
+                    float u = (float)rng.NextDouble(), v = (float)rng.NextDouble();
+                    int motionSeed = cls == ContactClass.Bird ? BirdSeed(g.species, rng) : rng.Next();
+                    Vector3 start = at + new Vector3((u - 0.5f) * 30f, 0f, (v - 0.5f) * 30f);
+                    if (route != null) start = at;
+                    var p = new PlannedSpawn
+                    {
+                        time = time + i * 1.5f, def = single, look = single, start = start, motionSeed = motionSeed,
+                        speed = Mathf.Lerp(single.speedRange.x, single.speedRange.y, v) * activeSpeed,
+                    };
+                    if (route != null) { p.path = route; p.goal = route.EndWorld(); }
+                    else if (hostile) { p.goal = post + Vector3.up * 10f; p.beh = (int)FlightBehaviour.Approach; }
+                    else if (cls == ContactClass.Bird) { p.goal = across; p.beh = (int)FlightBehaviour.Transit; }
+                    else { p.goal = start; p.beh = (int)FlightBehaviour.Loiter; p.orbitRadius = Mathf.Lerp(40f, 70f, u); }
+                    list.Add(p);
+                }
+                made++;
+            }
+            if (made > 0) Debug.Log($"[Scenario] {made} placed group{(made > 1 ? "s" : "")} from the 3D editor.");
+        }
+
+        // A motion seed whose bird is of the wanted species (the look seed is motionSeed / 7; see BirdKit.SpeciesOf).
+        static int BirdSeed(int species, System.Random rng)
+        {
+            int k = species == BirdSpeciesInfo.Kite ? rng.Next(0, 5) : species == BirdSpeciesInfo.Pigeon ? rng.Next(5, 14) : rng.Next(14, 20);
+            return (rng.Next(1, 90000) * 20 + k) * 7;
         }
 
         // Swarms and bird flocks, from a random stream of their own so adding a swarm never changes the rest of the plan.

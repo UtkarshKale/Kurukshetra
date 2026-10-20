@@ -24,6 +24,8 @@ namespace Chaukanna.Session
     public static class SessionSetup
     {
         public static bool Ready;                           // START was pressed in the trainer menu
+        public static bool fromEditor;                      // this session was opened in the 3D editor: the trainer menu takes the edited set-up back
+        public static bool editorMode;                      // "3D editor" was pressed: build the field, then open the 3D scenario editor instead of starting the run
         public static TerrainGenConfig terrain;             // runtime copy, never an asset
         public static ElevationGrid dem;                    // loaded source elevation, if the mode uses one
         public static Imagery imagery;                      // optional ground picture
@@ -48,6 +50,8 @@ namespace Chaukanna.Session
         public static void Clear()
         {
             Ready = false;
+            editorMode = false;
+            fromEditor = false;
             terrain = null;
             dem = null;
             imagery = null;
@@ -182,14 +186,19 @@ namespace Chaukanna.Session
                 }
                 if (problem == null)
                 {
-                    Set("Spawning contacts", 0.95f);
+                    Set(SessionSetup.editorMode ? "Opening the 3D editor" : "Spawning contacts", 0.95f);
                     yield return null;
-                    try { FieldBootstrap.StartRun(spawner); } catch (Exception e) { problem = e; }
+                    try
+                    {
+                        if (SessionSetup.editorMode) Chaukanna.Trainer.ScenarioEditor3D.Open(spawner);
+                        else FieldBootstrap.StartRun(spawner);
+                    }
+                    catch (Exception e) { problem = e; }
                     yield return null;
                 }
                 if (problem != null) Debug.LogError("[Session] Could not set up the field from the trainer's session: " + problem);
             }
-            ContactRegistry.InputBlocked = false;
+            ContactRegistry.InputBlocked = Chaukanna.Trainer.ScenarioEditor3D.Active;     // the 3D editor keeps the player controls off
             Done();
         }
 
@@ -327,6 +336,8 @@ namespace Chaukanna.Session
                 yield return null;
             }
             if (layerProblem != null) Debug.LogError("[Session] The terrain layers (trees, grass, buildings) could not be built: " + layerProblem);
+            // The trees, bushes, rocks and buildings the trainer placed by hand in the 3D editor, next to the generated ones.
+            if (SessionSetup.scenario != null) ManualField.Ensure(SessionSetup.scenario.manualObjects);
         }
 
         // Makes the layer manager for this session and builds all three layers.
@@ -357,6 +368,8 @@ namespace Chaukanna.Session
                 SiteClearance.Set(SiteBuilder.Clearance(new Vector3(local.post.x, 0f, local.post.y), spawner.transform.forward, SessionSetup.scenario.site, spawner.preset != null ? spawner.preset.siteProfile : null));
             else SiteClearance.Clear();
 
+            // Areas the trainer cleared in the 3D editor: the generated layers leave them out.
+            SiteClearance.SetExtra(SessionSetup.scenario != null ? ManualLayout.ClearZones(SessionSetup.scenario.clearAreas) : new List<SiteClearance.Zone>());
             var manager = TerrainLayerManager.Create(ctx);
             var run = manager.BuildAll((f, text) => progress?.Invoke(1f, "Trees, grass and buildings: " + text));
             while (run.MoveNext()) yield return run.Current;
@@ -397,6 +410,7 @@ namespace Chaukanna.Session
             var panel = UnityEngine.Object.FindAnyObjectByType<Chaukanna.Trainer.TrainerScreen>();
             if (panel != null) panel.StartSessionRun(SessionSetup.scenario, SessionSetup.difficultyIndex);
             else spawner.StartRun(SessionSetup.scenario);
+            if (ManualField.Current != null) ManualField.Current.AddColliders();      // hand-placed trees and buildings stop the line of sight too
         }
     }
     // Starts the trainer's run one frame after the field scene has loaded.

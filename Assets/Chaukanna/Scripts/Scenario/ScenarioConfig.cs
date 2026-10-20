@@ -153,6 +153,14 @@ namespace Chaukanna.Scenario
         [Tooltip("Paths drawn on the 2D map. Waypoint 0 is the spawn; each waypoint has its own height above ground and speed. Contacts, the swarm and bird flocks that match a path fly it instead of the usual straight pass.")]
         public List<FlightPath> paths = new List<FlightPath>();
 
+        [Header("3D scenario editor (manual objects, cleared areas, placed groups)")]
+        [Tooltip("Trees, bushes, rocks and buildings placed by hand in the 3D editor. Spawned at run start next to the generated layers.")]
+        public List<ManualObject> manualObjects = new List<ManualObject>();
+        [Tooltip("Round areas where the generated trees, bushes and buildings are left out.")]
+        public List<ClearArea> clearAreas = new List<ClearArea>();
+        [Tooltip("Drone and bird groups dropped at a point in the 3D editor.")]
+        public List<PlacedGroup> placedGroups = new List<PlacedGroup>();
+
         [Header("Spawn and flight options (scenario settings)")]
         [Tooltip("Metres above the ground that contacts appear at (min, max). Negative = each contact definition's own height range.")]
         public float spawnAltMin = -1f;
@@ -243,6 +251,9 @@ namespace Chaukanna.Scenario
         {
             var c = (ScenarioConfig)MemberwiseClone();
             c.paths = FlightPath.CloneAll(paths);      // the list is not shared between copies
+            c.manualObjects = ManualLayout.CloneObjects(manualObjects);
+            c.clearAreas = ManualLayout.CloneAreas(clearAreas);
+            c.placedGroups = ManualLayout.CloneGroups(placedGroups);
             return c;
         }
 
@@ -305,6 +316,7 @@ namespace Chaukanna.Scenario
             if (paths == null) paths = new List<FlightPath>();      // a scenario saved before paths existed
             paths.RemoveAll(p => p == null);
             foreach (var p in paths) p.Sanitise();
+            ManualLayout.Sanitise(this);
             return this;
         }
 

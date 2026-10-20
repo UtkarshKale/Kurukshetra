@@ -71,7 +71,7 @@ namespace Chaukanna.Trainer
         void Update()
         {
             var kb = Keyboard.current;
-            if (kb != null && kb.f6Key.wasPressedThisFrame) SetSplit(!PlayerView.Split);
+            if (kb != null && kb.f6Key.wasPressedThisFrame && !ScenarioEditor3D.Active) SetSplit(!PlayerView.Split);
         }
 
         public void SetSplit(bool on)
@@ -174,7 +174,7 @@ namespace Chaukanna.Trainer
 
         void OnGUI()
         {
-            if (spawner == null) return;
+            if (spawner == null || ScenarioEditor3D.Active) return;      // the 3D editor has the whole window
             if (!PlayerView.Split)
             {
                 // Nothing runs until the trainer starts it. Say how, in the player's view.

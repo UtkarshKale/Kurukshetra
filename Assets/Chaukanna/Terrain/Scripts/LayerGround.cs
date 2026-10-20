@@ -63,9 +63,11 @@ namespace Chaukanna.TerrainGen
             public Vector2 centre, axis;        // axis: unit direction of the long side
             public float halfLong, halfShort;
             public bool blocksTrees;            // buildings are always kept out
+            public bool round;                  // a circle of radius halfLong (the 3D editor's cleared areas) instead of a rectangle
             public bool Contains(float x, float z, float margin)
             {
                 var d = new Vector2(x - centre.x, z - centre.y);
+                if (round) { float r = halfLong + margin; return d.sqrMagnitude <= r * r; }
                 float u = Vector2.Dot(d, axis), v = Vector2.Dot(d, new Vector2(-axis.y, axis.x));
                 return Mathf.Abs(u) <= halfLong + margin && Mathf.Abs(v) <= halfShort + margin;
             }
@@ -74,6 +76,7 @@ namespace Chaukanna.TerrainGen
         public const float PostPadMetres = 60f;
 
         static readonly List<Zone> zones = new List<Zone>();
+        static readonly List<Zone> extra = new List<Zone>();      // areas cleared by hand (3D editor); kept apart so the site's Set / Clear never drops them
         public static int Version { get; private set; }
         public static IReadOnlyList<Zone> Zones => zones;
 
@@ -94,10 +97,30 @@ namespace Chaukanna.TerrainGen
 
         public static void Clear() { if (zones.Count > 0) { zones.Clear(); Version++; } }
 
+        // The hand-cleared areas of the scenario (round zones). The version only moves when something really changed, which makes the
+        // layer manager rebuild its buildings, trees and bushes without them.
+        public static void SetExtra(IList<Zone> next)
+        {
+            bool same = next.Count == extra.Count;
+            for (int i = 0; same && i < next.Count; i++)
+            {
+                var a = next[i]; var b = extra[i];
+                same = (a.centre - b.centre).sqrMagnitude < 0.01f && Mathf.Abs(a.halfLong - b.halfLong) < 0.01f;
+            }
+            if (same) return;
+            extra.Clear();
+            extra.AddRange(next);
+            Version++;
+        }
+
+        public static int ExtraCount => extra.Count;
+
         public static bool Blocked(float x, float z, bool forTrees, float margin = 0f)
         {
             for (int i = 0; i < zones.Count; i++)
                 if ((!forTrees || zones[i].blocksTrees) && zones[i].Contains(x, z, margin)) return true;
+            for (int i = 0; i < extra.Count; i++)
+                if (extra[i].Contains(x, z, margin)) return true;
             return false;
         }
 
