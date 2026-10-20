@@ -153,6 +153,49 @@ namespace Chaukanna.Scenario
         [Tooltip("Paths drawn on the 2D map. Waypoint 0 is the spawn; each waypoint has its own height above ground and speed. Contacts, the swarm and bird flocks that match a path fly it instead of the usual straight pass.")]
         public List<FlightPath> paths = new List<FlightPath>();
 
+        [Header("Spawn and flight options (scenario settings)")]
+        [Tooltip("Metres above the ground that contacts appear at (min, max). Negative = each contact definition's own height range.")]
+        public float spawnAltMin = -1f;
+        public float spawnAltMax = -1f;
+        [Tooltip("Nearest distance (m) a contact may appear at; the farthest is the spawn ring. Negative = all on the ring.")]
+        public float spawnDistMin = -1f;
+        [Tooltip("Bearing (degrees from the post's forward) of the middle of the spawn sector. 0 = straight ahead. The arc below is centred on it.")]
+        public float sectorCentreDegrees;
+        [Tooltip("How single drones and birds of each type fly. Default = the contact definition's own pattern; Custom path = a path drawn on the 2D map.")]
+        public FlightPattern patternHostileQuad;
+        public FlightPattern patternHostileFixedWing, patternOwnIsr, patternCivilian, patternBird;
+        [Tooltip("Where bird flocks roost: bearing from the middle of the sector (above 360 = chosen from the seed), distance from the post (0 = chosen), height above ground (negative = chosen). Big flocks circle it; small flocks fly to it.")]
+        public float roostBearing = 999f;
+        public float roostDistance;
+        public float roostAltitude = -1f;
+
+        public FlightPattern PatternFor(ContactClass c)
+        {
+            switch (c)
+            {
+                case ContactClass.HostileQuad: return patternHostileQuad;
+                case ContactClass.HostileFixedWing: return patternHostileFixedWing;
+                case ContactClass.FriendlyISR: return patternOwnIsr;
+                case ContactClass.CivilianQuad: return patternCivilian;
+                default: return patternBird;
+            }
+        }
+
+        public void SetPattern(ContactClass c, FlightPattern p)
+        {
+            switch (c)
+            {
+                case ContactClass.HostileQuad: patternHostileQuad = p; break;
+                case ContactClass.HostileFixedWing: patternHostileFixedWing = p; break;
+                case ContactClass.FriendlyISR: patternOwnIsr = p; break;
+                case ContactClass.CivilianQuad: patternCivilian = p; break;
+                default: patternBird = p; break;
+            }
+        }
+
+        public bool HasAltRange => spawnAltMin >= 0f || spawnAltMax >= 0f;
+        public bool HasRoostOptions => roostBearing <= 360f || roostDistance > 0f || roostAltitude >= 0f;
+
         [Header("Geometry")]
         public float sectorArcDegrees = 120f;
         public float spawnRingRadius = 1000f;
@@ -247,6 +290,18 @@ namespace Chaukanna.Scenario
             moveRadius = Mathf.Max(moveRadius, 0f);
             walkSpeed = Mathf.Max(walkSpeed, 0.5f);
             runSpeed = Mathf.Max(runSpeed, walkSpeed);
+            // Spawn options: a range turned round is swapped, a lone end stands for both; nothing else is limited.
+            if (spawnAltMin >= 0f || spawnAltMax >= 0f)
+            {
+                if (spawnAltMin < 0f) spawnAltMin = spawnAltMax;
+                if (spawnAltMax < 0f) spawnAltMax = spawnAltMin;
+                if (spawnAltMax < spawnAltMin) { float t = spawnAltMin; spawnAltMin = spawnAltMax; spawnAltMax = t; }
+            }
+            if (spawnDistMin >= 0f) spawnDistMin = Mathf.Min(spawnDistMin, spawnRingRadius);
+            if (float.IsNaN(sectorCentreDegrees) || float.IsInfinity(sectorCentreDegrees)) sectorCentreDegrees = 0f;
+            sectorCentreDegrees = Mathf.Repeat(sectorCentreDegrees + 180f, 360f) - 180f;       // a bearing: 370 is 10
+            if (float.IsNaN(roostBearing)) roostBearing = 999f;
+            roostDistance = Mathf.Max(roostDistance, 0f);
             if (paths == null) paths = new List<FlightPath>();      // a scenario saved before paths existed
             paths.RemoveAll(p => p == null);
             foreach (var p in paths) p.Sanitise();

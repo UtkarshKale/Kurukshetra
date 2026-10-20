@@ -37,6 +37,7 @@ namespace Chaukanna.Scenario
             orbitDir = rng.Next(2) == 0 ? -1f : 1f;
             bobPhase = (float)rng.NextDouble() * Mathf.PI * 2f;
             baseAltitude = transform.position.y;
+            spawnFlat = Mathf.Max(1f, Flat(goal - transform.position).magnitude);
             Face(goal - transform.position);
         }
 
@@ -79,7 +80,55 @@ namespace Chaukanna.Scenario
                 case FlightBehaviour.Erratic:
                     if (Erratic(dt)) contact.Despawn("ExitedSector");
                     break;
+                case FlightBehaviour.ZigZag:
+                case FlightBehaviour.PopUp:
+                case FlightBehaviour.TerrainFollow:
+                    if (FlyPattern(dt)) contact.Despawn(patternEnd);
+                    break;
             }
+        }
+
+        // --- Patterns picked in the scenario options (zig-zag, pop-up, terrain-following): fly to the goal over the ground. ---
+        string patternEnd = "ExitedSector";
+        float patternAgl = 30f, popRange = 350f, spawnFlat = 1f, zigPhase, zigPeriod = 4f;
+        float popTargetAgl = 90f;
+        const float ZigDegrees = 38f;
+
+        // Called by the spawner right after Initialise. agl = height above ground to hold (terrain-following), the low run-in height and
+        // the height reached (pop-up).
+        public void SetPattern(string endReason, float agl)
+        {
+            patternEnd = endReason;
+            patternAgl = Mathf.Max(2f, behaviour == FlightBehaviour.PopUp ? Mathf.Min(agl, 15f) : agl);
+            popTargetAgl = Mathf.Max(agl, 60f);
+            popRange = Mathf.Max(150f, spawnFlat * 0.3f);
+            zigPeriod = Mathf.Lerp(3f, 6f, (float)rng.NextDouble());
+            zigPhase = (float)rng.NextDouble() * Mathf.PI * 2f;
+        }
+
+        bool FlyPattern(float dt)
+        {
+            Vector3 pos = transform.position;
+            Vector3 flat = Flat(goal - pos);
+            float dist = flat.magnitude;
+            if (dist <= ArriveDistance) return true;
+            Vector3 dir = flat / dist;
+            if (behaviour == FlightBehaviour.ZigZag) dir = Quaternion.AngleAxis(Mathf.Sin(age * Mathf.PI * 2f / zigPeriod + zigPhase) * ZigDegrees, Vector3.up) * dir;
+            pos += dir * speed * dt;
+            float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(pos);
+            if (float.IsNaN(ground)) ground = 0f;
+            float targetY;
+            switch (behaviour)
+            {
+                case FlightBehaviour.TerrainFollow: targetY = ground + patternAgl; break;
+                case FlightBehaviour.PopUp: targetY = ground + (dist > popRange ? patternAgl : popTargetAgl); break;
+                default: targetY = Mathf.Lerp(baseAltitude, goal.y, 1f - Mathf.Clamp01(dist / spawnFlat)); break;       // zig-zag: the usual glide to the goal height
+            }
+            pos.y = Mathf.MoveTowards(pos.y, targetY, (behaviour == FlightBehaviour.PopUp ? 18f : 25f) * dt);
+            transform.position = pos;
+            Face(dir);
+            Flap(1f);
+            return false;
         }
 
         // --- A custom path from the 2D editor (FlightPath): waypoints with their own height above ground and speed. ---

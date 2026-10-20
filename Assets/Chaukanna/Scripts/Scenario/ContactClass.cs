@@ -17,6 +17,10 @@ namespace Chaukanna.Scenario
         Transit,    // straight line across the sector
         Loiter,     // fly in, then orbit a point inside the sector
         Erratic,    // bird: wandering heading, bobbing altitude
+        // Added with the scenario options (flight pattern per type); set by the spawner, not by a contact definition.
+        ZigZag,         // heading swings left and right of the line to the goal
+        PopUp,          // low run-in, then a climb a few hundred metres out
+        TerrainFollow,  // holds a set height above the ground all the way
     }
 
     public enum Silhouette

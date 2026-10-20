@@ -179,7 +179,7 @@ namespace Chaukanna.Scenario
         {
             Vector3 post = spawner.defendedPoint != null ? spawner.defendedPoint.position : spawner.transform.position;
             float half = spawner.ActiveArc * 0.5f;
-            float bearing = spawner.transform.eulerAngles.y + Mathf.Lerp(-half, half, (float)rng.NextDouble());
+            float bearing = spawner.transform.eulerAngles.y + spawner.ActiveSectorOffset + Mathf.Lerp(-half, half, (float)rng.NextDouble());
             Vector3 dir = Quaternion.Euler(0f, bearing, 0f) * Vector3.forward;
             Vector3 start = post + dir * spawner.ActiveRadius + Vector3.up * Mathf.Lerp(50f, 120f, (float)rng.NextDouble());
             Vector3 goal = cls.IsHostile() ? post + Vector3.up * 10f : post + Quaternion.Euler(0f, 90f * (rng.NextDouble() < 0.5 ? -1f : 1f), 0f) * dir * spawner.ActiveRadius + Vector3.up * 60f;

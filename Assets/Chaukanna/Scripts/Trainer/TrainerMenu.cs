@@ -946,6 +946,7 @@ namespace Chaukanna.Trainer
             Scenario.sectorArcDegrees = Stepper("Arc deg", Mathf.RoundToInt(Scenario.sectorArcDegrees), 10, row, 1, 360);
             Scenario.speedMultiplier = Stepper("Speed %", Mathf.RoundToInt(Scenario.speedMultiplier * 100f), 10, row, 1) / 100f;
             GUILayout.EndHorizontal();
+            ScenarioOptionsPanel.Draw(Scenario, "menu.opt", label, small, field, button, row, 130f);
             GUILayout.BeginHorizontal();
             Scenario.swarmSize = Stepper("Swarm size", Scenario.swarmSize, 8, row);
             Scenario.swarmTime = Stepper("Swarm at s", Mathf.RoundToInt(Scenario.swarmTime), 10, row);

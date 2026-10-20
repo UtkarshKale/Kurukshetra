@@ -106,6 +106,24 @@ namespace Chaukanna.Scenario
             public int group = -1;              // swarm or flock id; -1 = flies on its own
             public bool frozen;                 // a promoted crowd drone: its CrowdFollower moves it, not ContactMotion
             public FlightPath path;             // a custom path from the 2D editor (single contacts; groups carry theirs themselves)
+            public int beh = -1;                // a flight pattern from the scenario options (a FlightBehaviour); -1 = the definition's own
+            public string patternEnd = "ExitedSector";
+            public float agl;
+        }
+
+        // Scenario options (set from the trainer config at each start): spawn height and distance ranges, sector turn, bird roost.
+        float aAltMin = -1f, aAltMax = -1f, aDistMin = -1f, aSectorOffset, aRoostBearing = 999f, aRoostDist, aRoostAlt = -1f;
+        public float ActiveSectorOffset => aSectorOffset;
+
+        // A repeatable 0..1 from a seed and a salt, for choices that must not take a value from the plan's random stream.
+        static float Hash01(int seed, int salt)
+        {
+            unchecked
+            {
+                uint h = (uint)(seed * 73856093) ^ (uint)(salt * 19349663);
+                h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+                return (h & 0xFFFFFF) / (float)0x1000000;
+            }
         }
 
         // The custom paths of this run that fit: the use, and for single drones the class. pick chooses between several that fit
@@ -226,6 +244,7 @@ namespace Chaukanna.Scenario
             aSwarmSize = 0; aBirdFlocks = 0; aFlockSize = 8; aSwarmTime = 60f; aSwarmBearing = 999f; aSwarmTactic = SwarmTactic.Direct;
             aSite = SiteType.None;
             aCrowdCount = 0; aCrowdRadius = 0f;
+            aAltMin = aAltMax = aDistMin = -1f; aSectorOffset = 0f; aRoostBearing = 999f; aRoostDist = 0f; aRoostAlt = -1f;
             float noIffPct = 5f, spoofPct = 0f;
             bool iffAid = true;
             string source = "";
@@ -248,6 +267,9 @@ namespace Chaukanna.Scenario
                 aSwarmSize = c.swarmSize; aSwarmTime = c.swarmTime; aSwarmBearing = c.swarmBearing; aSwarmTactic = c.swarmTactic; aBirdFlocks = c.birdFlocks; aFlockSize = c.flockSize;
                 aSite = c.site;
                 aCrowdCount = c.crowdCount; aCrowdRadius = c.CrowdRadiusEffective;
+                if (c.HasAltRange) { aAltMin = c.spawnAltMin; aAltMax = c.spawnAltMax; }
+                aDistMin = c.spawnDistMin; aSectorOffset = c.sectorCentreDegrees;
+                aRoostBearing = c.roostBearing; aRoostDist = c.roostDistance; aRoostAlt = c.roostAltitude;
                 iffAid = c.iffAid; noIffPct = c.friendlyNoIffPercent; spoofPct = c.hostileSpoofPercent;
             }
             else if (overridePreset)
@@ -462,8 +484,9 @@ namespace Chaukanna.Scenario
                 else
                 {
                     float bearing = aSwarmBearing <= 360f ? aSwarmBearing : Range(rng, -half, half);
-                    float altitude = Mathf.Lerp(def.altitudeRange.x, def.altitudeRange.y, 0.5f);
-                    Vector3 centre = GroupCentre(OnSector(bearing, r, altitude), altitude, rng.Next());
+                    float altitude = aAltMin >= 0f ? Mathf.Lerp(aAltMin, aAltMax, 0.5f) : Mathf.Lerp(def.altitudeRange.x, def.altitudeRange.y, 0.5f);
+                    float rs = aDistMin >= 0f ? Mathf.Lerp(aDistMin, r, Hash01(active.seed, 3)) : r;
+                    Vector3 centre = GroupCentre(OnSector(bearing, rs, altitude), altitude, rng.Next());
                     float speed = Mathf.Lerp(def.speedRange.x, def.speedRange.y, 0.5f) * activeSpeed;
                     // A path drawn for the swarm: it appears at waypoint 0 and its centre follows the waypoints (the members flock round it).
                     var swarmPath = PickPath(PathUse.Swarm, -1, 0);
@@ -491,13 +514,18 @@ namespace Chaukanna.Scenario
             {
                 float bearing = Range(rng, -half, half);
                 float exit = (bearing >= 0f ? -1f : 1f) * half * Mathf.Lerp(0.3f, 1f, (float)rng.NextDouble());
-                float altitude = Mathf.Lerp(bird.altitudeRange.x, bird.altitudeRange.y, (float)rng.NextDouble());
-                Vector3 centre = GroupCentre(OnSector(bearing, r, altitude), altitude, rng.Next());
+                float altU = (float)rng.NextDouble();
+                float altitude = aAltMin >= 0f ? Mathf.Lerp(aAltMin, aAltMax, altU) : Mathf.Lerp(bird.altitudeRange.x, bird.altitudeRange.y, altU);
+                float rs = aDistMin >= 0f ? Mathf.Lerp(aDistMin, r, Hash01(active.seed, 100 + f)) : r;
+                Vector3 centre = GroupCentre(OnSector(bearing, rs, altitude), altitude, rng.Next());
                 float speed = Mathf.Lerp(bird.speedRange.x, bird.speedRange.y, (float)rng.NextDouble()) * activeSpeed;
                 float time = Range(rng, active.spawnWindowStart, Mathf.Min(active.spawnWindowEnd, active.duration));
                 var prof = flockProfile != null ? flockProfile : (defaultFlock != null ? defaultFlock : (defaultFlock = SwarmProfile.Birds()));
                 var flockPath = PickPath(PathUse.Flock, -1, f);
                 if (flockPath != null) centre = flockPath.World(0);
+                // The roost: the options (bearing from the middle of the sector, distance from the post, height above ground) or the old defaults.
+                Vector3 roostPoint = OnSector(aRoostBearing <= 360f ? aRoostBearing : exit * 0.5f, aRoostDist > 0f ? aRoostDist : Mathf.Min(r * 0.5f, 450f), aRoostAlt >= 0f ? aRoostAlt : altitude + 20f);
+                bool roostSet = aRoostBearing <= 360f || aRoostDist > 0f || aRoostAlt >= 0f;
                 if (aFlockSize > SwarmSky.Threshold && !RunConditions.RangeDrill)
                 {
                     // Big bird flock: the swarm engine with the bird profile (topological neighbours, banked turns, a roost to circle),
@@ -507,13 +535,13 @@ namespace Chaukanna.Scenario
                     go.transform.SetParent(transform, false);
                     var sky = go.AddComponent<SwarmSky>();
                     birdSkies.Add(sky);
-                    Vector3 roost = flockPath != null ? flockPath.EndWorld() : OnSector(exit * 0.5f, Mathf.Min(r * 0.5f, 450f), altitude + 20f);
+                    Vector3 roost = flockPath != null ? flockPath.EndWorld() : roostPoint;
                     int species = (flockSeed & 1) == 0 ? BirdSpeciesInfo.Pigeon : BirdSpeciesInfo.Sparrow;
                     sky.BeginBirds(this, id++, bird, aFlockSize, centre, roost, time, flockSeed, species);
                     if (flockPath != null) sky.SetPath(flockPath, activeSpeed);
                     continue;
                 }
-                var flockGroup = AddGroup(list, id++, bird, aFlockSize, centre, flockPath != null ? flockPath.EndWorld() : OnSector(exit, r, altitude), speed, time, prof, rng.Next(), "ExitedSector");
+                var flockGroup = AddGroup(list, id++, bird, aFlockSize, centre, flockPath != null ? flockPath.EndWorld() : roostSet ? roostPoint : OnSector(exit, r, altitude), speed, time, prof, rng.Next(), "ExitedSector");
                 if (flockPath != null) flockGroup.SetPath(flockPath, activeSpeed);
             }
             if (aBirdFlocks > 0) log.Add($"{aBirdFlocks} bird flock{(aBirdFlocks > 1 ? "s" : "")} of {aFlockSize}");
@@ -578,7 +606,8 @@ namespace Chaukanna.Scenario
             }
 
             float r = active.spawnRingRadius;
-            float altitude = Mathf.Lerp(def.altitudeRange.x, def.altitudeRange.y, u1);
+            float altitude = aAltMin >= 0f ? Mathf.Lerp(aAltMin, aAltMax, u1) : Mathf.Lerp(def.altitudeRange.x, def.altitudeRange.y, u1);
+            float rStart = aDistMin >= 0f ? Mathf.Lerp(aDistMin, r, Hash01(motionSeed, 11)) : r;
             var p = new PlannedSpawn
             {
                 time = time,
@@ -587,7 +616,7 @@ namespace Chaukanna.Scenario
                 deceptive = deceptive,
                 anomalyDelay = Mathf.Lerp(25f, 70f, u2),
                 speed = Mathf.Lerp(def.speedRange.x, def.speedRange.y, u2) * activeSpeed,
-                start = OnSector(bearing, r, altitude),
+                start = OnSector(bearing, rStart, altitude),
                 motionSeed = motionSeed,
             };
             // Trainer-placed spawn points replace the ring. The point is picked from values already drawn, so the rest of
@@ -601,23 +630,56 @@ namespace Chaukanna.Scenario
                 p.start = point;
             }
 
-            switch (def.behaviour)
+            // The flight pattern the trainer picked for this type (a blend-in hostile keeps its own-drone patrol).
+            var pattern = TrainerConfig != null && !deceptive && !RunConditions.RangeDrill ? TrainerConfig.PatternFor(def.contactClass) : FlightPattern.Default;
+            FlightBehaviour beh = def.behaviour;
+            bool orbitPost = false;
+            switch (pattern)
+            {
+                case FlightPattern.StraightIn: beh = FlightBehaviour.Approach; break;
+                case FlightPattern.Orbit: beh = FlightBehaviour.Loiter; orbitPost = true; break;
+                case FlightPattern.Loiter: beh = FlightBehaviour.Loiter; break;
+                case FlightPattern.ZigZag: beh = FlightBehaviour.ZigZag; break;
+                case FlightPattern.PopUp: beh = FlightBehaviour.PopUp; break;
+                case FlightPattern.TerrainFollow: beh = FlightBehaviour.TerrainFollow; break;
+            }
+            // Transit / Erratic: leave through the ring on the far side of the arc from the entry bearing.
+            float exit = (bearing >= 0f ? -1f : 1f) * half * Mathf.Lerp(0.3f, 1f, u3);
+            switch (beh)
             {
                 case FlightBehaviour.Approach:
                     p.goal = defendedPoint.position + Vector3.up * 10f;
                     break;
                 case FlightBehaviour.Loiter:
-                    p.goal = OnSector(Mathf.Lerp(-half, half, u3) * 0.7f, r * Mathf.Lerp(0.4f, 0.7f, u4), altitude);
-                    p.orbitRadius = Mathf.Lerp(35f, 70f, u5);
+                    if (orbitPost)
+                    {
+                        p.goal = defendedPoint.position + Vector3.up * 10f;
+                        p.orbitRadius = Mathf.Max(40f, r * Mathf.Lerp(0.2f, 0.4f, u5));
+                    }
+                    else
+                    {
+                        p.goal = OnSector(Mathf.Lerp(-half, half, u3) * 0.7f, r * Mathf.Lerp(0.4f, 0.7f, u4), altitude);
+                        p.orbitRadius = Mathf.Lerp(35f, 70f, u5);
+                    }
+                    break;
+                case FlightBehaviour.ZigZag:
+                case FlightBehaviour.PopUp:
+                case FlightBehaviour.TerrainFollow:
+                    // Hostiles press on for the post; everything else crosses the sector.
+                    bool inbound = truth.contactClass == ContactClass.HostileQuad || truth.contactClass == ContactClass.HostileFixedWing;
+                    p.goal = inbound ? defendedPoint.position + Vector3.up * 10f : OnSector(exit, r, altitude);
+                    p.patternEnd = inbound ? "ReachedDefendedPoint" : "ExitedSector";
+                    p.agl = beh == FlightBehaviour.TerrainFollow ? Mathf.Max(12f, altitude * 0.35f) : altitude;
                     break;
                 default:
-                    // Transit / Erratic: leave through the ring on the far side of the arc from the entry bearing.
-                    float exit = (bearing >= 0f ? -1f : 1f) * half * Mathf.Lerp(0.3f, 1f, u3);
                     p.goal = OnSector(exit, r, altitude);
                     break;
             }
-            // A custom path from the 2D editor replaces the spawn point and the straight pass: waypoint 0 is the spawn.
-            var route = PickPath(contactClass == ContactClass.Bird ? PathUse.Bird : PathUse.Drone, (int)contactClass, motionSeed >> 5);
+            if (pattern != FlightPattern.Default) p.beh = (int)beh;
+            // A custom path from the 2D editor replaces the spawn point and the straight pass: waypoint 0 is the spawn. A pattern other than
+            // Default / Custom path means the trainer wants that pattern for this type, so no path is used.
+            var route = pattern == FlightPattern.Default || pattern == FlightPattern.CustomPath
+                ? PickPath(def.contactClass == ContactClass.Bird ? PathUse.Bird : PathUse.Drone, (int)def.contactClass, motionSeed >> 5) : null;
             if (route != null) { p.path = route; p.start = route.World(0); p.goal = route.EndWorld(); }
             list.Add(p);
         }
@@ -683,7 +745,8 @@ namespace Chaukanna.Scenario
             contact.Data.lookClass = p.look.contactClass;
             contact.Data.lookSeed = p.motionSeed;
             var motion = go.AddComponent<ContactMotion>();
-            motion.Initialise(contact, p.look.behaviour, p.speed, p.goal, p.orbitRadius, p.motionSeed, wingL, wingR);
+            motion.Initialise(contact, p.beh >= 0 ? (FlightBehaviour)p.beh : p.look.behaviour, p.speed, p.goal, p.orbitRadius, p.motionSeed, wingL, wingR);
+            if (p.beh >= (int)FlightBehaviour.ZigZag) motion.SetPattern(p.patternEnd, p.agl);
             if (p.path != null)
             {
                 bool hostileTruth = p.def.contactClass == ContactClass.HostileQuad || p.def.contactClass == ContactClass.HostileFixedWing;
@@ -705,7 +768,7 @@ namespace Chaukanna.Scenario
         Vector3 OnSector(float bearingDeg, float radius, float altitude)
         {
             Vector3 forward = transform.forward; forward.y = 0f;
-            Vector3 dir = Quaternion.AngleAxis(bearingDeg, Vector3.up) * forward.normalized;
+            Vector3 dir = Quaternion.AngleAxis(bearingDeg + aSectorOffset, Vector3.up) * forward.normalized;
             Vector3 origin = transform.position; origin.y = 0f;
             Vector3 p = origin + dir * radius;
             // Altitude is height above the ground there, so nothing spawns inside a hill on generated terrain.

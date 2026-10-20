@@ -11,6 +11,31 @@ namespace Chaukanna.Scenario
     // Swarm = the drone swarm (one centre, the members flock round it); Flock = bird flocks (one path per flock, in turn).
     public enum PathUse { Drone, Bird, Swarm, Flock }
 
+    // How a single drone or bird of one type flies from its spawn. Default = what its contact definition says. CustomPath = it flies a path
+    // drawn on the 2D map (a drone path for drones, a bird path for birds) and, if none fits, flies as Default. Any other pattern is
+    // flown as named and ignores drawn paths for that type.
+    public enum FlightPattern { Default, StraightIn, Orbit, ZigZag, PopUp, TerrainFollow, Loiter, CustomPath }
+
+    public static class FlightPatterns
+    {
+        public static string Label(FlightPattern p)
+        {
+            switch (p)
+            {
+                case FlightPattern.StraightIn: return "STRAIGHT IN";
+                case FlightPattern.Orbit: return "ORBIT THE POST";
+                case FlightPattern.ZigZag: return "ZIG-ZAG";
+                case FlightPattern.PopUp: return "POP-UP";
+                case FlightPattern.TerrainFollow: return "TERRAIN-FOLLOWING";
+                case FlightPattern.Loiter: return "LOITER";
+                case FlightPattern.CustomPath: return "CUSTOM PATH";
+                default: return "DEFAULT";
+            }
+        }
+
+        public static FlightPattern Next(FlightPattern p) => (FlightPattern)(((int)p + 1) % 8);
+    }
+
     // One point of a custom path. x, z are world metres (east / north of the terrain centre, the same numbers as the Map tab).
     [Serializable]
     public struct Waypoint

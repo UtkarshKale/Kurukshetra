@@ -360,6 +360,9 @@ namespace Chaukanna.Trainer
             Working.hostileSpoofPercent = Stepper("Spoof %", Mathf.RoundToInt(Working.hostileSpoofPercent), 5, row, 0, 100);
             GUILayout.EndHorizontal();
 
+            if (field == null) field = new GUIStyle(GUI.skin.textField);
+            field.fontSize = fontSize;
+            ScenarioOptionsPanel.Draw(Working, "f6.opt", label, small, field, button, row, 100f);
             PathsPanel(row);
             LayersPanel(row);
             Chaukanna.Audio.SoundEngine.DrawPanel(label, small, button, row, fontSize);
@@ -584,8 +587,8 @@ namespace Chaukanna.Trainer
             // Spawn ring and sector edges.
             for (int i = 0; i < 90; i++) Dot(centre + Polar(i * 4f, radius * scale), 1.5f, line);
             float half = spawner.ActiveArc * 0.5f;
-            Dotted(centre, -half, radius * scale, line);
-            Dotted(centre, half, radius * scale, line);
+            Dotted(centre, spawner.ActiveSectorOffset - half, radius * scale, line);
+            Dotted(centre, spawner.ActiveSectorOffset + half, radius * scale, line);
 
             // Player's view cone: where the camera points and how wide it sees.
             if (playerCamera != null)
