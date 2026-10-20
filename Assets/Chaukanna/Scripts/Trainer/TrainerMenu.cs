@@ -365,6 +365,10 @@ namespace Chaukanna.Trainer
             return problems;
         }
 
+        // The DEMO button (and its presenter checklist, shown only in a demo run) is hidden: the owner will record the demo
+        // (2026-10-20). The code stays so it can be switched back on.
+        const bool ShowDemo = false;
+
         // DEMO: the best real terrain already on this PC (else a procedural plain), the curated demo scenario (a hostile quad group, a swarm of 200,
         // a bird flock, own ISR, civilians, an ROE card change, two paths), one player at the post, sound on, then START. Nothing is downloaded.
         public bool StartDemo()
@@ -471,7 +475,7 @@ namespace Chaukanna.Trainer
             float titleW = Mathf.Min(300f, Mathf.Ceil(title.CalcSize(new GUIContent(titleText)).x) + 6f);
             GUI.Label(new Rect(pad, 8f, titleW, 38f), titleText, title);
             float tabsX = pad + titleW + 12f;
-            float tabsW = Mathf.Min(900f, w - 290f - 14f - tabsX);       // DEMO and START begin at w - 290
+            float tabsW = Mathf.Min(900f, w - (ShowDemo ? 290f : 180f) - 14f - tabsX);       // START begins at w - 180 (DEMO at w - 290 when shown)
             if (tabStyle == null) tabStyle = new GUIStyle(button);
             tabStyle.fontSize = tabsW < 700f ? Mathf.Max(10, fontSize - 3) : fontSize;
             tab = (Tab)GUI.Toolbar(new Rect(tabsX, 10f, Mathf.Max(200f, tabsW), 34f), (int)tab, TabNames, tabStyle);
@@ -480,7 +484,7 @@ namespace Chaukanna.Trainer
             GUI.backgroundColor = problems.Count == 0 ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.6f, 0.6f, 0.6f);
             if (GUI.Button(new Rect(w - 180f, 8f, 166f, 38f), "<b>START</b>", new GUIStyle(button) { fontSize = fontSize + 6 })) StartSession();
             GUI.backgroundColor = new Color(0.95f, 0.75f, 0.25f);
-            if (GUI.Button(new Rect(w - 290f, 8f, 104f, 38f), new GUIContent("<b>DEMO</b>", "One click: the best terrain on this PC, a curated 3.5-minute scenario (hostile quads, a swarm of 200, a bird flock, own ISR, a civilian, an ROE card change, two paths), sound on, and START. The presenter checklist shows in the run (F8 hides it)."), new GUIStyle(button) { fontSize = fontSize + 4 })) StartDemo();
+            if (ShowDemo && GUI.Button(new Rect(w - 290f, 8f, 104f, 38f), new GUIContent("<b>DEMO</b>", "One click: the best terrain on this PC, a curated 3.5-minute scenario (hostile quads, a swarm of 200, a bird flock, own ISR, a civilian, an ROE card change, two paths), sound on, and START. The presenter checklist shows in the run (F8 hides it)."), new GUIStyle(button) { fontSize = fontSize + 4 })) StartDemo();
             GUI.backgroundColor = old;
 
             // Message strip along the bottom.

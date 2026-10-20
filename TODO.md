@@ -377,3 +377,4 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 
 - [ ] VR-HOLD. VR is on hold by the owner's decision (2026-10-20: "do not build vr"). No VR work, packages or tests until the owner says so.
 - [x] POLISH-FIX-LINES (2026-10-20). Stray lines on the MAP tab fixed (rotation-free GuiDraw.Line everywhere); 2D map reduced to paths + heights with a pointer to the 3D editor. Hand test pending.
+- [x] DEMO-OFF (2026-10-20). DEMO button and presenter checklist hidden (TrainerMenu.ShowDemo = false) by the owner's decision: the demo will be recorded. DEMO-SCRIPT.md kept as a doc.

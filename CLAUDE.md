@@ -39,6 +39,8 @@ player view and a trainer panel, plus a TrainerMenu scene. Unity 6000.6.3f1, URP
 
 13. Tokens (owner, 2026-10-19): no long or recurring self-test suites, long Play-mode runs, multi-minute builds or stress runs without asking the owner first. After a change run a compile check and at most the one small test for that code.
     2026-10-20: compile check only; any test needs the owner's go first (brief: which tests, est. time).
+14. Build only what the owner asked for (2026-10-20). No new features, buttons, screens or behaviour changes on your own;
+    if a change is major or ambiguous, ask the owner a short question first and wait.
 
 ## How to work in this project
 - Drive the open Editor with the Unity CLI (`unity command ...`, needs the `com.unity.pipeline` package, already in the
