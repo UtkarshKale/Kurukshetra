@@ -68,7 +68,7 @@ namespace Chaukanna.Trainer
         bool flying;
 
         Tool tool = Tool.Select;
-        bool testing;
+        bool testing, backing;
 
         int selManual = -1, selSpawn = -1, selGroup = -1;
         DragKind drag;
@@ -219,6 +219,9 @@ namespace Chaukanna.Trainer
         // From a test run back to the editor: the field is built again from the same settings (a few seconds).
         void BackToEditor()
         {
+            if (backing) return;
+            backing = true;
+            Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
             SessionSetup.editorMode = true;
             SessionSetup.LoadWithScreen(SessionSetup.fieldScenePath);
         }
@@ -435,6 +438,7 @@ namespace Chaukanna.Trainer
 
         void Update()
         {
+            if (testing && Keyboard.current != null && Keyboard.current.f9Key.wasPressedThisFrame) { BackToEditor(); return; }
             if (testing || cam == null) return;
             var kb = Keyboard.current;
             var mouse = Mouse.current;
@@ -1239,13 +1243,28 @@ namespace Chaukanna.Trainer
             GUI.Label(r, text, labelWorld);
         }
 
+        // The "Back to the 3D editor" button of a test run, in screen pixels measured from the bottom (the mouse's frame).
+        // ObserverLook asks, so a click on the button does not capture the mouse (a press that locks the cursor makes the
+        // release land elsewhere: the button did nothing in a build).
+        public static bool PointerOverTestBar(Vector2 mouse)
+        {
+            if (Current == null || !Current.testing) return false;
+            float ui = Screen.height / 720f;
+            return mouse.x >= Screen.width - 256f * ui && mouse.y >= Screen.height - 44f * ui;
+        }
+
         void DrawTestBar()
         {
-            if (label == null) return;
+            GUI.depth = -50;
+            if (button == null)
+            {
+                label = new GUIStyle(GUI.skin.label) { wordWrap = true, richText = true };
+                button = new GUIStyle(GUI.skin.button) { richText = true };
+            }
             float ui = Screen.height / 720f;
             var r = new Rect(Screen.width - 250f * ui, 6f * ui, 244f * ui, 32f * ui);
             button.fontSize = Mathf.RoundToInt(14f * ui);
-            if (GUI.Button(r, "Back to the 3D editor", button)) BackToEditor();
+            if (GUI.Button(r, "Back to the 3D editor (F9)", button)) BackToEditor();
         }
 
         void DrawPanel()

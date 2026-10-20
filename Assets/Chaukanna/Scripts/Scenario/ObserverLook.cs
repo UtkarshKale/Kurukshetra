@@ -92,7 +92,7 @@ namespace Chaukanna.Scenario
             if (Chaukanna.Player.LassoSelect.Holding) return;          // Tab held: the mouse draws the lasso, it does not look
 
             // Only a click inside the player's view captures the mouse (matters in split-screen).
-            if (mouse.leftButton.wasPressedThisFrame && PlayerView.Contains(mouse.position.ReadValue())) Cursor.lockState = CursorLockMode.Locked;
+            if (mouse.leftButton.wasPressedThisFrame && PlayerView.Contains(mouse.position.ReadValue()) && !Chaukanna.Trainer.ScenarioEditor3D.PointerOverTestBar(mouse.position.ReadValue())) Cursor.lockState = CursorLockMode.Locked;
             if (kb != null && kb.escapeKey.wasPressedThisFrame) Cursor.lockState = CursorLockMode.None;
             if (Cursor.lockState != CursorLockMode.Locked) return;
             if (Chaukanna.Player.ViewRigSwitch.LookFrozen) return;     // VR radial menu open: the mouse is picking an item
