@@ -271,6 +271,7 @@ namespace Chaukanna.Net
                 if (nm.IsListening) nm.Shutdown();
             }
             VoiceChat.End();
+            PlayerAvatars.End(this);
             Discovery.StopResponder();
             role = Role.None;
             inField = false;
@@ -359,7 +360,7 @@ namespace Chaukanna.Net
                 RefusedMessage = nm != null ? nm.DisconnectReason ?? "" : "";
                 nm.OnClientConnectedCallback -= OnConnected;
                 nm.OnClientDisconnectCallback -= OnDisconnected;
-                VoiceChat.End();
+                VoiceChat.End(); PlayerAvatars.End(this);
                 // Lost the trainer's PC mid-run: keep this trainee's result. A Team sky is gone, so that run ends here and is
                 // scored and saved on this PC; a Solo run simply carries on.
                 if (inField)
@@ -412,6 +413,7 @@ namespace Chaukanna.Net
         void LeaveField()
         {
             VoiceChat.End();
+            PlayerAvatars.End(this);
             inField = false;
             endSent = false;
             RunConditions.NetTeamClient = false;
@@ -454,6 +456,7 @@ namespace Chaukanna.Net
             Note($"Entering the field as {(RunConditions.SeatRole == SeatRole.Any ? "ANY" : NetPlayer.RoleName(RunConditions.SeatRole))} ({roster.mode}).");
             // Proximity voice is for TEAM runs (one shared place); the host records it for the after-action review.
             VoiceChat.Begin(this, roster.mode == NetMode.Team);
+            PlayerAvatars.Begin(this);
         }
 
         public void SendResult(Chaukanna.Scoring.SessionResult s, bool final)
@@ -718,6 +721,8 @@ namespace Chaukanna.Net
         // --- Player poses (10 Hz) and the clock ping.
 
         float nextPose, nextPing;
+        Chaukanna.Player.Binoculars binos;
+        Camera binosCam;
         int pingBurst;
 
         // Every seat sends its pose to the host ten times a second; the host stores it (the per-seat list the replay will use),
@@ -731,6 +736,8 @@ namespace Chaukanna.Net
             if (sp == null || sp.Waiting || cam == null) return;
             var v = VoiceChat.Instance;
             byte flags = (byte)(v != null && v.Transmitting ? (v.TxChannel == 1 ? 2 : 1) : 0);
+            if (binos == null || binosCam != cam) { binosCam = cam; binos = cam.GetComponentInParent<Chaukanna.Player.Binoculars>(); }
+            if (binos != null && binos.Zoomed) flags |= 4;
             Vector3 origin = RunOrigin(sp), p = cam.transform.position;
             var m = new PoseMsg
             {

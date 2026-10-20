@@ -337,3 +337,6 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [x] VOI-1. F10 voice settings (mic mode, PTT key, device, level meter, output volume), saved in PlayerPrefs. 2026-10-20, compile only.
 - [ ] VOI-1a. Hand-test VOI-1 (see PROGRESS 2026-10-20 F10).
 - [ ] VOI-1b. Deferred (nothing deleted): a mic input gain slider; a separate radio key binding; noise suppression; a VAD threshold slider; show the chosen PTT key in the lobby text (it still says V).
+- [x] AVA-1. Player beans at synced seat poses with name / unit tag and binocular state (flag bit 2), behind IPlayerAvatar. 2026-10-20, compile only.
+- [ ] AVA-1a. Hand-test AVA-1 (two PCs, or host + client build).
+- [ ] AVA-1b. Deferred (nothing deleted): animated 3D avatar models through PlayerAvatars.Factory: walk, run, hold-binoculars, binoculars-up animations (drive from the smoothed speed and the binocular flag); true interpolation with a render delay instead of the exponential follow; feet snapped to the terrain height; observer / trainer avatars styled differently.

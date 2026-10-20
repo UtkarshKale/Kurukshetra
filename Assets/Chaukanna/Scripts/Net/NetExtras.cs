@@ -16,11 +16,12 @@ namespace Chaukanna.Net
         public float time;                   // host scenario time (the sender's clock mapped to the host's)
         public Vector3 rel;
         public float yaw, pitch, fov;
-        public byte flags;                   // bit 0: talking on voice (V), bit 1: talking on radio (Y)
+        public byte flags;                   // bit 0: talking on voice, bit 1: talking on radio, bit 2: binoculars up
 
         public const int Bytes = 2 + 4 + 12 + 2 + 2 + 2 + 1;
         public bool Voice => (flags & 1) != 0;
         public bool Radio => (flags & 2) != 0;
+        public bool Binoculars => (flags & 4) != 0;
     }
 
     // A seat's pose in world coordinates on this PC.
