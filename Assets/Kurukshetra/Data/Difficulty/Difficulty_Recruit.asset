@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a7498378fa769b4a9b2d6c9f0f9557d, type: 3}
+  m_Name: Difficulty_Recruit
+  m_EditorClassIdentifier: Assembly-CSharp::Kurukshetra.Trainer.DifficultyProfile
+  displayName: Recruit
+  contactCountMultiplier: 0.7
+  decoyShare: 0.7
+  speedMultiplier: 0.8
+  blendInPercent: 0
+  extraHazeLevels: 0
+  minVisibleSizeMultiplier: 0.8
+  aiErrorRateOk: 0.08
+  aiErrorRateDegraded: 0.2
+  sensorDegradedProbability: 0.1
+  roeFlipProbability: 0.2

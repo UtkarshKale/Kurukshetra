@@ -123,14 +123,6 @@ InitTestScene*.unity*
 desktop.ini
 desktop.ini.meta
 
-# Local agent / dev notes (not part of the submission)
-.agents/
-.claude/
-.vscode/
-AGENTS.md
-CLAUDE.md
-CONTEXT.md
-HANDOFF.md
-TODO.md
-PROGRESS.md
+
+# Local secrets
 *.key

@@ -1,0 +1,182 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: db225c1c61b4c1340a45c70bdab0fd91, type: 3}
+  m_Name: MixedSky_RollingHills
+  m_EditorClassIdentifier: Assembly-CSharp::Kurukshetra.TerrainGen.TerrainGenConfig
+  mode: 3
+  seed: 1001
+  demPath: 
+  centreLatitude: 0
+  centreLongitude: 0
+  useFileCentre: 1
+  provenance: Pure procedural. No real-world elevation data.
+  licenceAndAttribution: 
+  sizeMetres: 5000
+  heightmapResolution: 1025
+  tilesPerSide: 2
+  groundPostAtZero: 1
+  flattenPostPad: 1
+  postPadRadius: 20.4
+  postPadFalloff: 160
+  baseElevation: 150
+  layers:
+  - enabled: 1
+    label: Layer 1
+    kind: 0
+    amplitudeMetres: 150
+    featureSizeMetres: 1500
+    octaves: 5
+    lacunarity: 2
+    persistence: 0.5
+    seedOffset: 0
+    ridgeExponent: 2
+    power: 1
+    useCurve: 0
+    curve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    centred: 0
+  warp:
+    enabled: 0
+    strengthMetres: 300
+    featureSizeMetres: 1200
+    seedOffset: 9001
+    blend: 1
+  terrace:
+    enabled: 0
+    intervalMetres: 40
+    blend: 0.8
+  displacementMultiplier: 1
+  sourceReliefScale: 1
+  modificationBlend: 1
+  modificationMask: {fileID: 0}
+  surfaceKit: {fileID: 11400000, guid: 926e5d6143176684a944438205ae5391, type: 2}
+  biome: 0
+  surfaceRules:
+  - label: Sand (low, flat)
+    layer: {fileID: 8574412962073106934, guid: 3e48236266e0a2742a8acd60a59828ef, type: 2}
+    minHeight: 0
+    maxHeight: 15
+    minSlope: 0
+    maxSlope: 12
+    heightBlend: 15
+    slopeBlend: 6
+    weight: 1
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
+  - label: Grass (gentle)
+    layer: {fileID: 8574412962073106934, guid: 0d240bc6454ee5b4d9338531dfe27209, type: 2}
+    minHeight: 10
+    maxHeight: 900
+    minSlope: 0
+    maxSlope: 24
+    heightBlend: 15
+    slopeBlend: 6
+    weight: 1
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
+  - label: Dirt (moderate slope)
+    layer: {fileID: 8574412962073106934, guid: ce4468c939b5ab34080df2872cf8ee2c, type: 2}
+    minHeight: 0
+    maxHeight: 1200
+    minSlope: 20
+    maxSlope: 38
+    heightBlend: 15
+    slopeBlend: 6
+    weight: 1
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
+  - label: Rock (steep)
+    layer: {fileID: 8574412962073106934, guid: fc45b28e9d7cff34abf88c4d2a237629, type: 2}
+    minHeight: 0
+    maxHeight: 100000
+    minSlope: 34
+    maxSlope: 90
+    heightBlend: 15
+    slopeBlend: 6
+    weight: 1.5
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
+  - label: Snow (high)
+    layer: {fileID: 8574412962073106934, guid: 2f9843d931435e240ad2f5cf4f283b5f, type: 2}
+    minHeight: 1100
+    maxHeight: 100000
+    minSlope: 0
+    maxSlope: 50
+    heightBlend: 80
+    slopeBlend: 6
+    weight: 1
+    absoluteHeight: 0
+    minWetness: 0
+    maxWetness: 1
+    wetnessBlend: 0.15
+    minCurvature: -100
+    maxCurvature: 100
+    curvatureBlend: 0.02
+    northBias: 0
+    breakup: 0
+    breakupScaleMetres: 40
+  imageryPath: 
+  imageryBlend: 1

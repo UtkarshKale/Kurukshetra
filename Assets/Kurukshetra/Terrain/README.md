@@ -1,0 +1,244 @@
+# Kurukshetra Terrain Generator
+
+One tool that builds Unity terrain three ways: from real elevation data, from seeded procedural noise, or from a mix of both.
+
+Open it from the Unity menu: **Kurukshetra > Terrain Generator**.
+
+## What it is for in this project
+
+- The observation post sits at the centre of the terrain. Contacts spawn on a 1 km ring and can be seen out to 2 km, so the default area is 5 km x 5 km.
+- The terrain's collider blocks line of sight: a contact behind a ridge is not detected.
+- Contact altitudes are heights above the ground, so nothing spawns or flies inside a hill.
+- The ground under the post is placed at world height 0, so the post and camera need no changes.
+- The user's own `Ground` object in `MixedSky.unity` is never touched. Generated terrain is a separate object named `GeneratedTerrain (<config>)`, saved disabled. To use it: enable it and disable `Ground`.
+
+## The three layers
+
+| Layer | What it is | Where it lives |
+|---|---|---|
+| A. Source elevation | Real heights in metres from an elevation file. Never modified. | `ElevationGrid`, loaded from the file each time |
+| B. Procedural displacement | Seeded noise in metres, added to (or replacing) layer A. | Noise layers, warp and terrace on the config |
+| C. Surface | Which terrain layer shows where, from height and slope. | Surface rules on the config |
+
+`final elevation = source elevation + procedural displacement`
+
+## Modes
+
+| Mode | What you get |
+|---|---|
+| Real World Accurate | The file, untouched. Noise, warp, shaping, terracing and the post pad are all ignored. |
+| Real World + Subtle Detail | The file plus low-amplitude detail in metres. Multiplier 0 (or amplitude 0) gives the accurate terrain back exactly, with the post pad off. |
+| Real World + Major Variations | Relief scale, noise, warp and terraces, blended with the untouched file (0 = file, 1 = modified), optionally limited by a mask texture. |
+| Pure Procedural | No file. Base elevation plus noise layers. Presets: rolling hills, plains with peaks, mountain ranges, ridged and rugged, Voronoi, mesas, terraced, warped alien, custom. |
+| Custom Hybrid | Separate weights for the real landform ("source weight") and the procedural displacement ("procedural weight"). |
+
+The same seed and settings always give the same terrain. All settings are stored on a `TerrainGenConfig` asset (`Assets/Kurukshetra/Terrain/Configs/`), not in the window.
+
+## Quick start: procedural
+
+1. **Kurukshetra > Terrain Generator**, press **New** (or pick `MixedSky_RollingHills`).
+2. Mode: Pure Procedural. Choose a preset and press **Apply**.
+3. **Preview heightfield** shows a shaded-relief picture, north up.
+4. **Generate terrain** builds it in the open scene and saves the tile data under `Assets/Kurukshetra/Terrain/Generated/<config name>/`.
+5. Save the scene (Ctrl+S).
+
+## Quick start: real elevation
+
+1. Get an elevation file for your area (see "Getting elevation data").
+2. Mode: Real World Accurate. **Browse** to the file. The window shows its size, bounds, resolution and elevation range.
+3. Leave "Centre on the file" ticked, or untick it and enter the latitude and longitude you want at the centre.
+4. **Generate terrain**. Read the report: it states the output spacing, the source spacing, and warns if detail was lost or the area runs off the edge of the file.
+5. Switch to another real-world mode to add detail. **Restore unmodified DEM** switches back to Accurate and regenerates.
+
+## Supported elevation files
+
+| Format | Notes |
+|---|---|
+| `.hgt` (SRTM) | One-degree tile, 1 or 3 arc-second. Must keep its name (for example `N28E077.hgt`): the position comes from it. Unzip `.hgt.zip` / `.hgt.gz` first. |
+| `.asc` (Esri ASCII grid, GDAL "AAIGrid") | Must be in latitude/longitude degrees (EPSG:4326). Honours `NODATA_value`. |
+| `.raw` / `.r16` + `.json` | Headerless 16-bit heightmap with a metadata file of the same name (below). |
+
+**GeoTIFF is not read directly.** No geospatial library is installed, and a hand-written partial TIFF reader would be unreliable. Convert with GDAL (free, from gdal.org or QGIS / OSGeo4W):
+
+```
+gdalwarp -t_srs EPSG:4326 input.tif latlon.tif        (only if the file is not already in degrees)
+gdal_translate -of AAIGrid latlon.tif area.asc
+```
+
+Maintained libraries that could add direct GeoTIFF reading later (each is a new dependency, so ask first): GDAL C# bindings (MaxRev.Gdal), BitMiracle LibTiff.NET, DEM.Net.
+
+### RAW metadata (`name.json` beside `name.raw`)
+
+```json
+{
+  "width": 1025, "height": 1025,
+  "littleEndian": true, "signed": false,
+  "west": 77.00, "south": 28.00, "east": 77.05, "north": 28.05,
+  "elevationScale": 0.1, "elevationOffset": 180.0,
+  "hasNoData": false, "noDataValue": 0,
+  "rowOrder": "north-up",
+  "crs": "EPSG:4326",
+  "source": "where it came from", "licence": "its licence"
+}
+```
+
+Instead of the four edges you may give `"centreLatitude"`, `"centreLongitude"` and `"cellSizeMetres"`. Elevation in metres = stored value x `elevationScale` + `elevationOffset`.
+
+## Getting elevation data
+
+Nothing is downloaded automatically, and no data ships with the project.
+
+| Source | Access | Notes |
+|---|---|---|
+| OpenTopography Global DEM API (portal.opentopography.org/apidocs) | Free account and API key | The window can call it (see below). Datasets include SRTMGL1, SRTMGL3, COP30, COP90, NASADEM. Rate limits apply. |
+| NASA Earthdata (SRTM, NASADEM) | Free Earthdata login | Download `.hgt` tiles in a browser, then Browse to them. |
+| Copernicus DEM (dataspace.copernicus.eu) | Free account | GeoTIFF: convert with GDAL as above. |
+
+**OpenTopography from the window:** set the environment variable `OPENTOPOGRAPHY_API_KEY`, or put the key alone in a text file at `<your user folder>/.kurukshetra/opentopography.key`. The key is never stored in the project. Untick "Centre on the file", enter latitude, longitude and an extent, and press Download. Files are cached under the application's persistent data folder (`dem-cache`) and reused. **This path has not been tested end to end**, because no API key was available when it was written; the request and the Esri ASCII reply format follow OpenTopography's published API.
+
+**Licences and attribution:** you are responsible for following the terms of whatever data you use. SRTM and NASADEM are NASA products and ask to be cited. Copernicus DEM is free to use but requires its attribution notice. OpenTopography asks that both the dataset and OpenTopography be cited. Copy the exact wording from the provider's page into the config's "Licence and attribution" field; "Provenance" is filled in when a file is loaded.
+
+## Ground imagery (satellite true colour)
+
+Optional. A picture only colours the terrain; its brightness is never used as height.
+
+- Format: 8-bit RGB **PNG or JPG**, north up.
+- Position: put `<name>.json` beside it with its edges in degrees:
+
+```json
+{ "west": 77.00, "south": 28.00, "east": 77.05, "north": 28.05, "source": "Sentinel-2 L2A true colour, 2025-11-03", "licence": "Contains modified Copernicus Sentinel data 2025" }
+```
+
+- With bounds and a real-world mode, the picture is placed by its coordinates on the terrain. The report warns when it covers only part of the area (the rest uses the surface rules) and refuses to use it when it does not overlap at all.
+- Without bounds, or in Pure Procedural, it is stretched over the whole terrain and the report says so.
+- **Imagery blend / Picture strength**: 0 = surface rules only, 1 = picture only where it covers.
+- Set it in the Terrain Generator window under Appearance, or on the Terrain tab of the trainer menu.
+
+### Preparing data offline with GDAL (for an air-gapped machine)
+
+Do this once on a connected machine, then copy the three files (`dem.asc`, `imagery.png`, `imagery.json`) across. Replace the four numbers with your area's west, south, east, north.
+
+```
+gdalwarp -t_srs EPSG:4326 -te 77.00 28.00 77.05 28.05 -r bilinear  dem_source.tif  dem_clip.tif
+gdal_translate -of AAIGrid dem_clip.tif dem.asc
+
+gdalwarp -t_srs EPSG:4326 -te 77.00 28.00 77.05 28.05 -r cubic  truecolour_source.tif  img_clip.tif
+gdal_translate -of PNG -ot Byte -b 1 -b 2 -b 3 img_clip.tif imagery.png
+```
+
+Then write `imagery.json` with the same four numbers. If the true-colour source is not already 8-bit (raw Sentinel-2 bands are 16-bit reflectance), add a stretch such as `-scale 0 3000 0 255` to the last command.
+
+### Sources planned for this project
+
+| Layer | Source | Notes |
+|---|---|---|
+| Elevation | CartoDEM (Bhuvan, ISRO), SRTM 1 arc-second, or Copernicus GLO-30 | GLO-30 is a surface model: it includes tree tops and roofs. All are about 30 m, which smooths away walls, bunds and tree lines. |
+| True colour | Sentinel-2 (10 m) | Free. Attribution: "Contains modified Copernicus Sentinel data [year]". |
+| Land cover | ESA WorldCover (10 m) | Planned input to drive the surface layers (trees, grass, crops, built-up, bare, water). **Not built yet.** |
+| Buildings | Google Open Buildings | Later. |
+
+Why hybrid: a 30 m elevation grid gives the true large shape of the land but none of the small cover that matters at an observation post. Real World + Subtle Detail and Custom Hybrid keep the real shape and add procedural small-scale relief on top.
+
+No real elevation file or satellite picture has been run through the tool yet; imagery placement has been checked with a synthetic test picture only.
+
+## Trainer menu (scene `TrainerMenu`)
+
+The same generator runs at play time from the trainer's main menu, with no asset files written.
+
+- Open `Assets/Kurukshetra/Scenes/TrainerMenu.unity` and press Play.
+- **Terrain**: mode, preset, seed, area, detail, elevation file, ground picture, Generate preview.
+- **Scenario**: scripted scenarios, Randomize, counts, duration, time of day, visibility, difficulty, ROE.
+- **Map**: click to place each player's post and the drone spawn points. With no spawn points, drones use the ring in front of the post.
+- **Lobby**: placeholder until LAN multiplayer is added.
+- **START** loads the field scene, builds the terrain there from the same settings and seed, flattens a pad under each post, moves the local player to their post and starts the run. Nothing in the field runs before that.
+- In the field, F6 opens the trainer panel, which has **Back to menu**.
+- For a built player (not the Editor), add both scenes to Build Settings.
+## Geographic handling
+
+- Elevation grids are held in latitude/longitude with the north row first; orientation is checked by the self-test.
+- Terrain coordinates are local metres east and north of the centre. Metres per degree come from the WGS84 ellipsoid at the centre latitude, so longitude is scaled correctly for the location (98.4 km per degree at 28 N, 55.8 km at 60 N). Over a few kilometres the error is well under 0.1 %.
+- Heights are used exactly as stored, in metres. There is no normalising to 0-1 that loses scale, no vertical exaggeration and no smoothing. The Unity terrain's height range is the real span of the data plus a metre of headroom.
+- Missing samples (NoData, SRTM voids) are filled from their valid neighbours, growing inwards, so a gap becomes a smooth patch, never a spike. The count is reported.
+- Values outside -1000 m to 9500 m are refused as a wrong format, byte order or unit.
+- Resampling is bilinear. The report gives source spacing and output spacing and says which one limits the detail.
+- Vertical datum: heights are whatever the source uses (EGM96 geoid for SRTM). No datum conversion is done.
+
+## Settings
+
+**Terrain**
+- Area size (m): width and length of the whole terrain.
+- Heightmap resolution: samples along one tile edge, 2^n + 1 (257, 513, 1025...). 513 over 5 km is a sample every 9.8 m.
+- Tiles per side: splits the area into a grid of terrains. Neighbouring tiles share their edge samples and are connected with `SetNeighbors`, so there are no seams.
+- Post ground at height 0: moves the whole terrain up or down so the ground at the centre is world height 0. The shape is not changed.
+- Flatten post pad: levels a circle at the centre and blends it out. This changes the terrain, so it is always ignored in Real World Accurate. Turn it off in the other real-world modes if you need the exact file heights at the centre.
+
+**Noise layers** (all sizes in metres)
+- Kind: Gradient (smooth hills), Ridged (sharp crests, `1 - |noise|`), Cellular (Voronoi).
+- Amplitude: the height range the layer contributes. Feature size: width of its largest features.
+- Octaves, lacunarity, persistence: fractal detail. More octaves add finer detail; lower persistence keeps it subtle.
+- Power: applied to the 0-1 value. Above 1 flattens the lowlands and keeps peaks. Curve: free remapping.
+- Centred: the layer adds and removes height equally (use for displacement on real terrain).
+- Pipeline per layer: sample > normalise to 0-1 > power > curve > centre > multiply by amplitude.
+
+**Domain warp**: bends the terrain by moving where it is sampled. Strength and feature size in metres.
+
+**Terrace / mesa**: steps the height. Interval in metres; blend 0 = smooth, 1 = flat treads with sharp risers.
+
+**Surface rules**: each rule names a terrain layer and the height band (metres above the area's lowest point) and slope band (degrees) it appears in, with blend distances. "Create placeholder layers and default rules" makes flat-colour grass, dirt, rock, sand and snow layers in `Assets/Kurukshetra/Terrain/Layers/`. Replace them with real layers when art exists. Slope is computed by central differences over the true sample spacing.
+
+## Actions
+
+Load / reload elevation file, Download (OpenTopography), Preview heightfield, Generate terrain, Restore unmodified DEM, Export heightmap (.raw + .json), Run terrain self-test.
+
+Generate only ever replaces a terrain that this tool made from the same config, and asks first. Tile data is written only inside `Assets/Kurukshetra/Terrain/Generated/<config name>/`.
+
+## Self-test
+
+"Run terrain self-test" in the window, or from the CLI: `Kurukshetra.TerrainGen.TerrainGenSelfTest.Run()`. It covers noise range and coherence, seed repeatability and variation, each shaping stage alone, all presets, tile borders, the three file formats, orientation, NoData, accurate-mode fidelity, zero displacement, amplitude scaling in metres, hybrid weights, bad inputs, and the Unity terrain objects. The elevation files it uses are **synthetic**, written from a known formula so the results can be checked exactly; they are not real GIS data.
+
+## Limits
+
+- No real elevation file has been run through it yet; fidelity has been proven against synthetic files only.
+- No direct GeoTIFF or 16-bit PNG import.
+- The online download is untested without an API key.
+- Terrain can be baked in the editor or built at run start from the trainer menu.
+- Ground imagery is supported (PNG / JPG); land cover (WorldCover) and vegetation are not.
+- No erosion simulation, runtime streaming or GPU generation.
+- One elevation file at a time: an area crossing two `.hgt` tiles needs them merged first (`gdal_merge` or `gdalbuildvrt`, then `gdal_translate -of AAIGrid`).
+- Local metre coordinates are a flat approximation around the centre: fine for a few tens of kilometres, not for whole countries.
+
+## Files
+
+- `Scripts/Noise.cs`: gradient, fBm, ridged and cellular noise.
+- `Scripts/TerrainGenConfig.cs`: the settings asset, presets and validation.
+- `Scripts/ElevationGrid.cs`: source grid, local projection, file readers, NoData filling.
+- `Scripts/HeightfieldGenerator.cs`: the mode pipeline, warp, terrace, post pad, slope.
+- `Scripts/TerrainBuilder.cs`: Unity terrain tiles, surface painting, ground-height lookup.
+- `Scripts/Imagery.cs`: ground picture loading and placement.
+- `Scripts/TerrainGenSelfTest.cs`: acceptance checks.
+- `Scripts/Editor/TerrainGenWindow.cs`: the editor window and script-callable generate.
+
+
+## Real places: pick on the map and download (no key, no GDAL)
+
+On the trainer menu's Terrain tab, **Map: pick a place** shows an OpenStreetMap map. Drag to pan, mouse wheel to zoom, click to put the centre of the area there, or type a place into the search box and press Enter. Set **Radius m**: the terrain is the square that encloses that circle (side = 2 x radius). **Download terrain** fetches the elevation and switches the terrain to it (Real World Accurate unless a real-world mode was already picked). Then press Generate preview, pick a mode and START.
+
+- Elevation source: AWS Open Data **Terrain Tiles** (Mapzen Terrarium PNG, `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`), height = (R x 256 + G + B / 256) - 32768 metres. Attribution: Terrain Tiles, Mapzen / AWS Open Data; sources include SRTM, GMTED2010, ETOPO1, NED and others, listed at https://github.com/tilezen/joerd/blob/master/docs/attribution.md . Code: `Scripts/WebTiles.cs`.
+- Zoom: the finest up to 13 (about 15 to 19 m per pixel at mid latitudes) that keeps the area within 64 tiles; bigger areas use a coarser zoom. Honest resolution: the underlying data is about 30 m (SRTM) in most of the world, including India; finer samples are interpolated.
+- Output: `RealData/<name>/<name>.raw` + `.json` (16-bit, 0.2 m steps from -1000 m, local metric grid around the centre, about two samples per source pixel, 257 to 2049 square). It is a normal RAW + JSON elevation file, so it works offline afterwards and is listed under "Downloaded before".
+- Caches: every downloaded tile (elevation and map) is kept in `%USERPROFILE%/.kurukshetra/tiles/` and never fetched twice.
+- Map tiles: `tile.openstreetmap.org`, with the User-Agent `Kurukshetra-SIH-trainer/0.1`, the visible credit "© OpenStreetMap contributors", only the tiles on screen, at most two at a time (OSM tile usage policy). Search: Nominatim, one request per second at most, only on Enter.
+- Offline: the map shows "Map offline"; type latitude and longitude, or use an area downloaded before.
+- Example data: `RealData/Jammu_AFS` (Jammu Air Force Station, 32.6889 N 74.8375 E, 5 x 5 km, 268 to 313 m: flat plain) with configs `Configs/Jammu_AFS_Accurate`, `Jammu_AFS_Hybrid_SubtleDetail` and `Jammu_AFS_Hybrid_MajorVariations`.
+
+## Trees, grass and buildings (terrain layers)
+
+Three layers stand on the terrain, each Off / Realistic / Procedural (trainer menu Terrain tab, and the F6 panel in the field).
+
+- **Realistic** = the real place. Source: OpenStreetMap (building footprints with height or levels, forests and woods, single trees, tree rows, grass / meadow / park / farmland), fetched once per area from the Overpass API and stored beside the area as `<name>_layers.json` (the raw answers are `<name>_osm.json` and `<name>_osm_surround.json`). Where the map has no landcover, trees and grass are **estimated from the satellite picture's colour** (excess green, dark or textured = tree, lighter = grass) and labelled as an estimate. Buildings never come from satellite colour. An area with no layers file gets only the satellite estimate and no buildings.
+- **Procedural** = generated from the terrain seed: woodland clumps and tree lines (none above 3800 m or on slopes over 35 deg), grass (none on slopes over 30 deg or near the snow line), villages on flat ground (slope under 6 deg), all keeping clear of the post's pad and the Site.
+- **Trees** are Unity terrain trees (density thins with distance from the post), **grass** is drawn by an own GPU-instanced renderer around the player camera (Unity terrain detail layers did not draw in this project, even in a minimal test), **buildings** are footprints extruded exactly (a true 1:1 shape with a flat roof), merged per 250 m cell, with a collider so they block the line of sight. Far buildings beyond the play area are merged boxes.
+- The art is replaceable: `Resources/Kurukshetra/TerrainLayerKit_Default.asset` lists the tree, grass and building prefabs (nose / front along +Z, pivot at the ground, 1 unit = 1 metre). Placeholders are made by the menu **Kurukshetra > Terrain > Build layer placeholders**.
+- Fetching: **Kurukshetra > Terrain > Fetch OSM layers for downloaded areas** (one area at a time, 2 s between queries, the project's User-Agent, at most 2 tries per query 30 s apart). New areas downloaded from the trainer menu fetch their map features as the last step.
+- Credit: "Map features © OpenStreetMap contributors (ODbL)" shows wherever OpenStreetMap data is used (trainer menu, F6 panel, HTML report).
+- Files: `Scripts/OsmLayers.cs` (Overpass client and parser), `LayerData.cs` (file format, JSON reader), `LayerGeometry.cs` (polygons, triangulation, prisms), `SatelliteCover.cs`, `LayerScatter.cs`, `LayerGround.cs` (ground, site clearance, fall-off), `GrassField.cs` (the grass renderer), `TerrainLayerKit.cs`, `TerrainLayers.cs` (the manager), `LayersSelfTest.cs`.

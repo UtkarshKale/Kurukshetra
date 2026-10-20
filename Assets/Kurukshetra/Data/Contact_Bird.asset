@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c55d2224e2eb974aaeca61455c49e46, type: 3}
+  m_Name: Contact_Bird
+  m_EditorClassIdentifier: Assembly-CSharp::Kurukshetra.Scenario.ContactDefinition
+  contactClass: 4
+  displayName: Bird
+  prefab: {fileID: 0}
+  variants: []
+  silhouette: 2
+  cue: 0
+  size: 1.8
+  behaviour: 3
+  speedRange: {x: 8, y: 14}
+  altitudeRange: {x: 15, y: 60}

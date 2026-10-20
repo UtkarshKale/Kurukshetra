@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8190e0a1e76f2a49b514c853ccc187c, type: 3}
+  m_Name: MixedSky_UnderAttack
+  m_EditorClassIdentifier: Assembly-CSharp::Kurukshetra.Trainer.TrainerPreset
+  config:
+    presetName: Mixed Sky - Under Attack
+    seed: 2202
+    duration: 300
+    speedMultiplier: 1
+    hostileCount: 6
+    friendlyCount: 2
+    civilianCount: 2
+    birdCount: 5
+    sectorArcDegrees: 120
+    spawnRingRadius: 1000
+    spawnWindowStart: 3
+    spawnWindowEnd: 240
+    roeAtStart: 5
+    roeFlip: 1
+    roeFlipTime: 90
+    roeFlipTo: 4
+    sensorsDegraded: 0
+    aiErrorOverride: -1

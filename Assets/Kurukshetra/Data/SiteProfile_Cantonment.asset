@@ -1,0 +1,68 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f64eed330c988be4a8ba11da961ec64a, type: 3}
+  m_Name: SiteProfile_Cantonment
+  m_EditorClassIdentifier: Assembly-CSharp::Kurukshetra.Scenario.SiteProfile
+  buildings:
+  - {fileID: 919132149155446097, guid: 5614baa354ef2a64d9a391b3853aac73, type: 3}
+  - {fileID: 919132149155446097, guid: 3d1624fb597ca424d90da4dd84604d0d, type: 3}
+  - {fileID: 919132149155446097, guid: 5f68c89810ee4c74e8a9c783fa629145, type: 3}
+  - {fileID: 919132149155446097, guid: 797bac349e016d54185c412dfc5c537b, type: 3}
+  - {fileID: 919132149155446097, guid: b36debdd9ed4bc34fa1a69a92e972122, type: 3}
+  - {fileID: 919132149155446097, guid: b554bd6c54ee513459f2f3be91ae6b47, type: 3}
+  - {fileID: 919132149155446097, guid: d8ed0cc91d7e22c48aab0dbc4f735e09, type: 3}
+  - {fileID: 919132149155446097, guid: e5d58398355fe6a49a3df8c5bc8181de, type: 3}
+  - {fileID: 919132149155446097, guid: ca34d8eed210a13429194819e723cc22, type: 3}
+  - {fileID: 919132149155446097, guid: eb081b9c9c43a6e4085d0eb992993181, type: 3}
+  - {fileID: 919132149155446097, guid: 9f1352365fc396c4689723ec5cccdd7f, type: 3}
+  - {fileID: 919132149155446097, guid: d03040a543881e4408e90b1833a71c11, type: 3}
+  - {fileID: 919132149155446097, guid: ee9134f90e557e7429992e38fe81e1ab, type: 3}
+  - {fileID: 919132149155446097, guid: 8a99719503a49a34482cf1a30256208c, type: 3}
+  - {fileID: 919132149155446097, guid: f043f5398f5e17f44b8ed252efd0617b, type: 3}
+  - {fileID: 919132149155446097, guid: fc4d690a095072b4e87f7c36868a68e9, type: 3}
+  - {fileID: 919132149155446097, guid: 27fd472e0a9793e4cbab9bf59890627b, type: 3}
+  - {fileID: 919132149155446097, guid: b720a5662c33b4641bb3d79c40222c26, type: 3}
+  - {fileID: 919132149155446097, guid: e4ec37e5ae2ec5c4793bba1eb7af0ccf, type: 3}
+  - {fileID: 919132149155446097, guid: 7fc9eab5af8749a489cd94a35a63647c, type: 3}
+  - {fileID: 919132149155446097, guid: 172ed4c63c87440418ef77d9459b52e6, type: 3}
+  - {fileID: 919132149155446097, guid: 18e1da45838be8640a5de275cfcfed63, type: 3}
+  trees:
+  - {fileID: 919132149155446097, guid: b1f9643c6433e0b4b8410c367575be46, type: 3}
+  - {fileID: 919132149155446097, guid: aaac2252673956443b4bb6b895a24546, type: 3}
+  - {fileID: 919132149155446097, guid: fa0278d24ebea3d49b1110b145f89a28, type: 3}
+  - {fileID: 919132149155446097, guid: dd3cd83a67560c24bab173ec034327e1, type: 3}
+  - {fileID: 919132149155446097, guid: d07453092cb063a429d20c2643ac7eaf, type: 3}
+  - {fileID: 919132149155446097, guid: fb1dfb94892d4264cac673ce0d6fd46f, type: 3}
+  - {fileID: 919132149155446097, guid: 7db8e740f26a9a24c9ed597dba3e4741, type: 3}
+  - {fileID: 919132149155446097, guid: 47d26ab3dec9b0f44bff5cef653a8fc2, type: 3}
+  - {fileID: 919132149155446097, guid: 2f5b8037cc9d2574a9f576744472de5d, type: 3}
+  bushes:
+  - {fileID: 919132149155446097, guid: 78774aad26edb2e43a2262dec483a3e7, type: 3}
+  - {fileID: 919132149155446097, guid: 1bae97ecda16f5744b05f8af2da37712, type: 3}
+  - {fileID: 919132149155446097, guid: 46229d53d5832864c817889955b9c905, type: 3}
+  wallDistance: 45
+  wallHeight: 3
+  halfWidth: 380
+  depth: 600
+  blockSize: 36
+  buildingShare: 0.55
+  buildingFootprint: {x: 10, y: 22}
+  buildingHeight: {x: 6, y: 22}
+  streetTreeSpacing: 55
+  treeLines:
+  - 180
+  - 420
+  - 700
+  treeLineSpacing: 14
+  canalDistance: 300
+  canalWidth: 8
+  treeHeight: {x: 8, y: 15}

@@ -1,0 +1,111 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c01b42066a3d86b45b34055869b7864c, type: 3}
+  m_Name: TerrainLayerKit_Default
+  m_EditorClassIdentifier: Assembly-CSharp::Kurukshetra.TerrainGen.TerrainLayerKit
+  treePrefabs:
+  - {fileID: 3514483221996823209, guid: c4efcc5bb63391f4eaaa643fa4925521, type: 3}
+  - {fileID: 5885180309833833889, guid: 4ea716748d3656f4985a879d119c3db6, type: 3}
+  treeHeight: {x: 8, y: 17}
+  broadleafTrees:
+  - {fileID: 1006013056232763168, guid: e16fa32531ebc3c4ca166897e4a4e947, type: 3}
+  - {fileID: 3969842234928706528, guid: 246230f46e0d83f479a8ba5a26fbe7ba, type: 3}
+  - {fileID: 146395151520686596, guid: 5524e343523ea634190cf9ed5a265071, type: 3}
+  - {fileID: 2679810797136358347, guid: cc94c48aeb1b7a749bf759322ea1580d, type: 3}
+  - {fileID: 6581322631664111818, guid: 8633f17fcb041674fb04088b73a2eddf, type: 3}
+  - {fileID: 3368974809176710069, guid: c2220f4a0f467a34fb436fc8b5065dd9, type: 3}
+  pineTrees:
+  - {fileID: 7496051506590691717, guid: 295c5aaf5b357b141be119538650008d, type: 3}
+  - {fileID: 503524501105550662, guid: e50fcbee4bd77944189fefd6a419b5be, type: 3}
+  - {fileID: 3464479277194973917, guid: e7625c582be4ce840992c12a6ba97f83, type: 3}
+  - {fileID: 4404107992975326651, guid: 857bc2e8150c6404d815ac955d8ade28, type: 3}
+  snowTrees:
+  - {fileID: 2442956562724289111, guid: e9f95583b79bf744a90cd10f13ac1020, type: 3}
+  - {fileID: 5299085801898342964, guid: 4583a467e62d03a45ae3562832c380fd, type: 3}
+  - {fileID: 8390801360501125528, guid: 7b9f79997340fa7449231821644a6a8a, type: 3}
+  - {fileID: 527430377362856521, guid: 213cf383defaab64696d7c7cf8a54695, type: 3}
+  deadTrees:
+  - {fileID: 8894648080683925189, guid: c83f86dcbb2c44e418f4acaccb330dea, type: 3}
+  - {fileID: 6357812098714704957, guid: f1b9b9658d66c074aa94d89828342bde, type: 3}
+  - {fileID: 105306790102738247, guid: b5d868ae725e165418dbbbb9f91159e0, type: 3}
+  bushPrefabs:
+  - {fileID: 364805972406392587, guid: 3becc5dbdb2f6514ea5161315f816aa9, type: 3}
+  - {fileID: 3305801266319039784, guid: 9486fcb1b6ff4d0429410ea96242a833, type: 3}
+  - {fileID: 583788462718954255, guid: b4ce487a0b63d2c4081ee7320a2a7a0c, type: 3}
+  - {fileID: 2703588661492172130, guid: c59d024a6e778bc45974bd531a0ed740, type: 3}
+  bushSnowPrefabs:
+  - {fileID: 1519442199246917639, guid: b362ead08dcc0d44696a3ebc44a784c3, type: 3}
+  - {fileID: 4678913819277867129, guid: c99bbf0d34a43a44182ebbdeba84c5b2, type: 3}
+  rockPrefabs:
+  - {fileID: 919132149155446097, guid: b2fd185c080de294eb1c0d286dd45683, type: 3}
+  - {fileID: 919132149155446097, guid: 34049f55bfce4a440939924b7f5d2dd8, type: 3}
+  - {fileID: 919132149155446097, guid: d9fcc79f307af094c83c9c5189f8751b, type: 3}
+  - {fileID: 919132149155446097, guid: c027ce2de21fd524484a3f5ceed50475, type: 3}
+  - {fileID: 919132149155446097, guid: 1e680234118128c41bf54ed4b5f37bce, type: 3}
+  - {fileID: 919132149155446097, guid: cb89c2a27467e084fafb0edbd016f403, type: 3}
+  - {fileID: 919132149155446097, guid: 3d32dec31cd559e4e94f670f97c2c6a8, type: 3}
+  bushScale: {x: 0.9, y: 1.7}
+  grassPrefabs:
+  - {fileID: 7771706426000198866, guid: c22ed9060ed44614498bb45e4827ab84, type: 3}
+  grassTextures: []
+  grassHealthy: {r: 0.45, g: 0.62, b: 0.25, a: 1}
+  grassDry: {r: 0.62, g: 0.58, b: 0.32, a: 1}
+  grassWidth: {x: 0.6, y: 1}
+  grassHeight: {x: 0.35, y: 0.6}
+  buildingPrefabs:
+    house:
+    - {fileID: 6576585029864637477, guid: d51d9aa85d14bd14a943a69107b0afa2, type: 3}
+    - {fileID: 8109693225112106686, guid: e00a9833587b7a74e9d6f229f432ffc4, type: 3}
+    - {fileID: 2392713973685131875, guid: 68cdb3462899b714ca97543c96d98293, type: 3}
+    - {fileID: 1596691244154364929, guid: 003d14575461b8a4ba08348d0f2a89d5, type: 3}
+    - {fileID: 4358723093838351106, guid: 0c9862d59d41d4346a676e3b70a4b16f, type: 3}
+    - {fileID: 3557039217836825167, guid: 5c4a8edfc2a938040bac87d52684c925, type: 3}
+    - {fileID: 4502535043272160894, guid: fc6f0a230797bd34fab73e6b5759fe8e, type: 3}
+    - {fileID: 4415349883139943991, guid: 1a429cd6dd8e8184cba422a349dd4596, type: 3}
+    - {fileID: 714035394403500117, guid: 76f63c67bf8a75245b0c21709273b974, type: 3}
+    - {fileID: 3444367209440537777, guid: bab2c9d6881d62b4ba238d548040951e, type: 3}
+    apartments:
+    - {fileID: 5262391872435452757, guid: eb5ee25aa78830d47a715d6bc4582b9e, type: 3}
+    - {fileID: 7531169679294832456, guid: fed17273977e27e44824b422efb12def, type: 3}
+    - {fileID: 4345786564312929760, guid: ee29217387b6c174c889b3f8f380221b, type: 3}
+    - {fileID: 2797302877008484800, guid: e4297a9e502bd0146a0ee86f91f25819, type: 3}
+    - {fileID: 4678477492768407032, guid: 70ae85174db9c1f479ccd612e18df734, type: 3}
+    - {fileID: 7229723129782497658, guid: 7c5bf90f11f202247bdd81f4a346acb9, type: 3}
+    - {fileID: 7209028936622515704, guid: 65c5f23bbd7362f44af5428acea1eed3, type: 3}
+    commercial:
+    - {fileID: 3575825460460556310, guid: 897a97530b2a1724a974a0744dcc9d32, type: 3}
+    - {fileID: 6191458472251140338, guid: 5a9e1a3387fea1647bca3bc2cac7e788, type: 3}
+    - {fileID: 1699336994857303315, guid: b5c4ced2af8105a4fa1c3b68b0688423, type: 3}
+    - {fileID: 5167702038794275861, guid: cec2abf86c9e78c4d9bc5c3b5122b8ea, type: 3}
+    - {fileID: 7206785268132046969, guid: c8ed1f0d7c0443e4da3d5a9c595022a7, type: 3}
+    industrial:
+    - {fileID: 8980331240710841095, guid: f9b14b39147e3cd488a3f0b9f58f29b7, type: 3}
+    - {fileID: 3583387097042409292, guid: f4f64ca4aa534e449ba83e31302968d9, type: 3}
+    religious: []
+    shed:
+    - {fileID: 4415349883139943991, guid: 1a429cd6dd8e8184cba422a349dd4596, type: 3}
+    - {fileID: 714035394403500117, guid: 76f63c67bf8a75245b0c21709273b974, type: 3}
+    - {fileID: 4284646522322235764, guid: 6eb249c5a250d184789e887821e20539, type: 3}
+    generic:
+    - {fileID: 6576585029864637477, guid: d51d9aa85d14bd14a943a69107b0afa2, type: 3}
+    - {fileID: 8109693225112106686, guid: e00a9833587b7a74e9d6f229f432ffc4, type: 3}
+    - {fileID: 2392713973685131875, guid: 68cdb3462899b714ca97543c96d98293, type: 3}
+    - {fileID: 1596691244154364929, guid: 003d14575461b8a4ba08348d0f2a89d5, type: 3}
+    - {fileID: 4358723093838351106, guid: 0c9862d59d41d4346a676e3b70a4b16f, type: 3}
+    - {fileID: 3557039217836825167, guid: 5c4a8edfc2a938040bac87d52684c925, type: 3}
+    - {fileID: 4502535043272160894, guid: fc6f0a230797bd34fab73e6b5759fe8e, type: 3}
+    - {fileID: 4415349883139943991, guid: 1a429cd6dd8e8184cba422a349dd4596, type: 3}
+    - {fileID: 714035394403500117, guid: 76f63c67bf8a75245b0c21709273b974, type: 3}
+    - {fileID: 3444367209440537777, guid: bab2c9d6881d62b4ba238d548040951e, type: 3}
+  realisticUsesPrefabs: 0
+  buildingMaterial: {fileID: 0}
+  roofMaterial: {fileID: 0}
