@@ -14,6 +14,9 @@ HTML report.
 
 It runs fully offline, on a single PC or an air-gapped LAN, on mid-range hardware.
 
+> You can test this project yourself by downloading the Windows executable build from itch.io:
+> **[utkarshkale.itch.io/kurukshetra](https://utkarshkale.itch.io/kurukshetra)**
+
 ![Binocular view: a swarm under jamming, sensor panel and classification menu](docs/images/binoculars-swarm.jpg)
 
 ---
