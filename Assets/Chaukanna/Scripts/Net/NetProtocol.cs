@@ -11,8 +11,9 @@ namespace Chaukanna.Net
     public enum NetMode { Solo, Team }
 
     // Team mode: what a seat may do. Sentry = lock, classify, report (R), challenge IFF; the commander decides (Hold / Jam /
-    // Engage) on the reports that arrive. Any = everything, and the only role in Solo mode and on a single PC.
-    public enum SeatRole { Any, Sentry, Commander }
+    // Engage) on the reports that arrive. Any = everything, and the only role in Solo mode and on a single PC. Observer = watches
+    // and listens, takes no action at all (the host refuses it as well as the PC). Observer is appended: saved rosters keep their numbers.
+    public enum SeatRole { Any, Sentry, Commander, Observer }
 
     [Serializable]
     public class NetPlayer
@@ -27,7 +28,7 @@ namespace Chaukanna.Net
         public string unit = "Unit 1";       // unit the seat belongs to; the lobby-units feature will set it, until then everyone is Unit 1
 
         public SeatRole Role => (SeatRole)role;
-        public static string RoleName(SeatRole r) => r == SeatRole.Sentry ? "SENTRY" : r == SeatRole.Commander ? "COMMANDER" : "ANY";
+        public static string RoleName(SeatRole r) => r == SeatRole.Sentry ? "SENTRY" : r == SeatRole.Commander ? "COMMANDER" : r == SeatRole.Observer ? "OBSERVER" : "ANY";
     }
 
     [Serializable]
@@ -35,6 +36,38 @@ namespace Chaukanna.Net
     {
         public NetMode mode;
         public List<NetPlayer> players = new List<NetPlayer>();
+        public List<string> units = new List<string> { DefaultUnit };     // the trainer's units (sections); every seat belongs to one
+        public const string DefaultUnit = "Unit 1";
+
+        // The unit list the lobby shows; never empty.
+        public string UnitOrDefault(string unit) => !string.IsNullOrEmpty(unit) && units.Contains(unit) ? unit : (units.Count > 0 ? units[0] : DefaultUnit);
+
+        // Unit editing (host only; LanSession broadcasts after). A name must be non-empty and not already used.
+        public bool AddUnit(string name)
+        {
+            name = (name ?? "").Trim();
+            if (name.Length == 0 || units.Contains(name)) return false;
+            units.Add(name);
+            return true;
+        }
+
+        public bool RenameUnit(string from, string to)
+        {
+            to = (to ?? "").Trim();
+            int i = units.IndexOf(from);
+            if (i < 0 || to.Length == 0 || (to != from && units.Contains(to))) return false;
+            units[i] = to;
+            foreach (var p in players) if (p.unit == from) p.unit = to;
+            return true;
+        }
+
+        // The last unit cannot be deleted; its seats move to the first remaining unit.
+        public bool DeleteUnit(string name)
+        {
+            if (units.Count <= 1 || !units.Remove(name)) return false;
+            foreach (var p in players) if (p.unit == name) p.unit = units[0];
+            return true;
+        }
 
         public NetPlayer Find(ulong id) => players.Find(p => p.clientId == id);
 
@@ -63,6 +96,7 @@ namespace Chaukanna.Net
         public string terrainJson;
         public int difficulty;
         public List<NetPlayer> players = new List<NetPlayer>();
+        public List<string> units = new List<string>();
         public List<Vector2> spawnPoints = new List<Vector2>();
         // A real-terrain run: the area folder's name and its files, so a trainee PC without it can ask the host for it.
         public string areaName = "";

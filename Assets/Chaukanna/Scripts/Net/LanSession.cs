@@ -236,6 +236,7 @@ namespace Chaukanna.Net
             role = Role.Host;
             Register();
             roster.players.Clear();
+            roster.units.Clear(); roster.units.Add(NetRoster.DefaultUnit);
             roster.players.Add(new NetPlayer { clientId = LocalId, name = name, host = true, ready = true, state = "in lobby", role = (int)SeatRole.Commander });
             Note($"Hosting on port {port}. Trainees join with this PC's LAN address ({LocalAddresses()}).");
             hostPort = port;
@@ -300,12 +301,31 @@ namespace Chaukanna.Net
             BroadcastRoster();
         }
 
-        // The Lobby's role button: SENTRY > COMMANDER > ANY > SENTRY.
+        // Host, Lobby tab: put every listed seat into one unit / one role (the multi-select Assign buttons).
+        public void AssignUnit(IEnumerable<ulong> ids, string unit)
+        {
+            if (role != Role.Host || !roster.units.Contains(unit)) return;
+            foreach (var id in ids) { var p = roster.Find(id); if (p != null) p.unit = unit; }
+            BroadcastRoster();
+        }
+
+        public void AssignRole(IEnumerable<ulong> ids, SeatRole r)
+        {
+            if (role != Role.Host) return;
+            foreach (var id in ids) { var p = roster.Find(id); if (p != null) p.role = (int)r; }
+            BroadcastRoster();
+        }
+
+        public void AddUnit() { if (role != Role.Host) return; for (int i = roster.units.Count + 1; ; i++) if (roster.AddUnit("Unit " + i)) break; BroadcastRoster(); }
+        public void RenameUnit(string from, string to) { if (role == Role.Host && roster.RenameUnit(from, to)) BroadcastRoster(); }
+        public void DeleteUnit(string name) { if (role == Role.Host && roster.DeleteUnit(name)) BroadcastRoster(); }
+
+        // The Lobby's role button: SENTRY > COMMANDER > ANY > OBSERVER > SENTRY.
         public void CycleRole(ulong clientId)
         {
             var p = roster.Find(clientId);
             if (p == null) return;
-            SetRole(clientId, p.Role == SeatRole.Sentry ? SeatRole.Commander : p.Role == SeatRole.Commander ? SeatRole.Any : SeatRole.Sentry);
+            SetRole(clientId, p.Role == SeatRole.Sentry ? SeatRole.Commander : p.Role == SeatRole.Commander ? SeatRole.Any : p.Role == SeatRole.Any ? SeatRole.Observer : SeatRole.Sentry);
         }
 
         public void SetReady(bool ready)
@@ -368,6 +388,7 @@ namespace Chaukanna.Net
             hostAreaFolder = areaFolder ?? "";
             packet.mode = roster.mode;
             packet.players = roster.players;
+            packet.units = new List<string>(roster.units);
             Results.Clear();
             foreach (var p in roster.players) { p.state = "loading"; if (!p.host) SendJson(Msg.Start, p.clientId, packet, NetworkDelivery.ReliableFragmentedSequenced); }
             EnterField();
@@ -454,7 +475,7 @@ namespace Chaukanna.Net
             var m = nm.CustomMessagingManager;
             m.RegisterNamedMessageHandler(Msg.Hello, (from, r) => { var p = Read<NetPlayer>(r); OnHello(from, p); });
             m.RegisterNamedMessageHandler(Msg.Ready, (from, r) => { var p = Read<NetPlayer>(r); var me = roster.Find(from); if (me != null) { me.ready = p.ready; BroadcastRoster(); } });
-            m.RegisterNamedMessageHandler(Msg.Roster, (from, r) => { var ro = Read<NetRoster>(r); roster.mode = ro.mode; roster.players.Clear(); roster.players.AddRange(ro.players); });
+            m.RegisterNamedMessageHandler(Msg.Roster, (from, r) => { var ro = Read<NetRoster>(r); roster.mode = ro.mode; roster.players.Clear(); roster.players.AddRange(ro.players); if (ro.units != null && ro.units.Count > 0) { roster.units.Clear(); roster.units.AddRange(ro.units); } });
             m.RegisterNamedMessageHandler(Msg.Start, (from, r) => { PendingStart = Read<StartPacket>(r); AdoptStartRoster(PendingStart); Note("The host started the run."); });
             m.RegisterNamedMessageHandler(Msg.End, (from, r) => { var sp = Spawner; if (sp != null) sp.EndNow(); Note("The host ended the run."); });
             m.RegisterNamedMessageHandler(Msg.NeedArea, (from, r) => { r.ReadValueSafe(out string area); SendArea(from, area); });
@@ -488,6 +509,7 @@ namespace Chaukanna.Net
         void AdoptStartRoster(StartPacket packet)
         {
             roster.mode = packet.mode;
+            if (packet.units != null && packet.units.Count > 0) { roster.units.Clear(); roster.units.AddRange(packet.units); }
             if (packet.players == null || packet.players.Count == 0) return;
             roster.players.Clear();
             roster.players.AddRange(packet.players);
@@ -847,8 +869,8 @@ namespace Chaukanna.Net
             var who = roster.Find(from);
             string seat = who != null ? who.name : "Trainee";
             var reply = new EffectMsg { id = m.id, action = m.action };
-            if (roster.mode == NetMode.Team && who != null && who.Role == SeatRole.Sentry && (PlayerAction)m.action != PlayerAction.Report)
-                reply.result = "refused: a sentry reports, the commander decides";
+            if (roster.mode == NetMode.Team && who != null && !Chaukanna.Player.DecisionLoop.RoleAllows(who.Role, (PlayerAction)m.action))
+                reply.result = who.Role == SeatRole.Observer ? "refused: an observer takes no action" : "refused: a sentry reports, the commander decides";
             else if (c != null && loop != null && loop.RemoteAct(c, (PlayerCall)m.call, (PlayerAction)m.action, seat, from, out bool locked, out bool hit, out string result))
             {
                 reply.locked = locked; reply.hit = hit; reply.result = result;

@@ -1240,23 +1240,79 @@ namespace Chaukanna.Trainer
                     if (GUILayout.Button(lan.LocalReady ? "READY (click to undo)" : "I'm ready", button, GUILayout.Width(240f), GUILayout.Height(row))) lan.SetReady(!lan.LocalReady);
                 }
                 GUILayout.Space(6f);
-                GUILayout.Label("<b>Seats</b>", label);
+                GUILayout.Label("<b>Units</b>  (sections the report can filter by)", label);
+                bool isHost = role == Chaukanna.Net.LanSession.Role.Host;
+                string unitToDelete = null, renameFrom = null, renameTo = null;
+                foreach (var un in lan.roster.units)
+                {
+                    int count = 0;
+                    foreach (var q in lan.roster.players) if (q.unit == un) count++;
+                    GUILayout.BeginHorizontal();
+                    if (isHost)
+                    {
+                        if (!unitEdit.TryGetValue(un, out var buf)) buf = un;
+                        string now = GUILayout.TextField(buf, 20, field, GUILayout.Width(170f), GUILayout.Height(row - 4f));
+                        unitEdit[un] = now;
+                        GUILayout.Label($"{count} seat(s)", small, GUILayout.Width(80f), GUILayout.Height(row - 4f));
+                        if (now != un && GUILayout.Button("Rename", button, GUILayout.Width(90f), GUILayout.Height(row - 4f))) { renameFrom = un; renameTo = now; }
+                        if (lan.roster.units.Count > 1 && GUILayout.Button("Delete", button, GUILayout.Width(80f), GUILayout.Height(row - 4f))) unitToDelete = un;
+                    }
+                    else GUILayout.Label($"<b>{un}</b>   {count} seat(s)", label, GUILayout.Height(row - 4f));
+                    GUILayout.EndHorizontal();
+                }
+                if (renameFrom != null) { lan.RenameUnit(renameFrom, renameTo); unitEdit.Remove(renameFrom); }
+                if (unitToDelete != null) { lan.DeleteUnit(unitToDelete); unitEdit.Remove(unitToDelete); }
+                if (isHost && GUILayout.Button("+ Add unit", button, GUILayout.Width(140f), GUILayout.Height(row - 4f))) lan.AddUnit();
+
+                GUILayout.Space(6f);
+                GUILayout.Label(isHost ? "<b>Seats</b>  (tick seats, then assign them below)" : "<b>Seats</b>", label);
                 bool team = lan.roster.mode == Chaukanna.Net.NetMode.Team;
                 foreach (var p in lan.roster.players)
                 {
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"{p.name}{(p.host ? "  (trainer / host)" : "")}   {(p.host ? "" : p.ready ? "<color=#60E080>READY</color>" : "<color=#FFB040>not ready</color>")}   {p.state}", label, GUILayout.Height(row - 4f));
-                    // Team mode: each seat's role. The trainer clicks to cycle SENTRY / COMMANDER / ANY.
+                    if (isHost)
+                    {
+                        bool was = lobbySel.Contains(p.clientId);
+                        bool now = GUILayout.Toggle(was, "", GUILayout.Width(22f), GUILayout.Height(row - 4f));
+                        if (now && !was) lobbySel.Add(p.clientId); else if (!now && was) lobbySel.Remove(p.clientId);
+                    }
+                    GUILayout.Label($"{p.name}{(p.host ? "  (trainer / host)" : "")}   [{lan.roster.UnitOrDefault(p.unit)}]   {(p.host ? "" : p.ready ? "<color=#60E080>READY</color>" : "<color=#FFB040>not ready</color>")}   {p.state}", label, GUILayout.Height(row - 4f));
+                    // Team mode: each seat's role. The trainer clicks to cycle SENTRY / COMMANDER / ANY / OBSERVER.
                     if (team)
                     {
                         string roleName = Chaukanna.Net.NetPlayer.RoleName(p.Role);
-                        if (role == Chaukanna.Net.LanSession.Role.Host) { if (GUILayout.Button("Role: " + roleName, button, GUILayout.Width(170f), GUILayout.Height(row - 4f))) lan.CycleRole(p.clientId); }
+                        if (isHost) { if (GUILayout.Button("Role: " + roleName, button, GUILayout.Width(170f), GUILayout.Height(row - 4f))) lan.CycleRole(p.clientId); }
                         else GUILayout.Label("<b>" + roleName + "</b>", label, GUILayout.Width(120f), GUILayout.Height(row - 4f));
                     }
                     GUILayout.EndHorizontal();
                 }
+                if (isHost)
+                {
+                    lobbySel.RemoveWhere(id => lan.roster.Find(id) == null);
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"{lobbySel.Count} selected", small, GUILayout.Width(90f), GUILayout.Height(row - 4f));
+                    if (GUILayout.Button("All", button, GUILayout.Width(50f), GUILayout.Height(row - 4f))) foreach (var q in lan.roster.players) lobbySel.Add(q.clientId);
+                    if (GUILayout.Button("None", button, GUILayout.Width(60f), GUILayout.Height(row - 4f))) lobbySel.Clear();
+                    GUILayout.EndHorizontal();
+                    using (new GUIEnabledScope(lobbySel.Count > 0))
+                    {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label("Unit:", small, GUILayout.Width(40f), GUILayout.Height(row - 4f));
+                        foreach (var un in lan.roster.units)
+                            if (GUILayout.Button(un, button, GUILayout.Height(row - 4f))) lan.AssignUnit(new List<ulong>(lobbySel), un);
+                        GUILayout.EndHorizontal();
+                        if (team)
+                        {
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Label("Role:", small, GUILayout.Width(40f), GUILayout.Height(row - 4f));
+                            foreach (var r in new[] { Chaukanna.Net.SeatRole.Sentry, Chaukanna.Net.SeatRole.Commander, Chaukanna.Net.SeatRole.Observer, Chaukanna.Net.SeatRole.Any })
+                                if (GUILayout.Button(Chaukanna.Net.NetPlayer.RoleName(r), button, GUILayout.Height(row - 4f))) lan.AssignRole(new List<ulong>(lobbySel), r);
+                            GUILayout.EndHorizontal();
+                        }
+                    }
+                }
                 if (team && !lan.roster.HasCommander()) GUILayout.Label("<color=#FFB040>No commander: nobody can jam or fire.</color>", label);
-                else if (team) GUILayout.Label("A SENTRY locks, classifies, reports (R) and checks IFF; the COMMANDER sees the reports (list, mini-map, T key) and decides Hold / Jam / Engage. ANY does everything.", small);
+                else if (team) GUILayout.Label("A SENTRY locks, classifies, reports (R) and checks IFF; the COMMANDER sees the reports (list, mini-map, T key) and decides Hold / Jam / Engage. An OBSERVER only watches and listens (no calls, no actions). ANY does everything.", small);
                 if (role == Chaukanna.Net.LanSession.Role.Host) { GUILayout.Space(6f); CommsPanel.Draw(label, small, button, 28f, fontSize); }
                 GUILayout.Label("<color=#9FD0FF>Voice is recorded in TEAM runs for the after-action review.</color>  Hold V to talk to people nearby, Y for the radio (the whole team).", small);
             }
@@ -1269,6 +1325,8 @@ namespace Chaukanna.Trainer
         }
 
         string lanPort = "7777", lanAddress = "192.168.1.10";
+        readonly HashSet<ulong> lobbySel = new HashSet<ulong>();
+        readonly Dictionary<string, string> unitEdit = new Dictionary<string, string>();
         bool startingFromHost;
 
         // A trainee's PC: the host pressed START. Adopt its terrain, scenario and seats, then load the field like a solo run.

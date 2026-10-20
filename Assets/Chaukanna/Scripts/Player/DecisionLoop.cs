@@ -123,6 +123,7 @@ namespace Chaukanna.Player
         // Each contact is still recorded and scored on its own. Returns true if at least one contact took it.
         public bool Classify(PlayerCall call)
         {
+            if (RunConditions.SeatRole == Chaukanna.Net.SeatRole.Observer) { if (sensor != null) sensor.Say(ObserverRefusal, 2f); return false; }
             var targets = sensor.Targets;
             bool group = targets.Count > 1, any = false;
             foreach (var c in targets)
@@ -131,16 +132,19 @@ namespace Chaukanna.Player
         }
 
         // LAN team mode: a sentry reports, the commander decides. Everywhere else every seat may do everything.
+        public const string ObserverRefusal = "OBSERVER: you watch and listen. No calls, reports or actions.";
         public const string SentryRefusal = "SENTRY: report it (R). The commander decides.";
         public static bool RoleAllows(Chaukanna.Net.SeatRole role, PlayerAction action)
         {
-            return role != Chaukanna.Net.SeatRole.Sentry || action == PlayerAction.Report || action == PlayerAction.None;
+            if (action == PlayerAction.None) return true;
+            if (role == Chaukanna.Net.SeatRole.Observer) return false;
+            return role != Chaukanna.Net.SeatRole.Sentry || action == PlayerAction.Report;
         }
 
         public bool Act(PlayerAction action)
         {
             if (sensor == null) sensor = GetComponent<ContactSensor>();     // Awake has not run on a scratch object (self-tests)
-            if (!RoleAllows(RunConditions.SeatRole, action)) { sensor.Say(SentryRefusal, 2f); return false; }
+            if (!RoleAllows(RunConditions.SeatRole, action)) { sensor.Say(RunConditions.SeatRole == Chaukanna.Net.SeatRole.Observer ? ObserverRefusal : SentryRefusal, 2f); return false; }
             var targets = sensor.Targets;
             if (targets.Count == 0) return false;
             // One trigger pull is one salvo: every contact in the group gets a shot, then the cooldown runs.

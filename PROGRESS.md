@@ -2,6 +2,12 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Lobby units and roles (compile check only)
+- Changed: `NetRoster.units` (list of unit names, default Unit 1) with Add / Rename / Delete (a rename moves its seats; the last unit cannot be deleted; deleting moves seats to the first remaining unit). Host-only `LanSession.AssignUnit / AssignRole (multi-seat) / AddUnit / RenameUnit / DeleteUnit`, all broadcast through the existing roster message; the unit list also rides in the start packet (`StartPacket.units`) and a client adopts it. A seat's unit (`NetPlayer.unit`) already fed `RunConditions.UnitId` and the report's unit filter. New role OBSERVER (`SeatRole.Observer` appended, value 3): `DecisionLoop.RoleAllows` refuses every action and `Classify` refuses; the host refuses an observer's decision too (same path as the sentry refusal); the Lobby role button cycles SENTRY > COMMANDER > ANY > OBSERVER. Lobby tab (trainer): Units list with rename field, Rename, Delete, + Add unit; Seats with a tick box each, All / None, then Unit buttons and Role buttons (Role only in TEAM) assign the ticked seats. Clients see units and roles read-only.
+- Verified: compile only (DLL rebuilt, no new error CS). Nothing was run.
+- Not verified: the Lobby UI on screen, the roster sync to a second PC, observer refusal in a run, existing TeamSelfTest/NetSelfTest.
+- NEXT: item 2 (F10 voice settings).
+
 ## 2026-10-20 - Fix 0: SoundEngine NullReferenceException (compile check only)
 - Root cause: SoundEngine builds its voice/bed pool (readonly arrays, clips, AudioSources) in Start(). A script recompile during Play reloads the domain: the non-serialized arrays come back as 12 null entries and Start() is not run again, so Update() hit `voices[i].inUse` (line 212) and Select() line 293 every frame (372 log lines in Editor.log, each right after a recompile). Fix: the pool build is now `Build()`, called from Start and from Update when `voices[0] == null`; it destroys the stale Chaukanna_Sound root first.
 - Verified: compile only (no error CS). Not verified: a recompile during Play with sound running.

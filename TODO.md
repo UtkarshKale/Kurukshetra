@@ -331,3 +331,6 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] R15a. Hand-test R15 (owner): see the PROGRESS.md entry of 2026-10-20 (polish 4-7); no self-test was run for it.
 - [ ] R15b. Deferred from R15 (nothing deleted): (a) lobby unit assignment (NetPlayer.unit and RunConditions.UnitId are in place, nothing sets them yet); (b) a combined replay timeline and per-contact replay in the multi-player HTML report (needs every PC's tracks); (c) summed trends for a unit or all players; (d) E / Q engage-or-jam hint in the tablet and headset HUD; (e) a self-test for unclassified engage / jam scoring and for SessionFilter.Combine (waits for the owner's go); (f) per-player and per-unit filter in the Details view; (g) the F6 Comms panel also for a solo run (voice is LAN-only today).
 - [x] SND-1. SoundEngine NullReference after a recompile in Play (pool rebuilt in Update when missing). 2026-10-20.
+- [x] LOB-1. Lobby units (add / rename / delete) and multi-select assign of unit + role incl. OBSERVER, synced over LAN. 2026-10-20, compile only.
+- [ ] LOB-1a. Hand-test LOB-1 (see PROGRESS 2026-10-20 lobby units).
+- [ ] LOB-1b. Deferred (nothing deleted): observer gets a free-look view without a sensor lock; observer HUD text greyed like the sentry's; self-test for the unit edit rules (NetRoster.AddUnit / RenameUnit / DeleteUnit).
