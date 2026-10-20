@@ -65,6 +65,7 @@ namespace Chaukanna.Replay
     {
         public int id, kind, total, count, n;
         public Vector3 centroid; public Vector3[] agents = new Vector3[0]; public bool[] alive = new bool[0];
+        public Vector3[] vels = new Vector3[0];         // metres per second, from the two samples around the moment (zero when unknown)
     }
 
     public class BbState
@@ -106,7 +107,56 @@ namespace Chaukanna.Replay
         readonly Dictionary<int, BbSeat> seatById = new Dictionary<int, BbSeat>();
         readonly Dictionary<int, BbContact> contactById = new Dictionary<int, BbContact>();
         readonly Dictionary<int, BbGroup> groupById = new Dictionary<int, BbGroup>();
+        public readonly Dictionary<int, int> seatAlias = new Dictionary<int, int>();      // a merged duplicate seat id -> the seat it was merged into
         public long LastSavedBytes;
+
+        // Longest gap (in ticks) that is still drawn as a straight move between two samples. A contact that is in the registry is in
+        // the sky the whole time, so a gap is only skipped frames (a slow frame rate in a big sky), never a jump of the contact.
+        public const int MaxSeatGap = 50, MaxContactGap = 50, MaxGroupGap = 40;
+
+        public BbContact FindContact(int id) { contactById.TryGetValue(id, out var c); return c; }
+
+        // The same person recorded under two seat ids (a solo run whose local seat id changed when the LAN session started, for
+        // instance) shows as two "Player 1" buttons and two view cones. Seats with the same name are merged when they never
+        // disagree about where they are (no common tick more than 3 m apart). Returns how many were merged. Safe to call twice.
+        public int MergeDuplicateSeats()
+        {
+            int merged = 0;
+            for (int i = 0; i < seats.Count; i++)
+            {
+                for (int j = seats.Count - 1; j > i; j--)
+                {
+                    var a = seats[i]; var b = seats[j];
+                    if (string.IsNullOrEmpty(a.name) || a.name != b.name) continue;
+                    if (!SeatsAgree(a, b)) continue;
+                    var byTick = new Dictionary<int, BbSeatSample>();
+                    foreach (var smp in b.s) byTick[smp.tick] = smp;
+                    foreach (var smp in a.s) byTick[smp.tick] = smp;          // on a common tick the first seat's sample wins
+                    var all = new List<BbSeatSample>(byTick.Values);
+                    all.Sort((x, y) => x.tick.CompareTo(y.tick));
+                    a.s = all;
+                    foreach (var e in events) if (e.seat == b.id) e.seat = (short)a.id;
+                    foreach (var c in contacts)
+                        for (int k = 0; k < c.s.Count; k++)
+                            if (c.s[k].lockSeat == b.id) { var cs = c.s[k]; cs.lockSeat = (sbyte)a.id; c.s[k] = cs; }
+                    seatAlias[b.id] = a.id;
+                    seatById.Remove(b.id);
+                    seats.RemoveAt(j);
+                    merged++;
+                }
+            }
+            return merged;
+        }
+
+        static bool SeatsAgree(BbSeat a, BbSeat b)
+        {
+            foreach (var smp in b.s)
+            {
+                int i = FloorIndex(a.s, smp.tick, x => x.tick);
+                if (i >= 0 && a.s[i].tick == smp.tick && (a.s[i].pos - smp.pos).sqrMagnitude > 9f) return false;
+            }
+            return true;
+        }
 
         // ---- Recording ----
 
@@ -202,7 +252,7 @@ namespace Chaukanna.Replay
                 o.id = s.id; o.name = s.name; o.role = s.role;
                 var a = s.s[Mathf.Max(i, 0)];
                 var b = i + 1 < s.s.Count && i >= 0 ? s.s[i + 1] : a;
-                float k = i >= 0 && b.tick > a.tick && b.tick - a.tick <= 20 ? Mathf.Clamp01((tf - a.tick) / (b.tick - a.tick)) : 0f;
+                float k = i >= 0 && b.tick > a.tick && b.tick - a.tick <= MaxSeatGap ? Mathf.Clamp01((tf - a.tick) / (b.tick - a.tick)) : 0f;
                 o.pos = Vector3.Lerp(a.pos, b.pos, k);
                 o.yaw = Mathf.LerpAngle(a.yaw, b.yaw, k);
                 o.pitch = Mathf.Lerp(a.pitch, b.pitch, k);
@@ -217,7 +267,7 @@ namespace Chaukanna.Replay
                 var a = c.s[i];
                 if (i == c.s.Count - 1 && tf > a.tick + 1.01f) continue;      // gone (one tick of grace after the last sample)
                 var b = i + 1 < c.s.Count ? c.s[i + 1] : a;
-                float k = b.tick > a.tick && b.tick - a.tick <= 5 ? Mathf.Clamp01((tf - a.tick) / (b.tick - a.tick)) : 0f;
+                float k = b.tick > a.tick && b.tick - a.tick <= MaxContactGap ? Mathf.Clamp01((tf - a.tick) / (b.tick - a.tick)) : 0f;
                 var o = st.NextContact();
                 o.id = c.id; o.truth = c.truth; o.look = c.look;
                 o.pos = Vector3.Lerp(a.pos, b.pos, k);
@@ -233,15 +283,18 @@ namespace Chaukanna.Replay
                 var a = g.s[i];
                 if (i == g.s.Count - 1 && tf > a.tick + GroupEvery + 0.01f) continue;
                 var b = i + 1 < g.s.Count ? g.s[i + 1] : a;
-                float k = b.tick > a.tick && b.tick - a.tick <= 8 ? Mathf.Clamp01((tf - a.tick) / (b.tick - a.tick)) : 0f;
+                float k = b.tick > a.tick && b.tick - a.tick <= MaxGroupGap ? Mathf.Clamp01((tf - a.tick) / (b.tick - a.tick)) : 0f;
                 var o = st.NextGroup();
                 o.id = g.id; o.kind = g.kind; o.total = g.total; o.count = a.count; o.n = g.reps;
                 o.centroid = Vector3.Lerp(a.centroid, b.centroid, k);
-                if (o.agents.Length != g.reps) { o.agents = new Vector3[g.reps]; o.alive = new bool[g.reps]; }
+                if (o.agents.Length != g.reps) { o.agents = new Vector3[g.reps]; o.alive = new bool[g.reps]; o.vels = new Vector3[g.reps]; }
+                float span = (b.tick - a.tick) * TickSeconds;
                 for (int r = 0; r < g.reps; r++)
                 {
                     o.alive[r] = a.alive[r];
-                    o.agents[r] = a.alive[r] && b.alive[r] ? Vector3.Lerp(a.agents[r], b.agents[r], k) : a.agents[r];
+                    bool both = a.alive[r] && b.alive[r];
+                    o.agents[r] = both ? Vector3.Lerp(a.agents[r], b.agents[r], k) : a.agents[r];
+                    o.vels[r] = both && span > 0f ? (b.agents[r] - a.agents[r]) / span : Vector3.zero;
                 }
             }
         }

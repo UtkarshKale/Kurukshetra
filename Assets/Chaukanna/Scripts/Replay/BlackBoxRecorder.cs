@@ -21,7 +21,7 @@ namespace Chaukanna.Replay
         public static string SessionsFolder => Path.Combine(Application.persistentDataPath, "sessions");
 
         ScenarioSpawner spawner;
-        int run = -1, lastTick = -1, evIndex, roeIndex, dirIndex, groupCallIndex;
+        int run = -1, lastTick = -1, lastGroupTick = int.MinValue, evIndex, roeIndex, dirIndex, groupCallIndex;
         BlackBoxData data;
         bool saved;
         ContactSensor sensor;
@@ -51,7 +51,7 @@ namespace Chaukanna.Replay
         void Begin()
         {
             run = spawner.RunNumber;
-            lastTick = -1; evIndex = roeIndex = dirIndex = groupCallIndex = 0; saved = false; SamplesTaken = 0;
+            lastTick = -1; lastGroupTick = int.MinValue; evIndex = roeIndex = dirIndex = groupCallIndex = 0; saved = false; SamplesTaken = 0;
             wasTalking.Clear(); repPos.Clear(); repAlive.Clear();
             var lan = LanSession.Instance;
             bool team = lan != null && lan.InField;
@@ -115,7 +115,8 @@ namespace Chaukanna.Replay
             }
 
             // Groups (5 Hz): representative agents, centroid and count.
-            if (tick % BlackBoxData.GroupEvery == 0) SampleGroups(tick);
+            // Every second tick or later (not "tick % 2 == 0": a slow frame rate in a big sky could land only on odd ticks and never sample a group).
+            if (tick - lastGroupTick >= BlackBoxData.GroupEvery) { SampleGroups(tick); lastGroupTick = tick; }
 
             Events();
         }
@@ -139,7 +140,8 @@ namespace Chaukanna.Replay
                 for (int k = 0; k < n; k++)
                 {
                     int i = Mathf.Min(k * stride, sky.Count - 1);
-                    alive[k] = sky.IsFlying(i);
+                    // A promoted agent is a real contact now (sampled above, at the same place): not drawn a second time as a group member.
+                    alive[k] = sky.Sim != null && i < sky.Sim.Count && sky.Sim.State[i] == SwarmSim.Flying;
                     pos[k] = sky.PositionOf(i);
                 }
                 Vector3 centroid = Vector3.zero; int cn = 0;
@@ -238,6 +240,7 @@ namespace Chaukanna.Replay
                 var vc = VoiceChat.Instance;
                 if (vc != null && vc.Recorder != null) vc.FinishRecording();
                 data.voiceFolder = vc != null ? vc.LastRecordingFolder : "";
+                data.MergeDuplicateSeats();
                 float end = spawner != null ? Mathf.Min(spawner.ScenarioTime, spawner.Duration > 0f ? spawner.Duration : spawner.ScenarioTime) : 0f;
                 data.Finish(end > 0f ? end : data.EndTime);
                 string stem = "blackbox_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");

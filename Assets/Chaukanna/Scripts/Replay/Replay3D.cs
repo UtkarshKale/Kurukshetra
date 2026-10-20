@@ -76,6 +76,7 @@ namespace Chaukanna.Replay
         {
             Instance = this;
             Data = data;
+            data.MergeDuplicateSeats();         // one person recorded under two seat ids showed as two "Player 1" buttons and two view cones
             end = Mathf.Max(0.5f, data.EndTime);
             spawner = FindAnyObjectByType<ScenarioSpawner>();
             dashboard = FindAnyObjectByType<ScoreDashboard>();
@@ -130,7 +131,32 @@ namespace Chaukanna.Replay
             if (trainer != null && prevSplit) trainer.SetSplit(true);
             Cursor.lockState = prevLock; Cursor.visible = prevCursorVisible;
             if (dashboard != null && dashWasOpen) { dashboard.Open(); dashboard.SetExpanded(dashWasExpanded); }
+            if (!buildingsOn) SetBuildings(true);
             foreach (var m in mats.Values) if (m != null) Destroy(m);
+        }
+
+        // The terrain's building layer (the real OSM buildings: close to the post they are big solid blocks) can be hidden.
+        bool buildingsOn = true;
+        void SetBuildings(bool on)
+        {
+            buildingsOn = on;
+            var m = Chaukanna.TerrainGen.TerrainLayerManager.Current;
+            if (m != null) m.SetLayerVisible(Chaukanna.TerrainGen.LayerKind.Buildings, on);
+        }
+
+        // A click picks the contact nearest the cursor (within 30 px): it gets a label and a trail, whatever its class.
+        void PickContact(Vector2 mouse)
+        {
+            float best = 30f; int pick = -1;
+            for (int i = 0; i < st.ContactCount; i++)
+            {
+                var c = st.Contact(i);
+                Vector3 sp = cam.WorldToScreenPoint(c.pos);
+                if (sp.z <= 0f) continue;
+                float d = Vector2.Distance(new Vector2(sp.x, sp.y), mouse);
+                if (d < best) { best = d; pick = c.id; }
+            }
+            selContact = pick;
         }
 
         // ---- Clock ----
@@ -166,6 +192,8 @@ namespace Chaukanna.Replay
                 if (kb.digit3Key.wasPressedThisFrame) SetMode(CamMode.Free);
                 if (kb.digit4Key.wasPressedThisFrame) SetMode(CamMode.Top);
             }
+            var ms = Mouse.current;
+            if (ms != null && cam != null && ms.leftButton.wasPressedThisFrame && !MouseOverBar()) PickContact(ms.position.ReadValue());
             if (playing)
             {
                 t += Mathf.Min(UnityEngine.Time.unscaledDeltaTime, 0.1f) * speed;
@@ -244,26 +272,66 @@ namespace Chaukanna.Replay
             public void Destroy() { if (mesh != null) UnityEngine.Object.Destroy(mesh); }
         }
 
-        LineBatch lockLines, tracers, rings, callRings, talkRings, trails, staticLines;
+        LineBatch lockLines, tracers, rings, callRings, talkRings, staticLines;
+        // Trails: one batch per truth class (hostile, friendly, civilian, bird) and per age band (old, middle, new), so they fade.
+        readonly LineBatch[,] trailBands = new LineBatch[4, 3];
+        static readonly float[] BandBright = { 0.3f, 0.6f, 1f };
         readonly Dictionary<int, LineBatch> frusta = new Dictionary<int, LineBatch>();
         readonly Dictionary<int, GameObject> avatars = new Dictionary<int, GameObject>();
         readonly Dictionary<int, GameObject> contactGo = new Dictionary<int, GameObject>();
         readonly Dictionary<int, List<GameObject>> groupGo = new Dictionary<int, List<GameObject>>();
+        // Seat colours: greens, ambers and teals only (blue is friendly, red hostile, yellow birds, white civilian; nothing purple).
         static readonly Color[] SeatColours =
         {
-            new Color(0.3f, 0.85f, 1f), new Color(0.4f, 1f, 0.5f), new Color(1f, 0.8f, 0.3f),
-            new Color(0.9f, 0.5f, 1f), new Color(1f, 0.55f, 0.4f), new Color(0.7f, 0.8f, 1f),
+            new Color(0.4f, 1f, 0.5f), new Color(1f, 0.8f, 0.3f), new Color(0.3f, 0.9f, 0.8f),
+            new Color(0.8f, 1f, 0.35f), new Color(1f, 0.6f, 0.25f), new Color(0.7f, 1f, 0.85f),
         };
         static Color SeatColour(int index) => SeatColours[((index % SeatColours.Length) + SeatColours.Length) % SeatColours.Length];
+
+        // The replay's own truth colours: hostile red, friendly blue, civilian white / grey, bird yellow.
+        public static Color ClassColour(int truth)
+        {
+            switch ((ContactClass)truth)
+            {
+                case ContactClass.HostileQuad: return new Color(0.95f, 0.15f, 0.12f);
+                case ContactClass.HostileFixedWing: return new Color(1f, 0.2f, 0.1f);
+                case ContactClass.FriendlyISR: return new Color(0.2f, 0.5f, 1f);
+                case ContactClass.CivilianQuad: return new Color(0.85f, 0.86f, 0.9f);
+                case ContactClass.Bird: return new Color(1f, 0.88f, 0.1f);
+                default: return new Color(0.7f, 0.7f, 0.72f);
+            }
+        }
+
+        static Color LabelColour(Color c) => Color.Lerp(c, Color.white, 0.4f);        // readable on a dark sky (pure blue is not)
+        static readonly Color NeutralColour = new Color(0.7f, 0.7f, 0.72f);
+
+        static string ClassName(int truth)
+        {
+            switch ((ContactClass)truth)
+            {
+                case ContactClass.HostileQuad: return "Hostile quad";
+                case ContactClass.HostileFixedWing: return "Hostile fixed-wing";
+                case ContactClass.FriendlyISR: return "Own ISR";
+                case ContactClass.CivilianQuad: return "Civilian drone";
+                case ContactClass.Bird: return "Bird";
+                default: return "Unknown";
+            }
+        }
+
+        static int TrailClass(int truth) => truth <= 1 ? 0 : truth == 2 ? 1 : truth == 3 ? 2 : 3;
 
         void BuildStatic()
         {
             lockLines = new LineBatch("locks", Mat(Color.white), transform);
             tracers = new LineBatch("tracers", Mat(new Color(1f, 0.9f, 0.2f)), transform);
-            rings = new LineBatch("jam rings", Mat(new Color(1f, 0.2f, 0.9f)), transform);
-            callRings = new LineBatch("call rings", Mat(new Color(0.35f, 0.75f, 1f)), transform);
-            talkRings = new LineBatch("talk rings", Mat(new Color(1f, 0.3f, 0.3f)), transform);
-            trails = new LineBatch("trails", Mat(new Color(0.55f, 0.6f, 0.7f)), transform);
+            rings = new LineBatch("jam rings", Mat(new Color(1f, 0.6f, 0.1f)), transform);
+            callRings = new LineBatch("call rings", Mat(new Color(0.8f, 0.9f, 1f)), transform);
+            talkRings = new LineBatch("talk rings", Mat(new Color(0.4f, 1f, 0.6f)), transform);
+            for (int k = 0; k < 4; k++)
+            {
+                Color basis = k == 0 ? ClassColour(0) : k == 1 ? ClassColour(2) : k == 2 ? ClassColour(3) : ClassColour(4);
+                for (int b = 0; b < 3; b++) trailBands[k, b] = new LineBatch("trail " + k + "." + b, Mat(new Color(basis.r * BandBright[b], basis.g * BandBright[b], basis.b * BandBright[b], 1f)), transform);
+            }
             staticLines = new LineBatch("post", Mat(new Color(1f, 1f, 1f, 1f)), transform);
             staticLines.Begin();
             Vector3 o = Data.origin;
@@ -275,49 +343,96 @@ namespace Chaukanna.Replay
 
         // ---- Applying a moment ----
 
-        struct Label { public Vector3 world; public string text; public Color colour; public bool strong; }
+        // prio 0 = always tried first (seats, the selected contact, lock holders), 1 = an event or a group, 2 = a contact near the camera.
+        struct Label { public Vector3 world; public string text; public Color colour; public int prio; public float dist; }
         readonly List<Label> labels = new List<Label>();
         string hudLine = "";
 
-        static float BaseSize(int truth)
+        // Natural size of the proxy (a uniform scale of the shape) and the shape's span at scale 1, in metres.
+        static float NaturalScale(int truth)
         {
             switch ((ContactClass)truth)
             {
-                case ContactClass.HostileFixedWing: return 2.2f;
-                case ContactClass.FriendlyISR: return 1.6f;
-                case ContactClass.Bird: return 0.7f;
-                default: return 0.9f;
+                case ContactClass.HostileFixedWing: return 1.6f;
+                case ContactClass.FriendlyISR: return 1.2f;
+                default: return 1f;
             }
         }
 
+        static float SpanOf(int truth) => truth == (int)ContactClass.HostileFixedWing || truth == (int)ContactClass.FriendlyISR ? 1.4f : 1f;
+
+        static Mesh MeshFor(int truth)
+        {
+            switch ((ContactClass)truth)
+            {
+                case ContactClass.Bird: return ReplayShapes.Bird;
+                case ContactClass.HostileFixedWing:
+                case ContactClass.FriendlyISR: return ReplayShapes.FixedWing;
+                default: return ReplayShapes.Quad;
+            }
+        }
+
+        const float MinContactPx = 10f, MinAgentPx = 6f;
+
+        // How many metres wide something has to be, where it is, to cover `px` pixels of the replay view.
+        float PxToMetres(Vector3 p, float px)
+        {
+            float h = Mathf.Max(1f, Screen.height);
+            if (cam.orthographic) return px * 2f * cam.orthographicSize / h;
+            float d = Vector3.Distance(cam.transform.position, p);
+            return px * 2f * d * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) / h;
+        }
+
+        GameObject NewProxy(string name, Mesh mesh, Color c)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = Mat(c);
+            return go;
+        }
+
+        // One marker per contact id for the whole replay: the same id is always the same object, so it moves rather than jumps.
         GameObject ContactProxy(int id, int truth)
         {
             if (contactGo.TryGetValue(id, out var go) && go != null) return go;
-            Color col = ContactVisuals.TruthColour((ContactClass)truth);
-            switch ((ContactClass)truth)
-            {
-                case ContactClass.HostileFixedWing: go = Prim(PrimitiveType.Cube, col, "c" + id); break;
-                case ContactClass.FriendlyISR: go = Prim(PrimitiveType.Capsule, col, "c" + id); break;
-                case ContactClass.CivilianQuad: go = Prim(PrimitiveType.Sphere, col, "c" + id); break;
-                case ContactClass.Bird:
-                    go = new GameObject("c" + id);
-                    go.transform.SetParent(transform, false);
-                    go.AddComponent<MeshFilter>().sharedMesh = BirdMesh.Get(0, BirdSpeciesInfo.GlidePose);
-                    go.AddComponent<MeshRenderer>().sharedMaterial = Mat(col);
-                    break;
-                default: go = Prim(PrimitiveType.Cube, col, "c" + id); break;
-            }
+            go = NewProxy("c" + id, MeshFor(truth), ClassColour(truth));
             contactGo[id] = go;
             return go;
         }
 
-        float ScaleFor(Vector3 p, float basis)
+        void SetColour(GameObject go, Color c)
         {
-            float d = cam.orthographic ? cam.orthographicSize * 1.2f : Vector3.Distance(cam.transform.position, p);
-            return Mathf.Max(basis, d * 0.008f);
+            var r = go.GetComponent<MeshRenderer>();
+            var m = Mat(c);
+            if (r != null && r.sharedMaterial != m) r.sharedMaterial = m;
         }
 
         readonly HashSet<int> seen = new HashSet<int>();
+        readonly HashSet<int> eventLabelled = new HashSet<int>();
+        readonly List<KeyValuePair<float, int>> nearList = new List<KeyValuePair<float, int>>();
+        readonly List<KeyValuePair<float, int>> trailList = new List<KeyValuePair<float, int>>();
+        int selContact = -1;
+
+        string ContactText(BbContactState c)
+        {
+            string txt = "#" + c.id;
+            if (truthOverlay) txt += " " + ClassName(c.truth);
+            if (c.call != 0) txt += "  call " + (PlayerCall)c.call;
+            if (c.action != 0) txt += "  " + (PlayerAction)c.action;
+            return txt;
+        }
+
+        // Where the contact is heading at that moment, smoothed over 0.6 s of the log so the marker does not twitch with the 0.25 m snapping.
+        Vector3 Velocity(BbContact bc, float time, BbContactState c)
+        {
+            var p1 = SamplePos(bc, time + 0.3f, out bool o1);
+            var p0 = SamplePos(bc, time - 0.3f, out bool o0);
+            if (o1 && o0) return (p1 - p0) / 0.6f;
+            if (o1) return (p1 - c.pos) / 0.3f;
+            if (o0) return (c.pos - p0) / 0.3f;
+            return c.vel;
+        }
 
         public void Apply()
         {
@@ -325,6 +440,8 @@ namespace Chaukanna.Replay
             Data.StateAt(t, st);
             labels.Clear();
             seen.Clear();
+            eventLabelled.Clear();
+            Vector3 camPos = cam.transform.position;
 
             // Seats.
             Vector3 sel = Vector3.zero; bool haveSel = false;
@@ -337,27 +454,32 @@ namespace Chaukanna.Replay
                 if (!frusta.TryGetValue(s.id, out var fr)) { fr = new LineBatch("view " + s.id, Mat(col), transform); frusta[s.id] = fr; }
                 bool mine = idx == selSeat;
                 if (mine) { sel = s.pos; haveSel = true; }
-                bool hide = mode == CamMode.Follow && mine;
+                // In the follow view the selected seat is the camera; another seat standing at the same spot (within 3 m) would
+                // only show a second view cone and a label right on top of the picture.
+                bool hide = mode == CamMode.Follow && (mine || Vector3.Distance(s.pos, camPos) < 3f);
                 av.SetActive(!hide);
                 av.transform.position = s.pos + Vector3.down * 0.85f;
                 av.transform.rotation = Quaternion.Euler(0f, s.yaw, 0f);
-                float k = cam.orthographic ? cam.orthographicSize * 0.012f : Mathf.Max(1f, Vector3.Distance(cam.transform.position, s.pos) * 0.006f);
+                float k = cam.orthographic ? cam.orthographicSize * 0.012f : Mathf.Max(1f, Vector3.Distance(camPos, s.pos) * 0.006f);
                 av.transform.localScale = new Vector3(0.6f * k, 0.9f * k, 0.6f * k);
                 fr.Begin();
                 if (!hide) Frustum(fr, s);
                 fr.End();
-                if (!hide) labels.Add(new Label { world = s.pos + Vector3.up * (1.2f * k), text = s.name + (s.Binoculars ? "  [optic]" : "") + (s.Talking ? "  [talking]" : ""), colour = col, strong = true });
+                if (!hide) labels.Add(new Label { world = s.pos + Vector3.up * (1.2f * k), text = s.name + (s.Binoculars ? "  [optic]" : "") + (s.Talking ? "  [talking]" : ""), colour = col, prio = 0 });
             }
             talkRings.Begin();
             for (int i = 0; i < st.SeatCount; i++)
             {
                 var s = st.Seat(i);
-                if (s.Talking && !(mode == CamMode.Follow && SeatIndex(s.id) == selSeat)) talkRings.Circle(s.pos + Vector3.up * 0.4f, 2.5f);
+                if (s.Talking && !(mode == CamMode.Follow && (SeatIndex(s.id) == selSeat || Vector3.Distance(s.pos, camPos) < 3f))) talkRings.Circle(s.pos + Vector3.up * 0.4f, 2.5f);
             }
             talkRings.End();
 
-            // Contacts.
-            lockLines.Begin(); trails.Begin();
+            // Contacts: every one is positioned from the log by the replay clock (interpolated between its 10 Hz samples), drawn as a
+            // small drone or bird shape in its truth colour, never smaller than MinContactPx on screen.
+            lockLines.Begin();
+            foreach (var b in trailBands) b.Begin();
+            nearList.Clear(); trailList.Clear();
             for (int i = 0; i < st.ContactCount; i++)
             {
                 var c = st.Contact(i);
@@ -365,18 +487,20 @@ namespace Chaukanna.Replay
                 var go = ContactProxy(c.id, c.truth);
                 go.SetActive(true);
                 go.transform.position = c.pos;
-                if (c.vel.sqrMagnitude > 0.25f) go.transform.rotation = Quaternion.LookRotation(c.vel);
-                float basis = BaseSize(c.truth);
-                float sc = ScaleFor(c.pos, basis);
-                bool fixedWing = c.truth == (byte)ContactClass.HostileFixedWing, quad = c.truth == (byte)ContactClass.HostileQuad || c.truth == (byte)ContactClass.CivilianQuad;
-                go.transform.localScale = fixedWing ? new Vector3(sc * 1.4f, sc * 0.18f, sc) : quad ? new Vector3(sc, sc * 0.3f, sc) : Vector3.one * sc;
-                var rend = go.GetComponent<MeshRenderer>();
-                if (rend != null) rend.sharedMaterial = Mat(truthOverlay ? ContactVisuals.TruthColour((ContactClass)c.truth) : new Color(0.7f, 0.7f, 0.72f));
-                string txt = "#" + c.id + (truthOverlay ? " " + (ContactClass)c.truth : "");
-                if (c.call != 0) txt += "  call: " + (PlayerCall)c.call;
-                if (c.action != 0) txt += "  " + (PlayerAction)c.action;
-                if (c.inView) txt += "  (seen)";
-                labels.Add(new Label { world = c.pos + Vector3.up * sc * 1.2f, text = txt, colour = truthOverlay ? ContactVisuals.TruthColour((ContactClass)c.truth) : Color.white, strong = c.lockSeat >= 0 });
+                var bc = Data.FindContact(c.id);
+                Vector3 vel = bc != null ? Velocity(bc, t, c) : c.vel;
+                bool quad = c.truth == (byte)ContactClass.HostileQuad || c.truth == (byte)ContactClass.CivilianQuad;
+                Vector3 look = quad ? new Vector3(vel.x, 0f, vel.z) : vel;
+                if (look.sqrMagnitude > 0.09f) go.transform.rotation = Quaternion.LookRotation(look);
+                float sc = Mathf.Max(NaturalScale(c.truth), PxToMetres(c.pos, MinContactPx) / SpanOf(c.truth));
+                go.transform.localScale = Vector3.one * sc;
+                Color col = truthOverlay ? ClassColour(c.truth) : NeutralColour;
+                SetColour(go, col);
+                float dist = cam.orthographic ? Vector3.Distance(c.pos, topCentre) : Vector3.Distance(c.pos, camPos);
+                bool isSel = c.id == selContact;
+                if (isSel || c.lockSeat >= 0) labels.Add(new Label { world = c.pos + Vector3.up * sc * 1.2f, text = ContactText(c) + (c.inView ? "  (in view)" : ""), colour = LabelColour(col), prio = 0, dist = dist });
+                else nearList.Add(new KeyValuePair<float, int>(dist, i));
+                if (c.truth != (byte)ContactClass.Bird || isSel || c.lockSeat >= 0) trailList.Add(new KeyValuePair<float, int>(isSel ? -1f : dist, i));
             }
             foreach (var kv in contactGo) if (kv.Value != null && !seen.Contains(kv.Key)) kv.Value.SetActive(false);
             for (int i = 0; i < st.SeatCount; i++)
@@ -386,22 +510,35 @@ namespace Chaukanna.Replay
                 var c = st.FindContact(s.lockId);
                 if (c != null) lockLines.Add(s.pos + Vector3.down * 0.4f, c.pos);
             }
-            foreach (var bc in Data.contacts)
+
+            // Trails: the last 5 s, only for the 40 nearest drones (and the selected contact, and any lock), never for birds in the
+            // crowd: a flock of erratic birds drawn as 9 s polylines was the wall of jagged lines. Older parts are dimmer.
+            trailList.Sort((a, b) => a.Key.CompareTo(b.Key));
+            const float TrailSeconds = 5f, TrailStep = 0.25f;
+            int segs = Mathf.RoundToInt(TrailSeconds / TrailStep);
+            for (int n = 0; n < trailList.Count && n < 40; n++)
             {
-                if (bc.s.Count == 0 || !seen.Contains(bc.id)) continue;
+                var c = st.Contact(trailList[n].Value);
+                var bc = Data.FindContact(c.id);
+                if (bc == null) continue;
+                int cls = TrailClass(c.truth);
                 Vector3 prev = default; bool have = false;
-                for (int k = 8; k >= 0; k--)
+                for (int k = segs; k >= 0; k--)
                 {
-                    float tt = t - k * 1f;
-                    var p = SamplePos(bc, tt, out bool ok);
+                    var p = SamplePos(bc, t - k * TrailStep, out bool ok);
                     if (!ok) { have = false; continue; }
-                    if (have) trails.Add(prev, p);
+                    if (have)
+                    {
+                        int band = Mathf.Min(2, (segs - k) * 3 / segs);       // 0 = oldest third ... 2 = newest third
+                        trailBands[cls, band].Add(prev, p);
+                    }
                     prev = p; have = true;
                 }
             }
-            lockLines.End(); trails.End();
+            lockLines.End();
+            foreach (var b in trailBands) b.End();
 
-            // Recent events: jam rings, engage tracers, call rings.
+            // Recent events: jam rings, engage tracers, call rings, and a short label at the contact.
             tracers.Begin(); rings.Begin(); callRings.Begin();
             Data.EventsIn(t - 4f, t, recent);
             foreach (var e in recent)
@@ -419,35 +556,60 @@ namespace Chaukanna.Replay
                         rings.Circle(c.pos, 3f + age * 4f);
                     }
                     else callRings.Circle(c.pos, 6f);
-                    labels.Add(new Label { world = c.pos + Vector3.up * 12f, text = e.text, colour = new Color(1f, 0.9f, 0.3f), strong = true });
+                    eventLabelled.Add(c.id);
+                    labels.Add(new Label { world = c.pos + Vector3.up * 3f, text = e.text, colour = new Color(1f, 0.9f, 0.3f), prio = 1, dist = Vector3.Distance(c.pos, camPos) });
                 }
                 else if (e.type == BbEventType.Call && c != null)
                 {
                     callRings.Circle(c.pos, 10f + age * 3f);
-                    labels.Add(new Label { world = c.pos + Vector3.up * 12f, text = e.text, colour = new Color(0.35f, 0.85f, 1f), strong = true });
+                    eventLabelled.Add(c.id);
+                    labels.Add(new Label { world = c.pos + Vector3.up * 3f, text = e.text, colour = new Color(0.8f, 0.92f, 1f), prio = 1, dist = Vector3.Distance(c.pos, camPos) });
                 }
                 else if (e.type == BbEventType.Lock && c != null)
-                    labels.Add(new Label { world = c.pos + Vector3.up * 12f, text = e.text, colour = Color.white, strong = true });
+                {
+                    eventLabelled.Add(c.id);
+                    labels.Add(new Label { world = c.pos + Vector3.up * 3f, text = e.text, colour = Color.white, prio = 1, dist = Vector3.Distance(c.pos, camPos) });
+                }
             }
             tracers.End(); rings.End(); callRings.End();
 
-            // Groups: sampled representative agents as small cubes.
+            // Plain contact labels: only the nearest few (not the ones that already carry an event label), so the picture stays readable.
+            nearList.Sort((a, b) => a.Key.CompareTo(b.Key));
+            float nearLimit = cam.orthographic ? (topSize < 500f ? topSize * 1.2f : 0f) : 600f;
+            for (int n = 0, added = 0; n < nearList.Count && added < 8; n++)
+            {
+                if (nearList[n].Key > nearLimit) break;
+                var c = st.Contact(nearList[n].Value);
+                if (eventLabelled.Contains(c.id)) continue;
+                Color col = truthOverlay ? ClassColour(c.truth) : Color.white;
+                labels.Add(new Label { world = c.pos + Vector3.up * 2f, text = ContactText(c), colour = LabelColour(col), prio = 2, dist = nearList[n].Key });
+                added++;
+            }
+
+            // Groups: the sampled agents as small drone or bird shapes (swarm red, bird flock yellow; a dense sky is a mix of
+            // classes the log does not keep per agent, so it is neutral), oriented along their own motion.
             for (int i = 0; i < st.GroupCount; i++)
             {
                 var g = st.Group(i);
                 if (!groupGo.TryGetValue(g.id, out var pool)) { pool = new List<GameObject>(); groupGo[g.id] = pool; }
-                Color gc = g.kind == 1 ? new Color(0.8f, 0.7f, 0.4f) : g.kind == 2 ? new Color(0.3f, 0.8f, 0.8f) : new Color(1f, 0.25f, 0.2f);
-                while (pool.Count < g.n) pool.Add(Prim(PrimitiveType.Cube, gc, "g" + g.id + "_" + pool.Count));
+                Color gc = g.kind == 1 ? ClassColour((int)ContactClass.Bird) : g.kind == 2 ? new Color(0.78f, 0.8f, 0.85f) : ClassColour((int)ContactClass.HostileQuad);
+                if (!truthOverlay) gc = NeutralColour;
+                Mesh gm = g.kind == 1 ? ReplayShapes.Bird : ReplayShapes.Quad;
+                while (pool.Count < g.n) pool.Add(NewProxy("g" + g.id + "_" + pool.Count, gm, gc));
                 for (int r = 0; r < pool.Count; r++)
                 {
                     bool on = r < g.n && g.alive[r];
                     pool[r].SetActive(on);
                     if (!on) continue;
                     pool[r].transform.position = g.agents[r];
-                    pool[r].transform.localScale = Vector3.one * ScaleFor(g.agents[r], 0.8f);
+                    pool[r].transform.localScale = Vector3.one * Mathf.Max(1f, PxToMetres(g.agents[r], MinAgentPx));
+                    Vector3 v = r < g.vels.Length ? g.vels[r] : Vector3.zero;
+                    if (g.kind != 1) v.y = 0f;
+                    if (v.sqrMagnitude > 0.09f) pool[r].transform.rotation = Quaternion.LookRotation(v);
+                    SetColour(pool[r], gc);
                 }
                 string kind = g.kind == 1 ? "Bird flock" : g.kind == 2 ? "Dense sky" : "Swarm";
-                labels.Add(new Label { world = g.centroid + Vector3.up * 20f, text = $"{kind} {g.total} ({g.count} flying)", colour = gc, strong = true });
+                labels.Add(new Label { world = g.centroid + Vector3.up * 20f, text = $"{kind} {g.total} ({g.count} flying, {Mathf.Min(g.n, g.total)} shown)", colour = LabelColour(gc), prio = 1, dist = Vector3.Distance(g.centroid, camPos) });
             }
             foreach (var kv in groupGo) { bool present = false; for (int i = 0; i < st.GroupCount; i++) if (st.Group(i).id == kv.Key) present = true; if (!present) foreach (var go in kv.Value) go.SetActive(false); }
 
@@ -460,6 +622,8 @@ namespace Chaukanna.Replay
             }
         }
 
+        // Where the contact is at `time` (a pure function of the replay clock: the same answer going forward, backward or after a speed
+        // change). Linear between the two 10 Hz samples around it. Not ok = it was not in the sky then.
         static Vector3 SamplePos(BbContact c, float time, out bool ok)
         {
             float tf = time * BlackBoxData.Hz;
@@ -468,13 +632,14 @@ namespace Chaukanna.Replay
             int lo = 0, hi = c.s.Count - 1, ans = 0;
             while (lo <= hi) { int mid = (lo + hi) >> 1; if (c.s[mid].tick <= tf) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
             var a = c.s[ans]; var b = ans + 1 < c.s.Count ? c.s[ans + 1] : a;
-            float k = b.tick > a.tick && b.tick - a.tick <= 5 ? Mathf.Clamp01((tf - a.tick) / (b.tick - a.tick)) : 0f;
+            float k = b.tick > a.tick && b.tick - a.tick <= BlackBoxData.MaxContactGap ? Mathf.Clamp01((tf - a.tick) / (b.tick - a.tick)) : 0f;
             ok = true;
             return Vector3.Lerp(a.pos, b.pos, k);
         }
 
         int SeatIndex(int id)
         {
+            if (Data.seatAlias.TryGetValue(id, out int merged)) id = merged;
             for (int i = 0; i < Data.seats.Count; i++) if (Data.seats[i].id == id) return i;
             return 0;
         }
@@ -640,28 +805,39 @@ namespace Chaukanna.Replay
             GUI.matrix = saved;
         }
 
+        // Labels are placed most important first and a label that would cover one already placed is moved down a line (up to three
+        // times) or dropped, so the picture never turns into a pile of overlapping text.
+        readonly List<Rect> placed = new List<Rect>();
+        readonly List<Label> sorted = new List<Label>();
+
         void DrawLabels(float ui)
         {
-            var list = new List<(float d, Label l)>();
-            foreach (var l in labels)
-            {
-                Vector3 sp = cam.WorldToScreenPoint(l.world);
-                if (sp.z <= 0f) continue;
-                float d = cam.orthographic ? 0f : sp.z;
-                list.Add((l.strong ? 0f : d, l));
-            }
-            list.Sort((a, b) => a.d.CompareTo(b.d));
+            sorted.Clear();
+            sorted.AddRange(labels);
+            sorted.Sort((a, b) => a.prio != b.prio ? a.prio.CompareTo(b.prio) : a.dist.CompareTo(b.dist));
+            placed.Clear();
             int shown = 0;
-            foreach (var it in list)
+            foreach (var l in sorted)
             {
-                if (shown++ > 60) break;
-                Vector3 sp = cam.WorldToScreenPoint(it.l.world);
-                if (sp.x < -50 || sp.x > Screen.width + 50 || sp.y < BarHeightPx || sp.y > Screen.height) continue;
-                var r = new Rect(sp.x + 6f, Screen.height - sp.y - 8f, 320f * ui, 18f * ui);
-                labelStyle.normal.textColor = new Color(0f, 0f, 0f, 0.8f);
-                GUI.Label(new Rect(r.x + 1f, r.y + 1f, r.width, r.height), it.l.text, labelStyle);
-                labelStyle.normal.textColor = it.l.colour;
-                GUI.Label(r, it.l.text, labelStyle);
+                if (shown >= 40) break;
+                Vector3 sp = cam.WorldToScreenPoint(l.world);
+                if (sp.z <= 0f || sp.x < -50 || sp.x > Screen.width + 50 || sp.y < BarHeightPx || sp.y > Screen.height) continue;
+                var size = labelStyle.CalcSize(new GUIContent(l.text));
+                var r = new Rect(sp.x + 6f, Screen.height - sp.y - size.y - 2f, size.x + 4f, size.y);
+                bool ok = false;
+                for (int attempt = 0; attempt < 4 && !ok; attempt++)
+                {
+                    ok = true;
+                    foreach (var q in placed) if (q.Overlaps(r)) { ok = false; break; }
+                    if (!ok) r.y += size.y;
+                }
+                if (!ok) continue;
+                placed.Add(r);
+                shown++;
+                labelStyle.normal.textColor = new Color(0f, 0f, 0f, 0.85f);
+                GUI.Label(new Rect(r.x + 1f, r.y + 1f, r.width, r.height), l.text, labelStyle);
+                labelStyle.normal.textColor = l.colour;
+                GUI.Label(r, l.text, labelStyle);
             }
         }
 
@@ -711,7 +887,7 @@ namespace Chaukanna.Replay
                 case BbEventType.Call: return C.Accent;
                 case BbEventType.Action: return C.Warn;
                 case BbEventType.Card: return new Color(1f, 1f, 0.3f);
-                case BbEventType.Director: return new Color(1f, 0.3f, 0.9f);
+                case BbEventType.Director: return new Color(1f, 0.55f, 0.15f);
                 case BbEventType.GroupCall: return C.Good;
                 case BbEventType.Talk: return C.Dim;
                 default: return C.Neutral;
@@ -793,6 +969,7 @@ namespace Chaukanna.Replay
             }
             x += 12f;
             if (GUI.Button(new Rect(x, y, 96f, 24f), "Truth: " + (truthOverlay ? "ON" : "OFF"))) truthOverlay = !truthOverlay; x += 100f;
+            if (GUI.Button(new Rect(x, y, 120f, 24f), "Buildings: " + (buildingsOn ? "ON" : "OFF"))) SetBuildings(!buildingsOn); x += 124f;
 
             // Row 4: latest events and the honesty line.
             y = y0 + 98f;
@@ -805,7 +982,72 @@ namespace Chaukanna.Replay
                 last = $"{Clock(e.Time)} {e.text}   |   " + last; found++;
             }
             GUI.Label(new Rect(pad, y, w - pad * 2f, 18f), last.Length > 0 ? last : "No events yet.", C.Small);
-            GUI.Label(new Rect(pad, y + 16f, w - pad * 2f, 18f), "Reconstructed from the logged poses, not a screen recording.   Space play/pause   PgUp/PgDn events   , . step   1-4 cameras   Esc exit   " + (voiceMode == VoiceMode.Heard ? "AS HEARD (degraded) = rebuilt for the selected seat: " + (Data.seats.Count > 0 ? Data.seats[Mathf.Clamp(selSeat, 0, Data.seats.Count - 1)].name : "") + " (approximation).   Pick another seat to hear theirs." : voiceMode == VoiceMode.Clean ? "CLEAN recording = what each speaker said, before range, noise, dropout and muffle." : Note), C.Small);
+            GUI.Label(new Rect(pad, y + 16f, w - pad * 2f, 18f), "Reconstructed from the logged poses, not a screen recording.   Space play/pause   PgUp/PgDn events   , . step   1-4 cameras   click a contact to label it   Esc exit   " + (voiceMode == VoiceMode.Heard ? "AS HEARD (degraded) = rebuilt for the selected seat: " + (Data.seats.Count > 0 ? Data.seats[Mathf.Clamp(selSeat, 0, Data.seats.Count - 1)].name : "") + " (approximation).   Pick another seat to hear theirs." : voiceMode == VoiceMode.Clean ? "CLEAN recording = what each speaker said, before range, noise, dropout and muffle." : Note), C.Small);
+        }
+    }
+    // Small drone and bird shapes for the replay markers, built once from boxes (forward is +Z, about 1 m across at scale 1).
+    // Birds reuse the flock's own bird mesh.
+    static class ReplayShapes
+    {
+        static Mesh quad, fixedWing;
+        public static Mesh Quad => quad != null ? quad : (quad = BuildQuad());
+        public static Mesh FixedWing => fixedWing != null ? fixedWing : (fixedWing = BuildFixedWing());
+        public static Mesh Bird => BirdMesh.Get(0, BirdSpeciesInfo.GlidePose);
+
+        sealed class Builder
+        {
+            readonly List<Vector3> v = new List<Vector3>(), n = new List<Vector3>();
+            readonly List<int> t = new List<int>();
+
+            // Each face is added with both windings so it shows from either side whatever the material's culling.
+            public void Box(Vector3 centre, Vector3 size, float yawDeg)
+            {
+                var rot = Quaternion.Euler(0f, yawDeg, 0f);
+                var normals = new[] { Vector3.right, Vector3.left, Vector3.up, Vector3.down, Vector3.forward, Vector3.back };
+                foreach (var nrm in normals)
+                {
+                    Vector3 a = Mathf.Abs(nrm.y) > 0.5f ? Vector3.right : Vector3.up;
+                    Vector3 b = Vector3.Cross(nrm, a);
+                    int i0 = v.Count;
+                    foreach (var corner in new[] { -a - b, a - b, a + b, -a + b })
+                    {
+                        Vector3 local = Vector3.Scale(nrm * 0.5f + corner * 0.5f, size);
+                        v.Add(centre + rot * local);
+                        n.Add(rot * nrm);
+                    }
+                    t.Add(i0); t.Add(i0 + 1); t.Add(i0 + 2); t.Add(i0); t.Add(i0 + 2); t.Add(i0 + 3);
+                    t.Add(i0); t.Add(i0 + 2); t.Add(i0 + 1); t.Add(i0); t.Add(i0 + 3); t.Add(i0 + 2);
+                }
+            }
+
+            public Mesh ToMesh(string name)
+            {
+                var m = new Mesh { name = name, hideFlags = HideFlags.HideAndDontSave };
+                m.SetVertices(v); m.SetNormals(n); m.SetTriangles(t, 0);
+                m.RecalculateBounds();
+                return m;
+            }
+        }
+
+        static Mesh BuildQuad()
+        {
+            var b = new Builder();
+            b.Box(Vector3.zero, new Vector3(0.3f, 0.1f, 0.3f), 0f);                         // body
+            b.Box(Vector3.zero, new Vector3(1f, 0.04f, 0.07f), 45f);                        // two arms in an X
+            b.Box(Vector3.zero, new Vector3(1f, 0.04f, 0.07f), -45f);
+            for (int i = 0; i < 4; i++)
+                b.Box(new Vector3((i & 1) == 0 ? -0.35f : 0.35f, 0.06f, (i & 2) == 0 ? -0.35f : 0.35f), new Vector3(0.3f, 0.015f, 0.3f), 0f);   // rotors
+            return b.ToMesh("ReplayQuad");
+        }
+
+        static Mesh BuildFixedWing()
+        {
+            var b = new Builder();
+            b.Box(Vector3.zero, new Vector3(0.12f, 0.12f, 1f), 0f);                         // fuselage
+            b.Box(new Vector3(0f, 0f, 0.1f), new Vector3(1.4f, 0.03f, 0.25f), 0f);          // wing
+            b.Box(new Vector3(0f, 0f, -0.45f), new Vector3(0.45f, 0.03f, 0.15f), 0f);       // tailplane
+            b.Box(new Vector3(0f, 0.1f, -0.45f), new Vector3(0.03f, 0.2f, 0.15f), 0f);      // fin
+            return b.ToMesh("ReplayFixedWing");
         }
     }
 }

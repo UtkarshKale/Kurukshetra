@@ -200,6 +200,16 @@ namespace Chaukanna.Replay
             for (int i = 0; i < 200; i++) d.StateAt(i * 0.29f, st);
             sw.Stop();
             Check("speed: 200 StateAt calls (6 seats, 20 contacts, 3 groups) well under a frame each", sw.Elapsed.TotalMilliseconds / 200.0 < 2.0, $"{sw.Elapsed.TotalMilliseconds / 200.0:F3} ms each");
+            // One person recorded under two seat ids is merged; two real seats with the same name far apart are not.
+            var dup = new BlackBoxData();
+            dup.Seat(0, "Player 1"); dup.Seat(7, "Player 1"); dup.Seat(9, "Player 1");
+            for (int tick = 0; tick < 100; tick++)
+            {
+                if (tick < 50) dup.AddSeat(tick, 0, new Vector3(1f, 0f, 1f), 0f, 0f, 60f, 0, -1); else dup.AddSeat(tick, 7, new Vector3(1.5f, 0f, 1f), 0f, 0f, 60f, 0, -1);
+                dup.AddSeat(tick, 9, new Vector3(500f, 0f, 500f), 0f, 0f, 60f, 0, -1);
+            }
+            int merged = dup.MergeDuplicateSeats();
+            Check("seats: the same person under two ids is merged, a far-away seat of the same name is kept", merged == 1 && dup.seats.Count == 2 && dup.seatAlias.ContainsKey(7) && dup.seats[0].s.Count == 100);
             Check("viewer: no replay is open during the test", !Replay3D.Active);
         }
 

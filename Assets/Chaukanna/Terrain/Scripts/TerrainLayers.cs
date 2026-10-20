@@ -224,6 +224,15 @@ namespace Chaukanna.TerrainGen
             return layerRoots[(int)kind];
         }
 
+        // Shows or hides one layer without touching its data (the 3D replay hides the buildings on request). False when the layer is not built.
+        public bool SetLayerVisible(LayerKind kind, bool visible)
+        {
+            var t = layerRoots[(int)kind];
+            if (t == null) return false;
+            t.gameObject.SetActive(visible);
+            return true;
+        }
+
         void ClearRoot(LayerKind kind)
         {
             var t = layerRoots[(int)kind];
