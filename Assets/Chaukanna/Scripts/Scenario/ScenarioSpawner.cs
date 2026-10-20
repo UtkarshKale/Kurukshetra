@@ -1,0 +1,885 @@
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+namespace Chaukanna.Scenario
+{
+    // Reads a preset and plays it back. The whole run is planned up front from System.Random(seed),
+    // so the same seed always gives the same contacts, times, bearings and speeds.
+    // Sector is centred on this transform's forward; the ring is centred on its position.
+    public class ScenarioSpawner : MonoBehaviour
+    {
+        [Tooltip("Source of the contact definitions, and of every value below when Override Preset is off.")]
+        public ScenarioPreset preset;
+        [Tooltip("What hostiles fly at. Defaults to this transform.")]
+        public Transform defendedPoint;
+        [Tooltip("Start a run as soon as Play begins, without waiting for the trainer's START. For quick testing only.")]
+        public bool autoStart;
+
+        [Header("Inspector override")]
+        [Tooltip("On: the values below replace the preset's for this run (the preset asset is not modified). Off: the preset is used unchanged.")]
+        public bool overridePreset = true;
+
+        [Header("Run")]
+        [Tooltip("Same seed = same contacts, times and bearings.")]
+        public int seed = 1001;
+        [Tooltip("Pick a new seed every time Play starts. The seed used is printed to the Console.")]
+        public bool randomizeSeed;
+        [Tooltip("Scenario length in seconds.")]
+        public float duration = 300f;
+        [Tooltip("Multiplies every contact's speed.")]
+        [Min(0.01f)] public float speedMultiplier = 1f;
+
+        [Header("Mix")]
+        public int hostileCount = 3;
+        public int friendlyCount = 2;
+        public int civilianCount = 2;
+        public int birdCount = 6;
+        [Tooltip("Share of the hostiles (percent) that fly an own-drone patrol to blend in, then break off for the post.")]
+        [Range(0f, 100f)] public float blendInPercent;
+
+        [Header("Site (Inspector override)")]
+        public SiteType site;
+
+        [Header("Swarm and flocks (Inspector override)")]
+        [Tooltip("Hostile drones arriving together from one bearing. 0 = none.")]
+        public int swarmSize;
+        public float swarmTime = 60f;
+        [Tooltip("Degrees from the sector centre; above 360 = from the seed.")]
+        public float swarmBearing = 999f;
+        [Tooltip("How a big swarm (more than 64) attacks.")]
+        public SwarmTactic swarmTactic;
+        public int birdFlocks;
+        public int flockSize = 8;
+        [Tooltip("How swarms fly together. Empty = built-in defaults.")]
+        public SwarmProfile swarmProfile;
+        [Tooltip("How bird flocks fly together. Empty = built-in defaults.")]
+        public SwarmProfile flockProfile;
+
+        [Header("Geometry")]
+        [Tooltip("Arc in front of this transform that contacts appear in, degrees.")]
+        [Range(10f, 360f)] public float sectorArcDegrees = 120f;
+        [Tooltip("Distance contacts spawn at, metres.")]
+        public float spawnRingRadius = 1000f;
+
+        [Header("Spawn time window (s)")]
+        public float spawnWindowStart = 3f;
+        public float spawnWindowEnd = 240f;
+
+        [Header("Models: drag prefabs here")]
+        [Tooltip("Drag any prefab or model from the Project panel into these lists. A list with something in it replaces the models set on that class's Contact Definition; an empty list leaves the definition's own models in use. With several entries each contact picks one from the seed. Models are scaled to the class size automatically; the nose should point along +Z (blue arrow).")]
+        public List<GameObject> hostileQuadModels = new List<GameObject>();
+        public List<GameObject> hostileFixedWingModels = new List<GameObject>();
+        public List<GameObject> friendlyIsrModels = new List<GameObject>();
+        public List<GameObject> civilianQuadModels = new List<GameObject>();
+        [Tooltip("Ignored: birds are always the code-built flapping bird (BirdMesh).")]
+        public List<GameObject> birdModels = new List<GameObject>();
+        static readonly List<GameObject> noModels = new List<GameObject>();
+
+        public List<GameObject> ModelsFor(ContactClass c)
+        {
+            switch (c)
+            {
+                case ContactClass.HostileQuad: return hostileQuadModels;
+                case ContactClass.HostileFixedWing: return hostileFixedWingModels;
+                case ContactClass.FriendlyISR: return friendlyIsrModels;
+                case ContactClass.CivilianQuad: return civilianQuadModels;
+                default: return noModels;      // birds never use model assets: they are the code-built flapping bird
+            }
+        }
+
+        ScenarioPreset active;   // runtime copy of the preset with overrides applied
+
+        class PlannedSpawn
+        {
+            public float time;
+            public ContactDefinition def;       // what it really is
+            public ContactDefinition look;      // what it looks and flies like (differs for a blend-in hostile)
+            public bool deceptive;
+            public float anomalyDelay;          // seconds after spawn that a blend-in hostile breaks off
+            public Vector3 start;
+            public Vector3 goal;
+            public float speed;
+            public float orbitRadius;
+            public int motionSeed;
+            public int group = -1;              // swarm or flock id; -1 = flies on its own
+            public bool frozen;                 // a promoted crowd drone: its CrowdFollower moves it, not ContactMotion
+            public FlightPath path;             // a custom path from the 2D editor (single contacts; groups carry theirs themselves)
+            public int beh = -1;                // a flight pattern from the scenario options (a FlightBehaviour); -1 = the definition's own
+            public string patternEnd = "ExitedSector";
+            public float agl;
+        }
+
+        // Scenario options (set from the trainer config at each start): spawn height and distance ranges, sector turn, bird roost.
+        float aAltMin = -1f, aAltMax = -1f, aDistMin = -1f, aSectorOffset, aRoostBearing = 999f, aRoostDist, aRoostAlt = -1f;
+        public float ActiveSectorOffset => aSectorOffset;
+
+        // A repeatable 0..1 from a seed and a salt, for choices that must not take a value from the plan's random stream.
+        static float Hash01(int seed, int salt)
+        {
+            unchecked
+            {
+                uint h = (uint)(seed * 73856093) ^ (uint)(salt * 19349663);
+                h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+                return (h & 0xFFFFFF) / (float)0x1000000;
+            }
+        }
+
+        // The custom paths of this run that fit: the use, and for single drones the class. pick chooses between several that fit
+        // (taken from values the plan already drew, so adding a path never shifts the rest of the plan). Null = none.
+        FlightPath PickPath(PathUse use, int cls, int pick)
+        {
+            var cfg = TrainerConfig;
+            if (cfg == null || cfg.paths == null || RunConditions.RangeDrill) return null;
+            int matches = 0;
+            foreach (var fp in cfg.paths) if (PathFits(fp, use, cls)) matches++;
+            if (matches == 0) return null;
+            int k = (pick & 0x7FFFFFFF) % matches;
+            foreach (var fp in cfg.paths) if (PathFits(fp, use, cls) && k-- == 0) return fp;
+            return null;
+        }
+
+        static bool PathFits(FlightPath fp, PathUse use, int cls) => fp != null && fp.Usable && fp.use == use && (use != PathUse.Drone || fp.cls < 0 || fp.cls == cls);
+
+        // What a one-way path logs when it is flown out: a hostile that ends within 60 m of the post has reached it.
+        string PathEndReason(FlightPath fp, bool hostile)
+        {
+            if (hostile && fp.mode == PathMode.OneWay && defendedPoint != null)
+            {
+                var e = fp.points[fp.points.Count - 1];
+                Vector3 post = defendedPoint.position;
+                if (Vector2.Distance(e.Xz, new Vector2(post.x, post.z)) <= 60f) return "ReachedDefendedPoint";
+            }
+            return "ExitedSector";
+        }
+
+        // Swarms and flocks of this run, keyed by id; members join as they spawn.
+        readonly Dictionary<int, SwarmGroup> groups = new Dictionary<int, SwarmGroup>();
+        int aSwarmSize, aBirdFlocks, aFlockSize = 8;
+        SiteType aSite;
+        GameObject siteRoot;
+        public GameObject SiteRoot => siteRoot;
+        float aSwarmTime = 60f, aSwarmBearing = 999f;
+        SwarmTactic aSwarmTactic;
+        public SwarmSky BigSwarm => GetComponent<SwarmSky>();
+        readonly List<SwarmSky> birdSkies = new List<SwarmSky>();     // big bird flocks of this run (children of this object)
+        public IReadOnlyList<SwarmSky> BigFlocks => birdSkies;
+        SwarmProfile defaultSwarm, defaultFlock;
+        public IEnumerable<SwarmGroup> Groups => groups.Values;
+
+        List<PlannedSpawn> plan;
+        int next;
+        bool finished;
+
+        public float ScenarioTime { get; private set; }
+        public bool Finished => finished && plan != null;
+        public float Duration => active != null ? active.duration : 0f;
+        public int ActiveSeed => active != null ? active.seed : 0;
+        public int RunNumber { get; private set; }   // increments on every (re)start
+        public float ActiveArc => active != null ? active.sectorArcDegrees : sectorArcDegrees;
+        public float ActiveRadius => active != null ? active.spawnRingRadius : spawnRingRadius;
+
+        // Set by the trainer screen. While it is set it replaces both the preset values and the Inspector override; null = not in use.
+        public ScenarioConfig TrainerConfig { get; private set; }
+        float activeSpeed = 1f;
+        float activeBlendIn;
+
+        // Dense sky (DS-1): the crowd of this run, and the track numbers shared by planned contacts and crowd drones.
+        int aCrowdCount;
+        float aCrowdRadius;
+        int[] trackIds;                 // null when there is no crowd: ids are then 1, 2, 3... as before
+        int idPlanCount;                // planned contacts at the start of the run (the track-number shuffle is over idPlanCount + crowd)
+        public CrowdSky Crowd => crowd;
+        CrowdSky crowd;
+        // The first track number that is free for contacts made outside the plan (Director, Range drill).
+        public int FirstFreeId => trackIds != null ? trackIds.Length + 1 : 1;
+
+        // Start (or restart) a run from a trainer config. Pass null to go back to the Inspector / preset values.
+        public void StartRun(ScenarioConfig config)
+        {
+            TrainerConfig = config != null ? config.Clone().Validate().ApplyPrevalence() : null;
+            Restart();
+        }
+
+        void Start()
+        {
+            if (preset == null)
+            {
+                Debug.LogError("[Scenario] ScenarioSpawner has no preset assigned.", this);
+                enabled = false;
+                return;
+            }
+            if (defendedPoint == null) defendedPoint = transform;
+            // Nothing happens until the trainer presses START (or StartRun / Restart is called), unless Auto Start is ticked.
+            if (autoStart) Restart();
+        }
+
+        // True until the first run has been started.
+        public bool Waiting => plan == null;
+
+        // Set by the trainer's setup: where drones may appear (world x, z). Empty = the ring in front of the post.
+        [System.NonSerialized] public List<Vector3> customSpawnPoints = new List<Vector3>();
+
+        // Ends the run on the next frame, e.g. to see the results without waiting out the clock.
+        [ContextMenu("End Scenario Now")]
+        public void EndNow()
+        {
+            if (Application.isPlaying && active != null && !finished) ScenarioTime = active.duration;
+        }
+
+        // Also in the component's context menu (three dots) while playing.
+        [ContextMenu("Restart Scenario")]
+        public void Restart()
+        {
+            if (!Application.isPlaying || preset == null) return;
+            foreach (var c in ContactRegistry.Live.ToArray()) c.Despawn("Restart");
+            ContactRegistry.Reset();
+
+            if (active != null) Destroy(active);
+            active = Instantiate(preset);
+            active.name = preset.name;
+            activeSpeed = 1f;
+            activeBlendIn = 0f;
+            aSwarmSize = 0; aBirdFlocks = 0; aFlockSize = 8; aSwarmTime = 60f; aSwarmBearing = 999f; aSwarmTactic = SwarmTactic.Direct;
+            aSite = SiteType.None;
+            aCrowdCount = 0; aCrowdRadius = 0f;
+            aAltMin = aAltMax = aDistMin = -1f; aSectorOffset = 0f; aRoostBearing = 999f; aRoostDist = 0f; aRoostAlt = -1f;
+            float noIffPct = 5f, spoofPct = 0f;
+            bool iffAid = true;
+            string source = "";
+            if (TrainerConfig != null)
+            {
+                var c = TrainerConfig;
+                source = $" (trainer: {c.presetName})";
+                active.seed = c.seed;
+                active.duration = c.duration;
+                active.hostileCount = c.hostileCount;
+                active.friendlyCount = c.friendlyCount;
+                active.civilianCount = c.civilianCount;
+                active.birdCount = c.birdCount;
+                active.sectorArcDegrees = c.sectorArcDegrees;
+                active.spawnRingRadius = c.spawnRingRadius;
+                active.spawnWindowStart = c.spawnWindowStart;
+                active.spawnWindowEnd = c.spawnWindowEnd;
+                activeSpeed = c.speedMultiplier;
+                activeBlendIn = Mathf.Max(0f, c.blendInPercent);
+                aSwarmSize = c.swarmSize; aSwarmTime = c.swarmTime; aSwarmBearing = c.swarmBearing; aSwarmTactic = c.swarmTactic; aBirdFlocks = c.birdFlocks; aFlockSize = c.flockSize;
+                aSite = c.site;
+                aCrowdCount = c.crowdCount; aCrowdRadius = c.CrowdRadiusEffective;
+                if (c.HasAltRange) { aAltMin = c.spawnAltMin; aAltMax = c.spawnAltMax; }
+                aDistMin = c.spawnDistMin; aSectorOffset = c.sectorCentreDegrees;
+                aRoostBearing = c.roostBearing; aRoostDist = c.roostDistance; aRoostAlt = c.roostAltitude;
+                iffAid = c.iffAid; noIffPct = c.friendlyNoIffPercent; spoofPct = c.hostileSpoofPercent;
+            }
+            else if (overridePreset)
+            {
+                source = " (Inspector override)";
+                activeSpeed = speedMultiplier;
+                activeBlendIn = blendInPercent;
+                aSwarmSize = swarmSize; aSwarmTime = swarmTime; aSwarmBearing = swarmBearing; aSwarmTactic = swarmTactic; aBirdFlocks = birdFlocks; aFlockSize = flockSize;
+                aSite = site;
+                active.seed = seed;
+                active.duration = duration;
+                active.hostileCount = hostileCount;
+                active.friendlyCount = friendlyCount;
+                active.civilianCount = civilianCount;
+                active.birdCount = birdCount;
+                active.sectorArcDegrees = sectorArcDegrees;
+                active.spawnRingRadius = spawnRingRadius;
+                active.spawnWindowStart = spawnWindowStart;
+                active.spawnWindowEnd = spawnWindowEnd;
+                if (randomizeSeed) active.seed = System.Environment.TickCount;
+            }
+
+            RunConditions.Difficulty = TrainerConfig != null ? TrainerConfig.difficulty : "";
+            RunConditions.Prevalence = TrainerConfig != null ? TrainerConfig.prevalence : Prevalence.Custom;
+            RunConditions.QuietWatch = TrainerConfig != null && TrainerConfig.quietWatch;
+            RunConditions.NullMission = TrainerConfig != null && TrainerConfig.nullMission;
+            RunConditions.RangeDrill = TrainerConfig != null && TrainerConfig.rangeDrill;
+            RunConditions.ReferencePackage = TrainerConfig != null && TrainerConfig.referencePackage;
+            RunConditions.DirectorOn = TrainerConfig != null && TrainerConfig.director && !TrainerConfig.referencePackage && !TrainerConfig.rangeDrill && !RunConditions.NetTeamClient;      // a trainee in a team run gets the host's contacts, not its own director's
+            RunConditions.PackageId = TrainerConfig != null ? TrainerConfig.packageId ?? "" : "";
+            RunConditions.NightVisionSeconds = 0f;
+            RunConditions.AllowMovement = TrainerConfig != null && TrainerConfig.allowMovement;
+            RunConditions.IffAid = iffAid;
+            RunConditions.FriendlyNoIffPercent = noIffPct;
+            RunConditions.HostileSpoofPercent = spoofPct;
+            Iff.BeginRun(active.seed);
+            // The site around the post: rebuilt each run (the post may have moved, the seed decides the layout).
+            if (siteRoot != null) Destroy(siteRoot);
+            siteRoot = SiteBuilder.Build(transform, aSite, preset.siteProfile, active.seed);
+            if (siteRoot != null)
+            {
+                Debug.Log($"[Scenario] Site: {aSite} ({siteRoot.GetComponentsInChildren<Collider>().Length} solid objects; they block line of sight).");
+                // The soldier stands on the post: on the ground (rural) or up the watchtower (urban).
+                var cam = Camera.main;
+                if (cam != null)
+                {
+                    Vector3 eye = transform.position;
+                    eye.y = SiteBuilder.Ground(eye) + SiteBuilder.EyeHeight;
+                    cam.transform.position = eye;
+                    var walker = cam.GetComponent<Chaukanna.Player.ObserverMove>();
+                    if (walker != null) walker.SetPost(eye);
+                }
+            }
+
+            RunNumber++;
+            ScenarioTime = 0f;
+            nextRangeSample = 0f;
+            next = 0;
+            finished = false;
+            BuildPlan();
+            idPlanCount = plan.Count;       // a team client clears its plan below, but its track numbers must match the host's
+            // Range drill: no planned contacts; the drill puts one item at a time in front of the soldier and ends the run itself.
+            var drill = GetComponent<RangeDrill>();
+            if (RunConditions.NetTeamClient)
+            {
+                // LAN team mode on a trainee's PC: the host's sky arrives as proxies; nothing is planned here.
+                plan.Clear();
+                active.duration += 30f;     // the host ends the run; this is only a backstop
+            }
+            if (RunConditions.RangeDrill)
+            {
+                plan.Clear();
+                active.duration = 3600f;
+                if (drill == null) drill = gameObject.AddComponent<RangeDrill>();
+                drill.Begin(this, TrainerConfig);
+            }
+            else if (drill != null) drill.Stop();
+            var director = GetComponent<Director>();
+            if (RunConditions.DirectorOn)
+            {
+                if (director == null) director = gameObject.AddComponent<Director>();
+                director.Begin(this, active.seed);
+            }
+            else
+            {
+                if (director != null) director.Stop();
+                Director.Log.Clear();
+            }
+            StartCrowd();
+            Debug.Log($"[Scenario] '{active.name}'{source} seed {active.seed}: {plan.Count} contacts planned over {active.duration:F0}s, ring {active.spawnRingRadius:F0} m." + (crowd != null ? $" Crowd: {aCrowdCount} tracks over {aCrowdRadius:F0} m." : ""));
+        }
+
+        const float RangeSampleSeconds = 0.5f;
+        float nextRangeSample;
+        Chaukanna.Player.ContactSensor logSensor;
+
+        void Update()
+        {
+            var kb = Keyboard.current;
+            if (kb != null && kb.f1Key.wasPressedThisFrame && !ContactRegistry.InputBlocked)
+            {
+                ContactRegistry.SetTruthColours(!ContactRegistry.TruthColours);
+                Debug.Log("[Scenario] Truth colours " + (ContactRegistry.TruthColours ? "ON (debug)" : "OFF"));
+            }
+
+            if (finished || plan == null) return;
+            ScenarioTime += Time.deltaTime;
+            ContactRegistry.ScenarioTime = ScenarioTime;
+
+            while (next < plan.Count && plan[next].time <= ScenarioTime) { Spawn(plan[next], PlannedId(next)); next++; }
+            foreach (var g in groups.Values) g.Step(Time.deltaTime);
+
+            // Range to the post twice a second, for the scoring's decision clock (release points are scoring rules).
+            if (ScenarioTime >= nextRangeSample)
+            {
+                nextRangeSample = ScenarioTime + RangeSampleSeconds;
+                Vector3 post = defendedPoint != null ? defendedPoint.position : transform.position;
+                if (logSensor == null && Camera.main != null) logSensor = Camera.main.GetComponent<Chaukanna.Player.ContactSensor>();
+                foreach (var c in ContactRegistry.Live)
+                {
+                    c.Data.SampleRange(ScenarioTime, c.transform.position, post);
+                    c.Data.SampleTrack(ScenarioTime, c.transform.position, logSensor != null && logSensor.Visible.Contains(c));
+                }
+                RunLog.post = post;
+                RunLog.sectorYaw = transform.eulerAngles.y;
+                RunLog.spawnRadius = ActiveRadius;
+                var cam = logSensor != null ? logSensor.GetComponent<Camera>() : Camera.main;
+                if (cam != null)
+                {
+                    var e = cam.transform.eulerAngles;
+                    RunLog.view.Add(new ViewPoint { t = ScenarioTime, yaw = e.y, pitch = -Mathf.DeltaAngle(0f, e.x), fov = Camera.VerticalToHorizontalFieldOfView(cam.fieldOfView, cam.aspect), x = cam.transform.position.x, z = cam.transform.position.z });
+                }
+            }
+
+            if (ScenarioTime >= active.duration)
+            {
+                finished = true;
+                foreach (var c in ContactRegistry.Live.ToArray()) c.Despawn("ScenarioEnd");
+                Debug.Log($"[Scenario] Finished at {ScenarioTime:F1}s, {ContactRegistry.Events.Count} events logged.");
+            }
+        }
+
+        void BuildPlan()
+        {
+            var rng = new System.Random(active.seed);
+            var list = new List<PlannedSpawn>();
+
+            for (int i = 0; i < active.hostileCount && active.hostileClassesEnabled.Count > 0; i++)
+                Add(list, rng, active.hostileClassesEnabled[rng.Next(active.hostileClassesEnabled.Count)]);
+            for (int i = 0; i < active.friendlyCount; i++) Add(list, rng, ContactClass.FriendlyISR);
+            for (int i = 0; i < active.civilianCount; i++) Add(list, rng, ContactClass.CivilianQuad);
+            for (int i = 0; i < active.birdCount; i++) Add(list, rng, ContactClass.Bird);
+
+            PlanGroups(list);
+            PlanPlaced(list);
+            plan = list.OrderBy(p => p.time).ToList();   // stable sort
+            ReportModels();
+            ReportBlockedStarts();
+        }
+
+        // How many contacts start where the post cannot see them because terrain is in the way. They may still fly into
+        // view; scoring decides per contact from what actually happened (ScoringRules.excludeNeverDetectable).
+        void ReportBlockedStarts()
+        {
+            if (plan.Count == 0) return;
+            Vector3 eye = (defendedPoint != null ? defendedPoint.position : transform.position) + Vector3.up * 1.7f;
+            int blocked = 0;
+            foreach (var p in plan)
+                if (Physics.Linecast(eye, p.start, ~0, QueryTriggerInteraction.Ignore)) blocked++;
+            if (blocked > 0)
+                Debug.Log($"[Scenario] {blocked} of {plan.Count} planned contacts start behind terrain (no line of sight from the post at their start point). Any that never come into view are scored \"not detectable\", not missed.");
+        }
+
+        // Says in the Console which model each planned contact will wear, and names any class left on a grey placeholder.
+        void ReportModels()
+        {
+            var counts = new SortedDictionary<string, int>();
+            var missing = new HashSet<ContactClass>();
+            int withModel = 0;
+            foreach (var p in plan)
+            {
+                if (p.look.contactClass == ContactClass.Bird) { counts.TryGetValue("code-built bird", out int nb); counts["code-built bird"] = nb + 1; withModel++; continue; }
+                var prefab = ContactVisuals.PickPrefab(p.look, p.motionSeed / 7, ModelsFor(p.look.contactClass));
+                if (prefab == null) { missing.Add(p.look.contactClass); continue; }
+                withModel++;
+                counts.TryGetValue(prefab.name, out int n);
+                counts[prefab.name] = n + 1;
+            }
+            Debug.Log($"[Scenario] Models: {withModel} of {plan.Count} contacts use a model prefab ({string.Join(", ", counts.Select(kv => kv.Key + " x" + kv.Value))}).");
+            int blendIn = plan.Count(p => p.deceptive);
+            if (blendIn > 0) Debug.Log($"[Scenario] {blendIn} hostile{(blendIn > 1 ? "s" : "")} will blend in as own drones before breaking off ({activeBlendIn:F0} % of hostiles).");
+            foreach (var c in missing)
+                Debug.LogWarning($"[Scenario] {c} has no model: it will spawn as a grey placeholder. Drag a prefab into the spawner's Models list for it, or into its Contact Definition.", this);
+        }
+
+        // Groups the 3D editor dropped at a point (ScenarioConfig.placedGroups). Own random stream, so they never shift the rest of the plan.
+        // A group with a path appears at its first waypoint and flies it; without one, hostiles fly at the post, own / civilian drones and
+        // single birds loiter over the point, and swarms and flocks cross over it to the far side of the post.
+        void PlanPlaced(List<PlannedSpawn> list)
+        {
+            var cfg = TrainerConfig;
+            if (cfg == null || cfg.placedGroups == null || cfg.placedGroups.Count == 0 || RunConditions.RangeDrill) return;
+            var rng = new System.Random(active.seed ^ 0x71ACED);
+            Vector3 post = defendedPoint != null ? defendedPoint.position : transform.position;
+            int gid = 1000, made = 0;
+            foreach (var g in cfg.placedGroups)
+            {
+                var kind = g.Kind;
+                FlightPath route = g.path >= 0 && cfg.paths != null && g.path < cfg.paths.Count && cfg.paths[g.path] != null && cfg.paths[g.path].Usable ? cfg.paths[g.path] : null;
+                float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(new Vector3(g.x, 0f, g.z));
+                Vector3 at = new Vector3(g.x, (float.IsNaN(ground) ? 0f : ground) + Mathf.Max(0f, g.alt), g.z);
+                if (route != null) at = route.World(0);
+                float time = Mathf.Clamp(g.time, 0f, Mathf.Max(0f, active.duration - 1f));
+                Vector3 across = post + (post - at); across.y = at.y;     // the far side of the post
+                int count = Mathf.Max(1, g.count);
+                if (kind == PlacedKind.Swarm || kind == PlacedKind.Flock)
+                {
+                    bool swarm = kind == PlacedKind.Swarm;
+                    var def = swarm ? (active.GetDefinition(ContactClass.HostileQuad) ?? active.GetDefinition(ContactClass.HostileFixedWing)) : active.GetDefinition(ContactClass.Bird);
+                    if (def == null) continue;
+                    float speed = Mathf.Lerp(def.speedRange.x, def.speedRange.y, 0.5f) * activeSpeed;
+                    Vector3 aim = route != null ? route.EndWorld() : swarm ? post + Vector3.up * 10f : across;
+                    int seed = rng.Next();
+                    if (!swarm && count > SwarmSky.Threshold)
+                    {
+                        var go = new GameObject("PlacedFlock_" + gid);
+                        go.transform.SetParent(transform, false);
+                        var sky = go.AddComponent<SwarmSky>();
+                        birdSkies.Add(sky);
+                        sky.BeginBirds(this, gid++, def, count, at, aim, time, seed, g.species);
+                        if (route != null) sky.SetPath(route, activeSpeed);
+                    }
+                    else
+                    {
+                        int n = Mathf.Min(count, SwarmSky.Threshold);   // a bigger drone swarm is the scenario's single big swarm, not a placed one
+                        var prof = swarm ? (defaultSwarm != null ? defaultSwarm : (defaultSwarm = SwarmProfile.Drones())) : (defaultFlock != null ? defaultFlock : (defaultFlock = SwarmProfile.Birds()));
+                        int before = list.Count;
+                        var group = AddGroup(list, gid++, def, n, at, aim, speed, time, prof, seed, swarm ? "ReachedDefendedPoint" : "ExitedSector");
+                        if (route != null) group.SetPath(route, activeSpeed);
+                        if (!swarm) for (int i = before; i < list.Count; i++) list[i].motionSeed = BirdSeed(g.species, rng);
+                    }
+                    made++;
+                    continue;
+                }
+                var cls = kind == PlacedKind.Bird ? ContactClass.Bird : (ContactClass)(int)kind;
+                var single = active.GetDefinition(cls);
+                if (single == null) continue;
+                bool hostile = cls == ContactClass.HostileQuad || cls == ContactClass.HostileFixedWing;
+                for (int i = 0; i < count; i++)
+                {
+                    float u = (float)rng.NextDouble(), v = (float)rng.NextDouble();
+                    int motionSeed = cls == ContactClass.Bird ? BirdSeed(g.species, rng) : rng.Next();
+                    Vector3 start = at + new Vector3((u - 0.5f) * 30f, 0f, (v - 0.5f) * 30f);
+                    if (route != null) start = at;
+                    var p = new PlannedSpawn
+                    {
+                        time = time + i * 1.5f, def = single, look = single, start = start, motionSeed = motionSeed,
+                        speed = Mathf.Lerp(single.speedRange.x, single.speedRange.y, v) * activeSpeed,
+                    };
+                    if (route != null) { p.path = route; p.goal = route.EndWorld(); }
+                    else if (hostile) { p.goal = post + Vector3.up * 10f; p.beh = (int)FlightBehaviour.Approach; }
+                    else if (cls == ContactClass.Bird) { p.goal = across; p.beh = (int)FlightBehaviour.Transit; }
+                    else { p.goal = start; p.beh = (int)FlightBehaviour.Loiter; p.orbitRadius = Mathf.Lerp(40f, 70f, u); }
+                    list.Add(p);
+                }
+                made++;
+            }
+            if (made > 0) Debug.Log($"[Scenario] {made} placed group{(made > 1 ? "s" : "")} from the 3D editor.");
+        }
+
+        // A motion seed whose bird is of the wanted species (the look seed is motionSeed / 7; see BirdKit.SpeciesOf).
+        static int BirdSeed(int species, System.Random rng)
+        {
+            int k = species == BirdSpeciesInfo.Kite ? rng.Next(0, 5) : species == BirdSpeciesInfo.Pigeon ? rng.Next(5, 14) : rng.Next(14, 20);
+            return (rng.Next(1, 90000) * 20 + k) * 7;
+        }
+
+        // Swarms and bird flocks, from a random stream of their own so adding a swarm never changes the rest of the plan.
+        void PlanGroups(List<PlannedSpawn> list)
+        {
+            groups.Clear();
+            var bigSky = GetComponent<SwarmSky>();
+            if (bigSky != null) bigSky.Stop();
+            foreach (var old in birdSkies)
+                if (old != null) { old.Stop(); if (Application.isPlaying) Destroy(old.gameObject); else DestroyImmediate(old.gameObject); }
+            birdSkies.Clear();
+            var rng = new System.Random(active.seed ^ 0x5A17);
+            float half = active.sectorArcDegrees * 0.5f, r = active.spawnRingRadius;
+            int id = 0;
+            var log = new List<string>();
+            if (aSwarmSize > 0)
+            {
+                var def = active.GetDefinition(ContactClass.HostileQuad) ?? active.GetDefinition(ContactClass.HostileFixedWing);
+                if (def == null) Debug.LogWarning("[Scenario] No hostile definition in the preset, so no swarm.");
+                else
+                {
+                    float bearing = aSwarmBearing <= 360f ? aSwarmBearing : Range(rng, -half, half);
+                    float altitude = aAltMin >= 0f ? Mathf.Lerp(aAltMin, aAltMax, 0.5f) : Mathf.Lerp(def.altitudeRange.x, def.altitudeRange.y, 0.5f);
+                    float rs = aDistMin >= 0f ? Mathf.Lerp(aDistMin, r, Hash01(active.seed, 3)) : r;
+                    Vector3 centre = GroupCentre(OnSector(bearing, rs, altitude), altitude, rng.Next());
+                    float speed = Mathf.Lerp(def.speedRange.x, def.speedRange.y, 0.5f) * activeSpeed;
+                    // A path drawn for the swarm: it appears at waypoint 0 and its centre follows the waypoints (the members flock round it).
+                    var swarmPath = PickPath(PathUse.Swarm, -1, 0);
+                    Vector3 aim = defendedPoint.position + Vector3.up * 10f;
+                    if (swarmPath != null) { centre = swarmPath.World(0); aim = swarmPath.EndWorld(); }
+                    var prof = swarmProfile != null ? swarmProfile : (defaultSwarm != null ? defaultSwarm : (defaultSwarm = SwarmProfile.Drones()));
+                    if (aSwarmSize > SwarmSky.Threshold && !RunConditions.RangeDrill)
+                    {
+                        // Big swarm: data-oriented simulation and instanced drawing (SwarmSky); members become contacts only when picked out.
+                        if (bigSky == null) bigSky = gameObject.AddComponent<SwarmSky>();
+                        bigSky.Begin(this, id++, def, ModelsFor(def.contactClass), aSwarmSize, centre, aim, speed, Mathf.Min(aSwarmTime, active.duration), rng.Next(), aSwarmTactic);
+                        if (swarmPath != null) bigSky.SetPath(swarmPath, activeSpeed);
+                        log.Add($"a big swarm of {aSwarmSize} {def.contactClass} ({aSwarmTactic}) at {aSwarmTime:F0} s from {bearing:F0} deg, simulated as data");
+                    }
+                    else
+                    {
+                        var swarmGroup = AddGroup(list, id++, def, aSwarmSize, centre, aim, speed, Mathf.Min(aSwarmTime, active.duration), prof, rng.Next(), "ReachedDefendedPoint");
+                        if (swarmPath != null) swarmGroup.SetPath(swarmPath, activeSpeed);
+                        log.Add($"a swarm of {aSwarmSize} {def.contactClass} at {aSwarmTime:F0} s from {bearing:F0} deg");
+                    }
+                }
+            }
+            var bird = active.GetDefinition(ContactClass.Bird);
+            for (int f = 0; f < aBirdFlocks && bird != null; f++)
+            {
+                float bearing = Range(rng, -half, half);
+                float exit = (bearing >= 0f ? -1f : 1f) * half * Mathf.Lerp(0.3f, 1f, (float)rng.NextDouble());
+                float altU = (float)rng.NextDouble();
+                float altitude = aAltMin >= 0f ? Mathf.Lerp(aAltMin, aAltMax, altU) : Mathf.Lerp(bird.altitudeRange.x, bird.altitudeRange.y, altU);
+                float rs = aDistMin >= 0f ? Mathf.Lerp(aDistMin, r, Hash01(active.seed, 100 + f)) : r;
+                Vector3 centre = GroupCentre(OnSector(bearing, rs, altitude), altitude, rng.Next());
+                float speed = Mathf.Lerp(bird.speedRange.x, bird.speedRange.y, (float)rng.NextDouble()) * activeSpeed;
+                float time = Range(rng, active.spawnWindowStart, Mathf.Min(active.spawnWindowEnd, active.duration));
+                var prof = flockProfile != null ? flockProfile : (defaultFlock != null ? defaultFlock : (defaultFlock = SwarmProfile.Birds()));
+                var flockPath = PickPath(PathUse.Flock, -1, f);
+                if (flockPath != null) centre = flockPath.World(0);
+                // The roost: the options (bearing from the middle of the sector, distance from the post, height above ground) or the old defaults.
+                Vector3 roostPoint = OnSector(aRoostBearing <= 360f ? aRoostBearing : exit * 0.5f, aRoostDist > 0f ? aRoostDist : Mathf.Min(r * 0.5f, 450f), aRoostAlt >= 0f ? aRoostAlt : altitude + 20f);
+                bool roostSet = aRoostBearing <= 360f || aRoostDist > 0f || aRoostAlt >= 0f;
+                if (aFlockSize > SwarmSky.Threshold && !RunConditions.RangeDrill)
+                {
+                    // Big bird flock: the swarm engine with the bird profile (topological neighbours, banked turns, a roost to circle),
+                    // drawn instanced with flapping bird meshes. A bird picked out becomes a real Bird contact.
+                    int flockSeed = rng.Next();
+                    var go = new GameObject("BirdFlock_" + id);
+                    go.transform.SetParent(transform, false);
+                    var sky = go.AddComponent<SwarmSky>();
+                    birdSkies.Add(sky);
+                    Vector3 roost = flockPath != null ? flockPath.EndWorld() : roostPoint;
+                    int species = (flockSeed & 1) == 0 ? BirdSpeciesInfo.Pigeon : BirdSpeciesInfo.Sparrow;
+                    sky.BeginBirds(this, id++, bird, aFlockSize, centre, roost, time, flockSeed, species);
+                    if (flockPath != null) sky.SetPath(flockPath, activeSpeed);
+                    continue;
+                }
+                var flockGroup = AddGroup(list, id++, bird, aFlockSize, centre, flockPath != null ? flockPath.EndWorld() : roostSet ? roostPoint : OnSector(exit, r, altitude), speed, time, prof, rng.Next(), "ExitedSector");
+                if (flockPath != null) flockGroup.SetPath(flockPath, activeSpeed);
+            }
+            if (aBirdFlocks > 0) log.Add($"{aBirdFlocks} bird flock{(aBirdFlocks > 1 ? "s" : "")} of {aFlockSize}");
+            if (log.Count > 0) Debug.Log("[Scenario] Groups: " + string.Join("; ", log) + ".");
+        }
+
+        // A trainer-placed spawn point replaces the ring for groups too.
+        Vector3 GroupCentre(Vector3 onRing, float altitude, int seed)
+        {
+            if (customSpawnPoints == null || customSpawnPoints.Count == 0) return onRing;
+            Vector3 point = customSpawnPoints[(seed & 0x7FFFFFFF) % customSpawnPoints.Count];
+            float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(point);
+            point.y = (float.IsNaN(ground) ? 0f : ground) + altitude;
+            return point;
+        }
+
+        SwarmGroup AddGroup(List<PlannedSpawn> list, int id, ContactDefinition def, int count, Vector3 centre, Vector3 target, float speed, float time, SwarmProfile prof, int seed, string arrival)
+        {
+            var group = groups[id] = new SwarmGroup(id, prof, target, speed, arrival);
+            var offsets = SwarmPlanner.Layout(count, seed, prof, target - centre);
+            for (int i = 0; i < count; i++)
+                list.Add(new PlannedSpawn
+                {
+                    time = time + prof.spawnStagger * i / Mathf.Max(1, count - 1),
+                    def = def, look = def, start = centre + offsets[i], goal = target, speed = speed,
+                    motionSeed = seed + i * 7919, group = id,
+                });
+            return group;
+        }
+
+        void Add(List<PlannedSpawn> list, System.Random rng, ContactClass contactClass)
+        {
+            // Draw the same number of values for every contact so one missing definition can't shift the rest.
+            float time = Range(rng, active.spawnWindowStart, Mathf.Min(active.spawnWindowEnd, active.duration));
+            float half = active.sectorArcDegrees * 0.5f;
+            float bearing = Range(rng, -half, half);
+            float u1 = (float)rng.NextDouble(), u2 = (float)rng.NextDouble(), u3 = (float)rng.NextDouble();
+            float u4 = (float)rng.NextDouble(), u5 = (float)rng.NextDouble();
+            int motionSeed = rng.Next();
+
+            var def = active.GetDefinition(contactClass);
+            if (def == null)
+            {
+                Debug.LogWarning($"[Scenario] Preset '{active.name}' has no definition for {contactClass}; skipped.");
+                return;
+            }
+
+            // A blend-in hostile wears an own drone's model and flies its patrol; it is still a hostile fixed-wing.
+            // Chosen from a value already drawn, so switching blend-in on or off never changes the rest of the plan.
+            ContactDefinition truth = def;
+            bool hostile = contactClass == ContactClass.HostileQuad || contactClass == ContactClass.HostileFixedWing;
+            bool deceptive = hostile && activeBlendIn > 0f && ((motionSeed >> 3) & 0x7FFFFFFF) % 100 < activeBlendIn;
+            if (deceptive)
+            {
+                var own = active.GetDefinition(ContactClass.FriendlyISR);
+                if (own == null) deceptive = false;
+                else
+                {
+                    truth = active.GetDefinition(ContactClass.HostileFixedWing) ?? def;
+                    def = own;
+                }
+            }
+
+            float r = active.spawnRingRadius;
+            float altitude = aAltMin >= 0f ? Mathf.Lerp(aAltMin, aAltMax, u1) : Mathf.Lerp(def.altitudeRange.x, def.altitudeRange.y, u1);
+            float rStart = aDistMin >= 0f ? Mathf.Lerp(aDistMin, r, Hash01(motionSeed, 11)) : r;
+            var p = new PlannedSpawn
+            {
+                time = time,
+                def = truth,
+                look = def,
+                deceptive = deceptive,
+                anomalyDelay = Mathf.Lerp(25f, 70f, u2),
+                speed = Mathf.Lerp(def.speedRange.x, def.speedRange.y, u2) * activeSpeed,
+                start = OnSector(bearing, rStart, altitude),
+                motionSeed = motionSeed,
+            };
+            // Trainer-placed spawn points replace the ring. The point is picked from values already drawn, so the rest of
+            // the plan (times, speeds, classes) is the same with or without them.
+            if (customSpawnPoints != null && customSpawnPoints.Count > 0)
+            {
+                Vector3 point = customSpawnPoints[(motionSeed & 0x7FFFFFFF) % customSpawnPoints.Count];
+                point += new Vector3((u4 - 0.5f) * 60f, 0f, (u5 - 0.5f) * 60f);     // spread, so drones from one point don't stack
+                float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(point);
+                point.y = (float.IsNaN(ground) ? 0f : ground) + altitude;
+                p.start = point;
+            }
+
+            // The flight pattern the trainer picked for this type (a blend-in hostile keeps its own-drone patrol).
+            var pattern = TrainerConfig != null && !deceptive && !RunConditions.RangeDrill ? TrainerConfig.PatternFor(def.contactClass) : FlightPattern.Default;
+            FlightBehaviour beh = def.behaviour;
+            bool orbitPost = false;
+            switch (pattern)
+            {
+                case FlightPattern.StraightIn: beh = FlightBehaviour.Approach; break;
+                case FlightPattern.Orbit: beh = FlightBehaviour.Loiter; orbitPost = true; break;
+                case FlightPattern.Loiter: beh = FlightBehaviour.Loiter; break;
+                case FlightPattern.ZigZag: beh = FlightBehaviour.ZigZag; break;
+                case FlightPattern.PopUp: beh = FlightBehaviour.PopUp; break;
+                case FlightPattern.TerrainFollow: beh = FlightBehaviour.TerrainFollow; break;
+            }
+            // Transit / Erratic: leave through the ring on the far side of the arc from the entry bearing.
+            float exit = (bearing >= 0f ? -1f : 1f) * half * Mathf.Lerp(0.3f, 1f, u3);
+            switch (beh)
+            {
+                case FlightBehaviour.Approach:
+                    p.goal = defendedPoint.position + Vector3.up * 10f;
+                    break;
+                case FlightBehaviour.Loiter:
+                    if (orbitPost)
+                    {
+                        p.goal = defendedPoint.position + Vector3.up * 10f;
+                        p.orbitRadius = Mathf.Max(40f, r * Mathf.Lerp(0.2f, 0.4f, u5));
+                    }
+                    else
+                    {
+                        p.goal = OnSector(Mathf.Lerp(-half, half, u3) * 0.7f, r * Mathf.Lerp(0.4f, 0.7f, u4), altitude);
+                        p.orbitRadius = Mathf.Lerp(35f, 70f, u5);
+                    }
+                    break;
+                case FlightBehaviour.ZigZag:
+                case FlightBehaviour.PopUp:
+                case FlightBehaviour.TerrainFollow:
+                    // Hostiles press on for the post; everything else crosses the sector.
+                    bool inbound = truth.contactClass == ContactClass.HostileQuad || truth.contactClass == ContactClass.HostileFixedWing;
+                    p.goal = inbound ? defendedPoint.position + Vector3.up * 10f : OnSector(exit, r, altitude);
+                    p.patternEnd = inbound ? "ReachedDefendedPoint" : "ExitedSector";
+                    p.agl = beh == FlightBehaviour.TerrainFollow ? Mathf.Max(12f, altitude * 0.35f) : altitude;
+                    break;
+                default:
+                    p.goal = OnSector(exit, r, altitude);
+                    break;
+            }
+            if (pattern != FlightPattern.Default) p.beh = (int)beh;
+            // A custom path from the 2D editor replaces the spawn point and the straight pass: waypoint 0 is the spawn. A pattern other than
+            // Default / Custom path means the trainer wants that pattern for this type, so no path is used.
+            var route = pattern == FlightPattern.Default || pattern == FlightPattern.CustomPath
+                ? PickPath(def.contactClass == ContactClass.Bird ? PathUse.Bird : PathUse.Drone, (int)def.contactClass, motionSeed >> 5) : null;
+            if (route != null) { p.path = route; p.start = route.World(0); p.goal = route.EndWorld(); }
+            list.Add(p);
+        }
+
+        // One contact outside the plan (Range drill items). Same build path as a planned contact.
+        public Contact SpawnSingle(ContactClass cls, Vector3 start, Vector3 goal, float speed, int seed, int id) => SpawnSingle(cls, cls, start, goal, speed, seed, id, false);
+
+        public Contact SpawnSingle(ContactClass truth, ContactClass look, Vector3 start, Vector3 goal, float speed, int seed, int id, bool deceptive)
+        {
+            var def = active != null ? active.GetDefinition(truth) : null;
+            var lookDef = active != null ? active.GetDefinition(look) : null;
+            if (def == null || lookDef == null) return null;
+            Spawn(new PlannedSpawn { time = ScenarioTime, def = def, look = lookDef, deceptive = deceptive, start = start, goal = goal, speed = speed, motionSeed = seed }, id);
+            return ContactRegistry.Live.Count > 0 ? ContactRegistry.Live[ContactRegistry.Live.Count - 1] : null;
+        }
+
+        int PlannedId(int index) => PlannedTrackId(trackIds, index);
+
+        // The track number of the planned contact at `index` in time order: 1, 2, 3... without a crowd, from the shuffle with one.
+        public static int PlannedTrackId(int[] ids, int index) => ids != null && index < ids.Length ? ids[index] : index + 1;
+
+        // Builds the crowd for this run (or tears the old one down). Track numbers: with a crowd, the planned contacts and the crowd
+        // drones draw from one shuffled permutation of 1..N, so a number never tells which is which.
+        void StartCrowd()
+        {
+            trackIds = null;
+            bool wanted = aCrowdCount > 0 && !RunConditions.RangeDrill;
+            RunConditions.CrowdActive = wanted;
+            CrowdSky.ResetRunStats();
+            if (!wanted)
+            {
+                if (crowd != null) crowd.Stop();
+                return;
+            }
+            if (crowd == null) crowd = GetComponent<CrowdSky>() ?? gameObject.AddComponent<CrowdSky>();
+            trackIds = CrowdIds.Permutation(idPlanCount + aCrowdCount, active.seed);
+            var slice = new int[aCrowdCount];
+            System.Array.Copy(trackIds, idPlanCount, slice, 0, aCrowdCount);
+            var defs = new ContactDefinition[5];
+            var models = new List<GameObject>[5];
+            for (int c = 0; c < 5; c++) { defs[c] = active.GetDefinition((ContactClass)c); models[c] = ModelsFor((ContactClass)c); }
+            Vector3 post = defendedPoint != null ? defendedPoint.position : transform.position;
+            crowd.Begin(this, active.seed, aCrowdCount, aCrowdRadius, post, active.spawnRingRadius, active.duration, RunConditions.FriendlyNoIffPercent, defs, models, slice);
+        }
+
+        // A crowd drone the soldier picked out: a real contact on the spot, frozen for ContactMotion (its CrowdFollower flies it).
+        public Contact SpawnCrowdContact(ContactClass cls, Vector3 position, int lookSeed, int id)
+        {
+            var def = active != null ? active.GetDefinition(cls) : null;
+            if (def == null) return null;
+            return Spawn(new PlannedSpawn { time = ScenarioTime, def = def, look = def, start = position, goal = position, speed = 0f, motionSeed = lookSeed, frozen = true }, id);
+        }
+
+        Contact Spawn(PlannedSpawn p, int id)
+        {
+            var go = ContactVisuals.Build(p.look, out var materials, out var wingL, out var wingR, p.motionSeed / 7, ModelsFor(p.look.contactClass));
+            go.name = $"Contact_{id:00}";   // name must not reveal class in the hierarchy either
+            go.transform.SetParent(transform, true);
+            go.transform.position = p.start;
+
+            var contact = go.AddComponent<Contact>();
+            contact.Initialise(id, p.def, materials, p.deceptive);
+            contact.Data.lookClass = p.look.contactClass;
+            contact.Data.lookSeed = p.motionSeed;
+            var motion = go.AddComponent<ContactMotion>();
+            motion.Initialise(contact, p.beh >= 0 ? (FlightBehaviour)p.beh : p.look.behaviour, p.speed, p.goal, p.orbitRadius, p.motionSeed, wingL, wingR);
+            if (p.beh >= (int)FlightBehaviour.ZigZag) motion.SetPattern(p.patternEnd, p.agl);
+            if (p.path != null)
+            {
+                bool hostileTruth = p.def.contactClass == ContactClass.HostileQuad || p.def.contactClass == ContactClass.HostileFixedWing;
+                motion.SetPath(p.path, PathEndReason(p.path, hostileTruth), activeSpeed);
+            }
+            if (p.deceptive) motion.SetDeception(p.anomalyDelay, defendedPoint.position + Vector3.up * 10f);
+            if (p.group >= 0 && groups.TryGetValue(p.group, out var group))
+            {
+                group.Add(motion);
+                contact.Data.groupId = p.group;
+                if (p.def.contactClass == ContactClass.HostileQuad || p.def.contactClass == ContactClass.HostileFixedWing) contact.Data.swarmId = p.group;
+            }
+            motion.rotors = ContactVisuals.FindRotors(go);
+            if (p.frozen) motion.Frozen = true;
+            Iff.SetFlags(contact.Data, active.seed, id, RunConditions.FriendlyNoIffPercent, RunConditions.HostileSpoofPercent);
+            return contact;
+        }
+
+        Vector3 OnSector(float bearingDeg, float radius, float altitude)
+        {
+            Vector3 forward = transform.forward; forward.y = 0f;
+            Vector3 dir = Quaternion.AngleAxis(bearingDeg + aSectorOffset, Vector3.up) * forward.normalized;
+            Vector3 origin = transform.position; origin.y = 0f;
+            Vector3 p = origin + dir * radius;
+            // Altitude is height above the ground there, so nothing spawns inside a hill on generated terrain.
+            float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(p);
+            p.y = (float.IsNaN(ground) ? 0f : ground) + altitude;
+            return p;
+        }
+
+        static float Range(System.Random rng, float min, float max)
+        {
+            return min + (float)rng.NextDouble() * (max - min);
+        }
+
+        void OnDrawGizmosSelected()
+        {
+            if (preset == null) return;
+            Gizmos.color = Color.yellow;
+            float radius = overridePreset ? spawnRingRadius : preset.spawnRingRadius;
+            float half = (overridePreset ? sectorArcDegrees : preset.sectorArcDegrees) * 0.5f;
+            Vector3 prev = OnSector(-half, radius, 0f);
+            Gizmos.DrawLine(transform.position, prev);
+            for (int i = 1; i <= 24; i++)
+            {
+                Vector3 p = OnSector(Mathf.Lerp(-half, half, i / 24f), radius, 0f);
+                Gizmos.DrawLine(prev, p);
+                prev = p;
+            }
+            Gizmos.DrawLine(transform.position, prev);
+        }
+    }
+}

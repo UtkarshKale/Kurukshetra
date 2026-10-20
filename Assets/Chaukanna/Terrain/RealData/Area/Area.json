@@ -1,0 +1,21 @@
+{
+    "width": 1025,
+    "height": 1025,
+    "littleEndian": true,
+    "signed": false,
+    "west": 0.0,
+    "south": 0.0,
+    "east": 0.0,
+    "north": 0.0,
+    "centreLatitude": 32.71710804571624,
+    "centreLongitude": 74.93351633530108,
+    "cellSizeMetres": 4.8828125,
+    "elevationScale": 0.2,
+    "elevationOffset": -1000.0,
+    "hasNoData": false,
+    "noDataValue": 0,
+    "rowOrder": "north-up",
+    "crs": "EPSG:4326 (local metric grid around the centre)",
+    "source": "Terrain Tiles (Mapzen / AWS Open Data). Elevation sources include SRTM, GMTED2010, ETOPO1, NED and others: https://github.com/tilezen/joerd/blob/master/docs/attribution.md Zoom 13, about 16 m per source pixel. Downloaded 2026-10-15. Centre 32.71711, 74.93352, radius 2500 m.",
+    "licence": "Open data; credit the sources listed at https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
+}

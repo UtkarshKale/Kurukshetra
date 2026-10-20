@@ -1,0 +1,8 @@
+{
+    "west": 74.81084180841984,
+    "south": 32.66635695228698,
+    "east": 74.86415819158017,
+    "north": 32.71144304771301,
+    "source": "Sentinel-2 cloudless 2016 - https://s2maps.eu by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2016 & 2017). Zoom 15, about 4.0 m per source pixel; the data itself is 10 m. Downloaded 2026-10-14.",
+    "licence": "CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)"
+}

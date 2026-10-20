@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c55d2224e2eb974aaeca61455c49e46, type: 3}
+  m_Name: Contact_FriendlyISR
+  m_EditorClassIdentifier: Assembly-CSharp::Chaukanna.Scenario.ContactDefinition
+  contactClass: 2
+  displayName: Friendly ISR drone
+  prefab: {fileID: 7815962139742475149, guid: b2e51fe189ee2294fb2fa6463bcd06c3, type: 3}
+  variants: []
+  silhouette: 1
+  cue: 3
+  size: 4
+  behaviour: 2
+  speedRange: {x: 18, y: 26}
+  altitudeRange: {x: 90, y: 150}
