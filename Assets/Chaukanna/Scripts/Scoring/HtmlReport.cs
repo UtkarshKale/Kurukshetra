@@ -125,7 +125,7 @@ namespace Chaukanna.Scoring
             if (!string.IsNullOrEmpty(s.terrainLayers) || !string.IsNullOrEmpty(s.mapCredit))
                 h.Append("<p class=\"meta\">Terrain layers: ").Append(Esc(s.terrainLayers ?? "")).Append(string.IsNullOrEmpty(s.mapCredit) ? "" : "<br>" + Esc(s.mapCredit)).Append("</p>");
 
-            h.Append("<footer>").Append(Disclaimer).Append(" Cards A / B / C, release points, deadlines and bands are placeholders, not Indian doctrine; an officer must set them. ")
+            h.Append("<footer>").Append(Disclaimer).Append(" Cards A / B / C, release points, deadlines and score bands are training settings the trainer can change; they are not Indian doctrine and an officer should confirm them before real use. ")
                 .Append("\"In view\" means on the player's screen and passing the detection test, never \"saw\". The sound call is an annotated replay of the logged run, not a re-simulation. Asset and data credits: see CREDITS.txt next to the game.</footer>");
             h.Append("<script id=\"session-data\" type=\"application/json\">").Append(JsonUtility.ToJson(s).Replace("</", "<\\/")).Append("</script>");
             h.Append("<script>").Append(DownloadScript).Append("</script>");

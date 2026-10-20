@@ -2,6 +2,11 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Item 1: ROE banner and report wording without "placeholder" (compile check only)
+- Changed: the banner reads "ROE: CARD C - OWN DRONES UP: REPORT AND TRACK" (no "(PLACEHOLDER)"); the card wordings in ScoringRules lose their "PLACEHOLDER." prefix and read as plain rules (A: attack in progress, neutralise hostile drones; B: engage only a positively identified hostile; C: own drones up, report and track). Other player-visible text: the HTML report footer now says cards, release points, deadlines and score bands are trainer-adjustable training settings (not Indian doctrine, an officer should confirm them); dashboard footers "Placeholder thresholds" / "Placeholder priors" reworded; the sample unit table is titled "UNIT (sample data)". Code comments and inspector tooltips were left.
+- Verified: compile only (no errors). Not seen on screen.
+- NEXT: item 2 (3D replay).
+
 ## 2026-10-20 - Item 0: "Back to the 3D editor" in a build (compile check only)
 - Cause (from code, not reproduced): ObserverLook captures the mouse on any left-button press inside the player's view. The "Back to the 3D editor" button sits inside that view, so the press locked the cursor and the release landed at the screen centre: the IMGUI button never fired. In the Editor the same lock does not swallow the click the same way.
 - Changed: ObserverLook skips the capture when the press is over the button (ScenarioEditor3D.PointerOverTestBar); the bar draws at GUI depth -50 and builds its own styles; F9 also goes back while a test run is on; a second press is ignored while the reload starts. The two other TODO lines (editor failed to open once, distance optimisation) are logged as LC-a and LC-c, not worked (LC-c waits for the owner's graphics presets).

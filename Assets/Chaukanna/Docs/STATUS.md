@@ -22,7 +22,7 @@ Status words:
 | Fast reaction keys: E = engage all selected, Q = jam all selected, no classification needed | F24 | Built (2026-10-20, compile only) | Works on the locked contact or a whole lasso / G / Ctrl+click selection. Unclassified is scored: CLASS node 0 ("No call"), action and outcome scored as usual; Hold and Report still need a call. VR-sim moved: hold C = radial menu (was E), Z = tablet (was Q). Not run yet |
 | Binoculars (60° to 8° FOV, about 7.5x) | §1.15a | Hand-tested | Continuous-zoom EO sight (F31) not built |
 | 3D lasso, multi-select | — | Built | Hand test L2 open |
-| ROE cards A / B / C with scheduled or random flips, banner + tone | §5.4.4, F18 | Built | Rename to Weapons Free / Tight / Hold (F18) not done; waits on owner Q1 |
+| ROE cards A / B / C with scheduled or random flips, banner + tone | §5.4.4, F18 | Built | Banner shows the plain card name and rule with no placeholder tag (2026-10-20); wording is still for an officer to confirm. Rename to Weapons Free / Tight / Hold (F18) not done; waits on owner Q1 |
 | PID rule per card | §1.17a, F11 | Planned | |
 | Day / dusk / night, fog, NV (N key) | §1.15c, F32 | Hand-tested (early) | Image-intensifier look (scintillation, halo) not built |
 | Scenario spawn and flight options (spawn height range, spawn distance range, sector centre, flight pattern per drone type and for birds, bird roost bearing / distance / height) | trainer request 2026-10-20 | Built (2026-10-20, compile only) | SCENARIO tab and F6 panel. Patterns: straight in, orbit the post, zig-zag, pop-up, terrain-following, loiter, custom path (a path from the 2D editor). Same ScenarioConfig data as the path editor. Not run yet. |

@@ -112,7 +112,7 @@ namespace Chaukanna.Player
             var back = flashing ? new Color(0.8f, 0.1f, 0.1f, 0.85f) : new Color(0f, 0f, 0f, 0.55f);
 
             style.fontSize = Mathf.RoundToInt(bannerFontSize * ui);
-            Panel("ROE: " + Label(Current) + (RoeCards.IsLettered(Current) ? "  (PLACEHOLDER)" : ""), 0.5f, back, ui);
+            Panel("ROE: " + Label(Current), 0.5f, back, ui);
 
             float remaining = Mathf.Max(0f, spawner.Duration - spawner.ScenarioTime);
             style.fontSize = Mathf.RoundToInt(timerFontSize * ui);

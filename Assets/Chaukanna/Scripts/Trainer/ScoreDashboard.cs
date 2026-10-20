@@ -667,7 +667,7 @@ namespace Chaukanna.Trainer
             }
             y = SdtRow(x, y, w, "Report: is there a drone?", s.reportSdt);
             y = SdtRow(x, y, w, "Engage: is it hostile?", s.engageSdt);
-            GUI.Label(new Rect(x, y, w, 18f), "Process uses the player's own call, the card and the evidence they had; the result is what happened. Placeholder thresholds.", C.Small);
+            GUI.Label(new Rect(x, y, w, 18f), "Process uses the player's own call, the card and the evidence they had; the result is what happened. Thresholds are set in the scoring rules.", C.Small);
             return y + 28f;
         }
 
@@ -699,7 +699,7 @@ namespace Chaukanna.Trainer
             GUI.Label(new Rect(x, y + 2f, w - 130f, 36f), plan.text, C.Small);
             if (trainer != null && GUI.Button(new Rect(x + w - 124f, y, 124f, 24f), "Use for next run")) trainer.ApplyLearnerPlan(plan);
             y += 40f;
-            GUI.Label(new Rect(x, y, w, 18f), "One logistic model (ability + task + class + light + range), pooled with the other soldiers on this PC. Placeholder priors until there is data.", C.Small);
+            GUI.Label(new Rect(x, y, w, 18f), "One logistic model (ability + task + class + light + range), pooled with the other soldiers on this PC. Starting estimates are used until there is data.", C.Small);
             return y + 26f;
         }
 

@@ -29,6 +29,7 @@ Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo momen
 - [ ] ED-B3. Foliage with alpha cut-out on a model material loses its cut-out in the Lit copy (opaque quads); only matters for a kit model that is not instancing-flagged.
 
 ## LATER CHANGES 2026-10-20 (owner notes, recorded here so none is lost)
+- [x] LC-1. ROE banner and player-visible "placeholder" strings removed (2026-10-20, compile only): see PROGRESS.
 - [ ] LC-a. The 3D editor once failed to open in a build (owner: likely a one-off glitch). Recheck on the next build; collect Player.log ("[3D editor] Open" / "Could not open") if it recurs. Open failures are already caught and logged (ED-B1).
 - [x] LC-b. In a build, "Back to the 3D editor" after "Test run from here" did nothing. Cause (from code): a click anywhere in the player's view locks the mouse (ObserverLook), so the press on the button locked the cursor and the release never reached the button. Fixed 2026-10-20: ObserverLook ignores presses over the button, the bar draws on top, F9 also goes back. Compile only; needs a build test (LC-b1).
 - [ ] LC-b1. Hand-test LC-b in a build: Test run from here, then click "Back to the 3D editor (F9)", and also press F9.

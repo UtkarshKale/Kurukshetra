@@ -264,7 +264,7 @@ namespace Chaukanna.Trainer
             new UnitSoldier { name = "Soldier F", latestScore = 59f, previousScore = 49f, weakestArea = "fixed-wing identification" },
         };
 
-        public string Title => "UNIT (placeholder, sample data)";
+        public string Title => "UNIT (sample data)";
         public bool IsSample => true;
         public IList<UnitSoldier> Soldiers => soldiers;
     }

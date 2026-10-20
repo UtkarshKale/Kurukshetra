@@ -235,11 +235,11 @@ namespace Chaukanna.Scoring
             const Severity S = Severity.Sound, Mi = Severity.Minor, Ma = Severity.Major, C = Severity.Critical;
             return new List<CardDefinition>
             {
-                new CardDefinition { card = RoeCard.CardA, title = "Card A - attack in progress", wording = "PLACEHOLDER. Attack in progress: neutralise hostile drones; holding a strike drone is the worst error.",
+                new CardDefinition { card = RoeCard.CardA, title = "Card A - attack in progress", wording = "Attack in progress: neutralise hostile drones. Holding a strike drone is the worst error.",
                     rows = { Row(ThreatGroup.Strike, C, C, S, S), Row(ThreatGroup.Recce, Ma, Ma, S, S), Row(ThreatGroup.Own, S, S, Mi, Ma), Row(ThreatGroup.Civilian, S, S, Mi, Ma), Row(ThreatGroup.Bird, S, S, Mi, Mi), Row(ThreatGroup.Manned, S, S, Ma, C) } },
-                new CardDefinition { card = RoeCard.CardB, title = "Card B - engage only positively identified hostile", wording = "PLACEHOLDER. Alert: jam or engage only a positively identified hostile; report everything else.",
+                new CardDefinition { card = RoeCard.CardB, title = "Card B - engage only positively identified hostile", wording = "Alert: jam or engage only a positively identified hostile. Report everything else.",
                     rows = { Row(ThreatGroup.Strike, Ma, Ma, S, S), Row(ThreatGroup.Recce, Mi, S, S, S), Row(ThreatGroup.Own, S, S, Ma, C), Row(ThreatGroup.Civilian, S, S, Ma, C), Row(ThreatGroup.Bird, S, Mi, Mi, Ma), Row(ThreatGroup.Manned, S, S, Ma, C) } },
-                new CardDefinition { card = RoeCard.CardC, title = "Card C - own drones up: report and track", wording = "PLACEHOLDER. Peacetime / own drones up: report and track; engage only in self-defence or on order.",
+                new CardDefinition { card = RoeCard.CardC, title = "Card C - own drones up: report and track", wording = "Own drones up: report and track. Engage only in self-defence or on order.",
                     rows = { Row(ThreatGroup.Strike, Ma, S, S, S), Row(ThreatGroup.Recce, Mi, S, Mi, Ma), Row(ThreatGroup.Own, S, S, Ma, C), Row(ThreatGroup.Civilian, S, S, Ma, C), Row(ThreatGroup.Bird, S, Mi, Mi, Ma), Row(ThreatGroup.Manned, S, S, Ma, C) } },
             };
         }
