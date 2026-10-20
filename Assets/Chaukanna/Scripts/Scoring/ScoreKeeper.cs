@@ -53,6 +53,8 @@ namespace Chaukanna.Scoring
             return live;
         }
 
+        bool cursorFreed, newSeedOnRestart;
+
         void Update()
         {
             if (Learner == null) Learner = LearnerModel.Load(PlayerName);
@@ -62,6 +64,7 @@ namespace Chaukanna.Scoring
             if (spawner.RunNumber != run)
             {
                 run = spawner.RunNumber;
+                cursorFreed = false;
                 Last = null;
                 live = null;
                 LastReportPath = null;
@@ -72,6 +75,7 @@ namespace Chaukanna.Scoring
             if (Last == null && ContactRegistry.Live.Count == 0) Finish();
 
             var kb = Keyboard.current;
+            if (Last != null && !cursorFreed) { cursorFreed = true; if (Cursor.lockState == CursorLockMode.Locked) Cursor.lockState = CursorLockMode.None; Cursor.visible = true; }   // the end screen has buttons
             if (Last != null && kb != null && kb.rKey.wasPressedThisFrame && !ContactRegistry.InputBlocked && !Chaukanna.Net.LanSession.Active) spawner.Restart();   // in a LAN session the trainer starts the next run
         }
 
@@ -190,25 +194,69 @@ namespace Chaukanna.Scoring
             ScoreSelfTest.Run();
         }
 
-        // Player view at the end of a run: neutral, no score.
+        // Player view at the end of a run: neutral, no score; what the buttons do depends on who is looking.
+        //   solo: Restart goes back to the menu (R retries the same scenario here)
+        //   LAN trainee: Restart goes back to the lobby and waits for the trainer (still connected)
+        //   LAN trainer: Back to lobby (everyone) and Restart scenario (everyone; a new seed if ticked)
+        GUIStyle endButton;
+
         void OnGUI()
         {
-            if (Event.current.type != EventType.Repaint || spawner == null || !spawner.Finished || PlayerView.HideOverlays) return;
+            if (spawner == null || !spawner.Finished || PlayerView.HideOverlays) return;
+            var lan = Chaukanna.Net.LanSession.Instance;
+            var role = Chaukanna.Net.LanSession.Current;
+            bool ready = Last != null;
             GUI.BeginGroup(PlayerView.Rect);
             float ui = PlayerView.Height / 720f;
             if (titleStyle == null) titleStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft, wordWrap = false, fontStyle = FontStyle.Bold };
             titleStyle.fontSize = Mathf.RoundToInt(titleFontSize * ui);
             titleStyle.normal.textColor = Color.white;
+            if (endButton == null) endButton = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold };
+            endButton.fontSize = Mathf.RoundToInt(17f * ui);
 
-            var content = new GUIContent("RUN COMPLETE    Press R to restart");
+            string line2 = role == Chaukanna.Net.LanSession.Role.Client ? "Restart goes back to the lobby; wait there for the trainer."
+                : role == Chaukanna.Net.LanSession.Role.Host ? (lan != null && lan.PendingText.Length > 0 ? lan.PendingText : "Everyone stays connected.")
+                : "Restart goes back to the menu.   R: retry this scenario now";
+            if (!ready) line2 = "Writing the results ...";
+            var content = new GUIContent("RUN COMPLETE");
             Vector2 size = titleStyle.CalcSize(content);
-            float pad = 16f * ui;
-            var box = new Rect((PlayerView.Width - size.x) * 0.5f - pad, (PlayerView.Height - size.y) * 0.5f - pad, size.x + pad * 2f, size.y + pad * 2f);
+            float pad = 16f * ui, bw = 190f * ui, bh = 40f * ui;
+            float boxW = Mathf.Max(size.x + pad * 2f, bw * 2f + pad * 3f), boxH = size.y + pad * 3f + 26f * ui + (ready ? bh + pad : 0f) + (ready && role == Chaukanna.Net.LanSession.Role.Host ? 30f * ui : 0f);
+            var box = new Rect((PlayerView.Width - boxW) * 0.5f, (PlayerView.Height - boxH) * 0.5f, boxW, boxH);
             var old = GUI.color;
-            GUI.color = new Color(0f, 0f, 0f, 0.75f);
-            GUI.DrawTexture(box, Texture2D.whiteTexture);
-            GUI.color = old;
-            GUI.Label(new Rect(box.x + pad, box.y + pad, size.x, size.y), content, titleStyle);
+            if (Event.current.type == EventType.Repaint)
+            {
+                GUI.color = new Color(0f, 0f, 0f, 0.78f);
+                GUI.DrawTexture(box, Texture2D.whiteTexture);
+                GUI.color = old;
+            }
+            GUI.Label(new Rect(box.x + (boxW - size.x) * 0.5f, box.y + pad, size.x + 4f, size.y), content, titleStyle);
+            var sub = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(15f * ui), wordWrap = true };
+            sub.normal.textColor = new Color(1f, 1f, 1f, 0.8f);
+            GUI.Label(new Rect(box.x + pad, box.y + pad + size.y + 4f * ui, boxW - pad * 2f, 26f * ui), line2, sub);
+            float y = box.y + pad + size.y + 4f * ui + 26f * ui + pad;
+            if (ready)
+            {
+                if (role == Chaukanna.Net.LanSession.Role.Host)
+                {
+                    float x0 = box.x + (boxW - (bw * 2f + pad)) * 0.5f;
+                    bool busy = lan != null && lan.PendingText.Length > 0;
+                    GUI.enabled = !busy;
+                    if (GUI.Button(new Rect(x0, y, bw, bh), "Back to lobby", endButton)) lan.RequestBackToLobby();
+                    if (GUI.Button(new Rect(x0 + bw + pad, y, bw, bh), "Restart scenario", endButton)) lan.RequestRestart(newSeedOnRestart);
+                    GUI.enabled = true;
+                    newSeedOnRestart = GUI.Toggle(new Rect(x0 + bw + pad, y + bh + 6f * ui, bw, 24f * ui), newSeedOnRestart, " new seed", GUI.skin.toggle);
+                }
+                else
+                {
+                    if (GUI.Button(new Rect(box.x + (boxW - bw) * 0.5f, y, bw, bh), "Restart", endButton))
+                    {
+                        if (role == Chaukanna.Net.LanSession.Role.Client) lan.ReturnToLobbyWaiting();
+                        else if (!string.IsNullOrEmpty(Chaukanna.Session.SessionSetup.menuScenePath)) Chaukanna.Session.SessionSetup.Load(Chaukanna.Session.SessionSetup.menuScenePath);
+                        else spawner.Restart();      // the field scene was opened on its own: there is no menu to go back to
+                    }
+                }
+            }
             GUI.EndGroup();
         }
     }

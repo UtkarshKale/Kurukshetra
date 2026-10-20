@@ -406,21 +406,111 @@ namespace Chaukanna.Net
                 if (!p.host) { p.ready = false; Send(Msg.Lobby, p.clientId, w => { }, NetworkDelivery.ReliableSequenced); }
             }
             BroadcastRoster();
-            LeaveField();
+            LeaveField(inField);
             Note("Everyone back to the lobby.");
         }
 
-        void LeaveField()
+        // --- Game loop: end of a run, back to the lobby, restart. ---
+
+        enum Next { None, Lobby, Restart }
+        Next pendingNext;
+        bool pendingNewSeed;
+        float pendingSince;
+        public string PendingText => pendingNext == Next.None ? "" : pendingNext == Next.Lobby ? "Finishing the run, then everyone goes back to the lobby ..." : "Finishing the run, then restarting ...";
+
+        // Host: end the run if it is still going, wait for the scores to be written (this PC's and the trainees'), then send everyone
+        // back to the lobby. Nothing is lost: the black box, the voice recording and the results are closed before the scene changes.
+        public void RequestBackToLobby() { RequestNext(Next.Lobby, false); }
+
+        // Host: the same scenario again for every seat (same terrain and settings; a new seed when asked), after the same wrap-up.
+        public void RequestRestart(bool newSeed) { RequestNext(Next.Restart, newSeed); }
+
+        void RequestNext(Next what, bool newSeed)
+        {
+            if (role != Role.Host || pendingNext != Next.None) return;
+            if (what == Next.Restart && (Chaukanna.Session.SessionSetup.scenario == null || string.IsNullOrEmpty(Chaukanna.Session.SessionSetup.fieldScenePath)))
+            { Note("Nothing to restart yet: start a run first."); return; }
+            pendingNext = what; pendingNewSeed = newSeed; pendingSince = Time.unscaledTime;
+            var sp = Spawner;
+            if (inField && sp != null && !sp.Waiting && !sp.Finished) sp.EndNow();
+        }
+
+        void TickPending()
+        {
+            if (pendingNext == Next.None) return;
+            var sp = inField ? Spawner : null;
+            bool timeout = Time.unscaledTime - pendingSince > 6f;
+            if (!timeout && sp != null && !sp.Waiting)
+            {
+                if (!sp.Finished) return;
+                var keeper = FindAnyObjectByType<Chaukanna.Scoring.ScoreKeeper>();
+                if (keeper != null && keeper.Last == null) return;                    // this PC's result is not written yet
+                foreach (var p in roster.players)
+                    if (!p.host && p.state != "COMPLETE" && p.state != "waiting" && p.state != "in lobby") return;      // a trainee's result is still coming
+            }
+            var what = pendingNext;
+            pendingNext = Next.None;
+            if (what == Next.Lobby) BackToLobby(); else HostRestart(pendingNewSeed);
+        }
+
+        void HostRestart(bool newSeed)
+        {
+            var setup = Chaukanna.Session.SessionSetup.scenario;
+            if (role != Role.Host || setup == null) return;
+            int seed = setup.seed;
+            if (newSeed) seed = (System.Environment.TickCount * 7919 + roster.players.Count * 104729) & 0x7FFFFFF;
+            setup.seed = seed;
+            foreach (var p in roster.players)
+            {
+                p.state = "loading";
+                if (!p.host) { p.ready = true; int s = seed; Send(Msg.Restart, p.clientId, w => w.WriteValueSafe(s), NetworkDelivery.ReliableSequenced); }
+            }
+            BroadcastRoster();
+            Results.Clear();
+            EnterField();
+            Note($"Restarting the scenario for {roster.players.Count} seat(s) (seed {seed}).");
+            Chaukanna.Session.SessionSetup.LoadWithScreen(Chaukanna.Session.SessionSetup.fieldScenePath);
+        }
+
+        // Trainee: the host restarted the scenario. This PC still holds the set-up the host sent; use it again with the host's seed.
+        void ClientRestart(int seed)
+        {
+            var setup = Chaukanna.Session.SessionSetup.scenario;
+            if (setup == null || string.IsNullOrEmpty(Chaukanna.Session.SessionSetup.fieldScenePath)) { Note("The host restarted the run, but this PC has no run to repeat. Wait for the trainer to start one."); return; }
+            setup.seed = seed;
+            var me = roster.Find(LocalId);
+            if (me != null) { me.state = "loading"; me.ready = true; }
+            EnterField();
+            Note("The host restarted the scenario.");
+            Chaukanna.Session.SessionSetup.LoadWithScreen(Chaukanna.Session.SessionSetup.fieldScenePath);
+        }
+
+        // Trainee, end screen: back to the lobby, still connected, waiting for the trainer's next start. The finished result was
+        // already sent to the host when the run ended.
+        public void ReturnToLobbyWaiting()
+        {
+            if (role != Role.Client) return;
+            Send(Msg.Waiting, NetworkManager.ServerClientId, w => { }, NetworkDelivery.ReliableSequenced);
+            var me = roster.Find(LocalId);
+            if (me != null) { me.state = "waiting"; me.ready = false; }
+            LeaveField(inField);
+            Note("Back in the lobby. Waiting for the trainer.");
+        }
+
+        void LeaveField(bool loadMenu = true)
         {
             VoiceChat.End();
             PlayerAvatars.End(this);
+            proxies.Clear(); announced.Clear(); anomalySent.Clear(); targets.Clear(); pendingReports.Clear(); lastReportCall.Clear(); pickSentAt.Clear();
+            SeatPoses.Clear(); SeatTracks.Clear();
+            Chaukanna.Player.ReportBoard.Clear();
             inField = false;
             endSent = false;
             RunConditions.NetTeamClient = false;
             RunConditions.SeatRole = SeatRole.Any;
             spawnerCache = null;
             ContactRegistry.InputBlocked = false;
-            if (!string.IsNullOrEmpty(Chaukanna.Session.SessionSetup.menuScenePath)) Chaukanna.Session.SessionSetup.Load(Chaukanna.Session.SessionSetup.menuScenePath);
+            if (loadMenu && !string.IsNullOrEmpty(Chaukanna.Session.SessionSetup.menuScenePath)) Chaukanna.Session.SessionSetup.Load(Chaukanna.Session.SessionSetup.menuScenePath);
         }
 
         public void EnterField()
@@ -489,7 +579,17 @@ namespace Chaukanna.Net
                 r.ReadBytesSafe(ref bytes, len);
                 OnAreaChunk(area, file, offset, total, bytes);
             });
-            m.RegisterNamedMessageHandler(Msg.Lobby, (from, r) => { if (role == Role.Client) { LeaveField(); autoReadySent = false; Note("The trainer brought everyone back to the lobby. Press I'm ready for the next run."); } });
+            m.RegisterNamedMessageHandler(Msg.Waiting, (from, r) =>
+            {
+                if (role != Role.Host) return;
+                var p = roster.Find(from);
+                if (p == null) return;
+                p.state = "waiting"; p.ready = false;
+                Note($"{p.name} is back in the lobby, waiting.");
+                BroadcastRoster();
+            });
+            m.RegisterNamedMessageHandler(Msg.Restart, (from, r) => { r.ReadValueSafe(out int seed); if (role == Role.Client) ClientRestart(seed); });
+            m.RegisterNamedMessageHandler(Msg.Lobby, (from, r) => { if (role == Role.Client) { LeaveField(inField); autoReadySent = false; var me = roster.Find(LocalId); if (me != null) { me.state = "in lobby"; me.ready = false; } Note("The trainer brought everyone back to the lobby. Press I'm ready for the next run."); } });
             m.RegisterNamedMessageHandler(Msg.Live, (from, r) => StoreResult(from, Read<Chaukanna.Scoring.SessionResult>(r), false));
             m.RegisterNamedMessageHandler(Msg.Result, (from, r) => StoreResult(from, Read<Chaukanna.Scoring.SessionResult>(r), true));
             m.RegisterNamedMessageHandler(Msg.Spawn, (from, r) => OnSpawn(Read<SpawnMsg>(r)));
@@ -699,6 +799,7 @@ namespace Chaukanna.Net
         {
             Discovery.Tick(Time.unscaledTime, role == Role.None && Scanning);
             if (role == Role.Client && autoReady && !autoReadySent && nm != null && nm.IsConnectedClient && roster.Find(LocalId) != null) { autoReadySent = true; SetReady(true); }
+            if (role == Role.Host) TickPending();
             if (!inField || nm == null || !nm.IsListening) return;
             EnsureBoard();
             PoseTick();

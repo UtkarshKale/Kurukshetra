@@ -34,6 +34,7 @@ namespace Chaukanna.Session
         public static readonly List<PlayerSlot> players = new List<PlayerSlot>();
         public static readonly List<Vector2> spawnPoints = new List<Vector2>();   // drone spawn points; empty = the 1 km ring
         public static string menuScenePath = "";            // so the field can go back
+        public static string fieldScenePath = "";           // the field scene last loaded here, so a restart can load it again
 
         public static PlayerSlot LocalPlayer
         {
@@ -71,6 +72,7 @@ namespace Chaukanna.Session
         // not freeze on a blank picture.
         public static void LoadWithScreen(string scenePath)
         {
+            fieldScenePath = scenePath;
             var screen = LoadingScreen.Show();
             screen.StartCoroutine(screen.LoadField(scenePath));
         }

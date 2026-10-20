@@ -85,6 +85,7 @@ Status words:
 | Black box: view + flags at 2 Hz, decisions | F17 | Partial | 10 Hz operator state, every zoom / sensor toggle / trigger pull: Planned |
 | Raw-telemetry download (zip of JSONL / CSV + manifest) | F17 | Planned | |
 | Retry (R), back to lobby | F26 | Built | "Practice from this moment" and free arena Planned |
+| End screen: Restart (solo: menu; trainee: lobby, waiting), trainer Back to lobby / Restart scenario (new seed optional) | F26 | Built (2026-10-20, compile only) | Wrap-up wait before the scene change. Not run yet |
 
 ## 5. Architecture and offline (solution-v3 §5)
 

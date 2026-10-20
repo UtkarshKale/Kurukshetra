@@ -232,6 +232,7 @@ namespace Chaukanna.Net
         public const string Spawn = "chk.spawn", Despawn = "chk.despawn", Snap = "chk.snap", Anomaly = "chk.anomaly";
         public const string Decide = "chk.decide", Effect = "chk.effect", Live = "chk.live", Result = "chk.result";
         public const string Report = "chk.report", CrowdPick = "chk.crowdpick", Handled = "chk.handled";
+        public const string Waiting = "chk.waiting", Restart = "chk.restart";
         public const string Pose = "chk.pose", Ping = "chk.ping", Pong = "chk.pong", Voice = "chk.voice", Comms = "chk.comms";
     }
 }

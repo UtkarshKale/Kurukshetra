@@ -168,6 +168,8 @@ namespace Chaukanna.Trainer
             applied = true;
         }
 
+        bool restartNewSeed;
+
         // --- UI ---
 
         void OnGUI()
@@ -402,7 +404,16 @@ namespace Chaukanna.Trainer
             // In a LAN session a restart here would only restart this PC: the trainer sends everyone back to the lobby instead.
             if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Host)
             {
-                if (GUILayout.Button("<b>BACK TO LOBBY (all)</b>", new GUIStyle(button) { richText = true, fontSize = fontSize + 1 }, GUILayout.Width(190f), GUILayout.Height(row * 1.5f))) Chaukanna.Net.LanSession.Instance.BackToLobby();
+                var lanHost = Chaukanna.Net.LanSession.Instance;
+                bool busy = lanHost.PendingText.Length > 0;
+                bool wasEnabled = GUI.enabled;
+                GUI.enabled = wasEnabled && !busy;
+                {
+                    if (GUILayout.Button("<b>BACK TO LOBBY</b>", new GUIStyle(button) { richText = true, fontSize = fontSize }, GUILayout.Width(140f), GUILayout.Height(row * 1.5f))) lanHost.RequestBackToLobby();
+                    if (GUILayout.Button("<b>RESTART</b>", new GUIStyle(button) { richText = true, fontSize = fontSize }, GUILayout.Width(100f), GUILayout.Height(row * 1.5f))) lanHost.RequestRestart(restartNewSeed);
+                }
+                GUI.enabled = wasEnabled;
+                restartNewSeed = GUILayout.Toggle(restartNewSeed, " new seed", GUILayout.Width(90f), GUILayout.Height(row * 1.5f));
             }
             else if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.None)
             {

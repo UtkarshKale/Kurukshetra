@@ -343,3 +343,6 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [x] TP-1. Preview terrain (relief + satellite drape + layer overlays, layer toggles, Regenerate, coarse then 384 px). 2026-10-20, compile only.
 - [ ] TP-1a. Hand-test TP-1 (see PROGRESS 2026-10-20 Preview terrain).
 - [ ] TP-1b. Deferred (nothing deleted): oblique 3D view of the preview; satellite-estimated trees for realistic mode when the area has a picture but no map file; real tree / bush counts in the status line; surround ring in the picture; an auto-refresh when settings change.
+- [x] LOOP-1. Game loop: end screen with Restart (solo: menu; trainee: lobby, state waiting), trainer Back to lobby and Restart scenario (new seed optional), wrap-up before scene change. 2026-10-20, compile only.
+- [ ] LOOP-1a. Hand-test LOOP-1 (two PCs or host + built client).
+- [ ] LOOP-1b. Deferred (nothing deleted): the trainer's lobby shows who is waiting vs ready with a Start-for-everyone button; a late joiner during a run is still refused; restart with changed settings; a trainee-side countdown on Restart scenario; per-seat result tabs on the end screen.
