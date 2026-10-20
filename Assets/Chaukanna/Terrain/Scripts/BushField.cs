@@ -129,8 +129,12 @@ namespace Chaukanna.TerrainGen
             batchFill[m] = 0;
         }
 
+        // The draw radius after the player's view-distance scale (never under ViewDistance.BushFloor on a shorter setting).
+        public float EffectiveRadius => ViewDistance.Range(radius, ViewDistance.BushFloor);
+
         public void Draw(Camera cam)
         {
+            float radius = EffectiveRadius;
             Vector3 p = cam.transform.position;
             GeometryUtility.CalculateFrustumPlanes(cam, planes);
             int x0 = Mathf.FloorToInt((p.x - radius) / CellSize), x1 = Mathf.FloorToInt((p.x + radius) / CellSize), z0 = Mathf.FloorToInt((p.z - radius) / CellSize), z1 = Mathf.FloorToInt((p.z + radius) / CellSize);
@@ -152,13 +156,23 @@ namespace Chaukanna.TerrainGen
                     built++;
                     cache[key] = arrays = Build(key, cell);
                 }
-                int step = d < radius * 0.4f ? 1 : d < radius * 0.7f ? 2 : 4;            // far cells keep a fraction of their bushes
+                // Inside 40 % of the range every bush is drawn. Beyond that each bush sits on a smooth density ramp by its own
+                // distance and grows in and out over a short distance instead of popping.
+                bool whole = d + CellSize * 0.7f + CellSize * 0.71f < radius * 0.4f;
                 for (int m = 0; m < arrays.Length; m++)
                 {
                     var list = arrays[m];
-                    for (int i = 0; i < list.Length; i += step)
+                    for (int i = 0; i < list.Length; i++)
                     {
-                        batch[m][batchFill[m]++] = list[i];
+                        var mat = list[i];
+                        if (!whole)
+                        {
+                            float ix = mat.m03 - p.x, iz = mat.m23 - p.z;
+                            float sc = ViewDistance.InstanceScale(Mathf.Sqrt(ix * ix + iz * iz), radius, mat.m03, mat.m23);
+                            if (sc < 0.02f) continue;
+                            if (sc < 0.999f) ViewDistance.ScaleAboutPosition(ref mat, sc);
+                        }
+                        batch[m][batchFill[m]++] = mat;
                         if (batchFill[m] == BatchSize) { drawn += BatchSize; Flush(m, cam); }
                     }
                 }

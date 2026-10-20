@@ -467,9 +467,7 @@ namespace Chaukanna.TerrainGen
                 var t = kv.Key; var td = t.terrainData;
                 td.treePrototypes = protos;
                 td.SetTreeInstances(kv.Value.ToArray(), true);
-                t.treeDistance = 6000f;
-                t.treeBillboardDistance = 250f;
-                t.treeCrossFadeLength = 50f;
+                ViewDistance.RegisterTerrain(t, 6000f, 250f);              // tree / billboard distances times the player's view distance, billboard cross-fade 20 %
                 t.treeMaximumFullLODCount = 200;
                 t.treeLODBiasMultiplier = Mathf.Max(0.01f, Context.Settings.treeLodBias);      // trees cost far more per frame than their meshes suggest: see TerrainLayerSettings.treeLodBias
                 t.drawTreesAndFoliage = true;
@@ -932,7 +930,9 @@ namespace Chaukanna.TerrainGen
                 var r0 = MakeRenderer(go.transform, "Detail", mesh0, wall, roof);
                 var r1 = MakeRenderer(go.transform, "Boxes", mesh1, wall, roof);
                 var lod = go.AddComponent<LODGroup>();
-                lod.SetLODs(new[] { new LOD(0.08f, new[] { r0 }), new LOD(0.005f, new[] { r1 }) });
+                lod.SetLODs(new[] { new LOD(0.08f, new[] { r0 }) { fadeTransitionWidth = 0.4f }, new LOD(0.005f, new[] { r1 }) { fadeTransitionWidth = 0.5f } });
+                lod.fadeMode = LODFadeMode.CrossFade;                     // dithered cross-fade between the detailed block, the box and nothing, not a swap
+                lod.animateCrossFading = true;
                 lod.RecalculateBounds();
                 var col = r0.gameObject.AddComponent<MeshCollider>();
                 colliders.Add(col); colliderMeshes.Add(mesh0);

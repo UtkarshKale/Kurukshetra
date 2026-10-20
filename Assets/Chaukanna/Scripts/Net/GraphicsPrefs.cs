@@ -36,8 +36,13 @@ namespace Chaukanna
         static readonly Dictionary<int, RenderPipelineAsset> originals = new Dictionary<int, RenderPipelineAsset>();
         static int startQuality;
 
-        // 1.0 = no change. Later optimisation work reads this to scale camera far clip, LOD bias and similar; it is only stored for now.
+        // 1.0 = no change. Every distance cut-off (terrain trees, grass, bushes, building LODs, drones, birds, crowd) multiplies by this.
         public static float ViewDistanceScale { get; private set; } = 1f;
+
+        // Raised at the end of every Apply, after ViewDistanceScale has its new value, so the distance systems can update live.
+        public static event Action ViewDistanceChanged;
+
+        static float lodBiasBase = -1f;     // QualitySettings.lodBias of the current level before the view-distance scale; < 0 = not read yet
 
         public static GraphicsState Defaults { get { Capture(); return defaults; } }
         public static GraphicsState Current { get { Capture(); return current; } }
@@ -46,7 +51,7 @@ namespace Chaukanna
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
-            captured = false; clones.Clear(); originals.Clear(); ViewDistanceScale = 1f;
+            captured = false; clones.Clear(); originals.Clear(); ViewDistanceScale = 1f; lodBiasBase = -1f;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -55,7 +60,14 @@ namespace Chaukanna
             Capture();
             Application.quitting -= Restore;
             Application.quitting += Restore;
-            if (!HasSaved) return;
+            if (!HasSaved)
+            {
+                // Nothing saved: the level's own view distance (Low 60 %, Medium 80 %, ...) still applies.
+                ViewDistanceScale = defaults.viewDistPct / 100f;
+                lodBiasBase = QualitySettings.lodBias;
+                QualitySettings.lodBias = lodBiasBase * ViewDistanceScale;
+                return;
+            }
             try { current = Load(); Apply(current); } catch (Exception) { }
         }
 
@@ -183,7 +195,8 @@ namespace Chaukanna
 
         static void Apply(GraphicsState s)
         {
-            if (s.quality != QualitySettings.GetQualityLevel()) QualitySettings.SetQualityLevel(s.quality, true);
+            if (s.quality != QualitySettings.GetQualityLevel()) { QualitySettings.SetQualityLevel(s.quality, true); lodBiasBase = -1f; }
+            if (lodBiasBase < 0f) lodBiasBase = QualitySettings.lodBias;
             var urp = EnsureClone();
             if (urp != null)
             {
@@ -195,6 +208,8 @@ namespace Chaukanna
             QualitySettings.vSyncCount = s.vsync ? 1 : 0;
             Application.targetFrameRate = s.fps > 0 ? s.fps : -1;
             ViewDistanceScale = s.viewDistPct / 100f;
+            QualitySettings.lodBias = lodBiasBase * ViewDistanceScale;        // mesh LODs (buildings, prefabs, terrain tree LODs) switch at scaled distances
+            try { ViewDistanceChanged?.Invoke(); } catch (Exception) { }
             var fsm = s.mode == 0 ? FullScreenMode.ExclusiveFullScreen : s.mode == 1 ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
             if (s.width != Screen.width || s.height != Screen.height || fsm != Screen.fullScreenMode) Screen.SetResolution(s.width, s.height, fsm);
         }
@@ -227,6 +242,7 @@ namespace Chaukanna
                     if (originals.TryGetValue(kv.Key, out var orig)) QualitySettings.renderPipeline = orig;
                 }
                 QualitySettings.SetQualityLevel(startQuality, false);
+                if (lodBiasBase > 0f) QualitySettings.lodBias = lodBiasBase;
                 foreach (var kv in clones) if (kv.Value != null) Object.Destroy(kv.Value);
             }
             catch (Exception) { }

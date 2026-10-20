@@ -200,7 +200,7 @@ namespace Chaukanna.Scenario
             }
             var cam = PlayerCamera();
             if (cam == null || !cam.isActiveAndEnabled) return;
-            float maxRange = sensor != null ? sensor.EffectiveMaxRange : 2000f;
+            float maxRange = (sensor != null ? sensor.EffectiveMaxRange : 2000f) * GraphicsPrefs.ViewDistanceScale;     // draw range only; the sensor's own range is unchanged
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Refresh(cam, Clock, maxRange, true);
             var bounds = new Bounds(post, Vector3.one * (2f * radius + 4000f));

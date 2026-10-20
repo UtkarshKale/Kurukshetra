@@ -194,7 +194,7 @@ namespace Chaukanna.Scenario
         {
             var cam = PlayerCamera();
             if (cam == null || !cam.isActiveAndEnabled) return;
-            Refresh(cam, sensor != null ? sensor.EffectiveMaxRange : 2000f);
+            Refresh(cam, (sensor != null ? sensor.EffectiveMaxRange : 2000f) * GraphicsPrefs.ViewDistanceScale);
             var bounds = path != null ? pathBounds : new Bounds((centre + target) * 0.5f, Vector3.one * (Vector3.Distance(centre, target) + 4f * sim.Radius + 4000f));
             DrawnInstances = rend.Draw(cam, bounds);
             LastCpuMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000f / System.Diagnostics.Stopwatch.Frequency;

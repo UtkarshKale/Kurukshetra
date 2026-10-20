@@ -100,8 +100,12 @@ namespace Chaukanna.TerrainGen
             Draw(cam);
         }
 
+        // The draw radius after the player's view-distance scale (never under ViewDistance.GrassFloor on a shorter setting).
+        public float EffectiveRadius => ViewDistance.Range(radius, ViewDistance.GrassFloor);
+
         public void Draw(Camera cam)
         {
+            float radius = EffectiveRadius;
             Vector3 p = cam.transform.position;
             GeometryUtility.CalculateFrustumPlanes(cam, planes);
             int x0 = Mathf.FloorToInt((p.x - radius) / CellSize), x1 = Mathf.FloorToInt((p.x + radius) / CellSize), z0 = Mathf.FloorToInt((p.z - radius) / CellSize), z1 = Mathf.FloorToInt((p.z + radius) / CellSize);
@@ -123,10 +127,20 @@ namespace Chaukanna.TerrainGen
                 float gy = ground.Contains(mx, mz) ? ground.Height(mx, mz) : p.y;
                 var bounds = new Bounds(new Vector3(mx, gy + 1f, mz), new Vector3(CellSize + 2f, 12f, CellSize + 2f));
                 if (!GeometryUtility.TestPlanesAABB(planes, bounds)) continue;
-                int step = d < radius * 0.45f ? 1 : d < radius * 0.7f ? 2 : 4;            // far cells keep a fraction of their clumps
-                for (int i = 0; i < cell.Length; i += step)
+                // Inside 40 % of the range every clump is drawn as it is. Beyond that each clump has its own place on a smooth
+                // density ramp (by its own distance, not its cell's), and grows in and out over a short distance instead of popping.
+                bool whole = d + CellSize * 0.7f + CellSize * 0.71f < radius * 0.4f;
+                for (int i = 0; i < cell.Length; i++)
                 {
-                    batch[filled++] = cell[i];
+                    var m = cell[i];
+                    if (!whole)
+                    {
+                        float ix = m.m03 - p.x, iz = m.m23 - p.z;
+                        float sc = ViewDistance.InstanceScale(Mathf.Sqrt(ix * ix + iz * iz), radius, m.m03, m.m23);
+                        if (sc < 0.02f) continue;
+                        if (sc < 0.999f) ViewDistance.ScaleAboutPosition(ref m, sc);
+                    }
+                    batch[filled++] = m;
                     if (filled == BatchSize) { Graphics.RenderMeshInstanced(rp, mesh, 0, batch, filled); drawn += filled; filled = 0; }
                 }
             }
