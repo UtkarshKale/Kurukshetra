@@ -84,6 +84,18 @@ namespace Chaukanna.Trainer
             SessionSetup.Clear();       // back in the menu: the previous session is over
         }
 
+        // A scenario or package that carries player posts takes them, and its spawn points, onto the Map tab.
+        void AdoptPosts(ScenarioConfig c)
+        {
+            if (c == null || c.playerPosts == null || c.playerPosts.Count == 0) return;
+            Players.Clear();
+            for (int i = 0; i < c.playerPosts.Count; i++) Players.Add(new PlayerSlot { name = c.playerPosts[i].name, post = ClampToArea(c.playerPosts[i].post, 100f), isLocal = i == 0 });
+            SpawnPoints.Clear();
+            if (c.spawnPoints != null) foreach (var s in c.spawnPoints) SpawnPoints.Add(ClampToArea(s, 20f));
+            selectedPlayer = 0;
+            previewStale = true;
+        }
+
         // Back from the 3D editor (or from a test run started in it): the terrain, the scenario with its paths, objects and groups, the posts and
         // the spawn points are what the trainer left them, not the defaults.
         void AdoptEditorSession()
@@ -989,10 +1001,13 @@ namespace Chaukanna.Trainer
             GUI.enabled = ok;
             if (GUILayout.Button("Save package", button, GUILayout.Height(row)))
             {
+                spec.playerPosts = new List<PostPoint>();
+                foreach (var p in Players) spec.playerPosts.Add(new PostPoint { name = p.name, post = p.post });
+                spec.spawnPoints = new List<Vector2>(SpawnPoints);
                 try { PackageStore.Save(spec); packages = PackageStore.LoadAll(); editorNote = "Saved " + spec.name; specUnlocked = !spec.reference; }
                 catch (Exception e) { editorNote = "Could not save: " + e.Message; }
             }
-            if (GUILayout.Button("Use for START", button, GUILayout.Height(row))) { Scenario = SpecExpander.Expand(spec); editorNote = $"'{spec.name}' is set up; press START."; }
+            if (GUILayout.Button("Use for START", button, GUILayout.Height(row))) { Scenario = SpecExpander.Expand(spec); AdoptPosts(Scenario); editorNote = $"'{spec.name}' is set up; press START."; }
             GUI.enabled = true;
             if (GUILayout.Button("Delete package", button, GUILayout.Height(row))) { PackageStore.Delete(spec.name); packages = PackageStore.LoadAll(); editorNote = "Deleted " + spec.name; }
             if (editorNote.Length > 0) GUILayout.Label(editorNote, small);
@@ -1316,9 +1331,32 @@ namespace Chaukanna.Trainer
             GUILayout.BeginArea(new Rect(map.xMax + 20f, body.y, body.width - size - 20f, body.height));
             mapPanelScroll = GUILayout.BeginScrollView(mapPanelScroll);
             const float row = 28f;
-            // The 2D map is kept simple (owner, 2026-10-20): draw paths and set each waypoint's height. Players, spawn points,
-            // drone and bird groups and objects are placed in the 3D editor.
-            pathEd.ToolGrid(row, false, false);
+            // The 2D map: paths and heights, player posts and drone spawn points (the same data the 3D editor edits).
+            pathEd.ToolGrid(row, true, true);
+
+            GUILayout.Space(8f);
+            GUILayout.Label("<b>Players</b>   (drag a white square on the map to move it)", label);
+            for (int i = 0; i < Players.Count; i++)
+                if (GUILayout.Toggle(selectedPlayer == i, $"{Players[i].name}{(Players[i].isLocal ? " (this machine)" : "")}   at {Players[i].post.x:F0} E, {Players[i].post.y:F0} N", button, GUILayout.Height(row))) selectedPlayer = i;
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Add player", button, GUILayout.Height(row)))
+            {
+                Players.Add(new PlayerSlot { name = "Player " + (Players.Count + 1), post = new Vector2(150f * Players.Count, 0f) });
+                selectedPlayer = Players.Count - 1;
+                previewStale = true;
+            }
+            if (GUILayout.Button("Remove last", button, GUILayout.Height(row)) && Players.Count > 1)
+            {
+                Players.RemoveAt(Players.Count - 1);
+                selectedPlayer = Mathf.Min(selectedPlayer, Players.Count - 1);
+                previewStale = true;
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(8f);
+            GUILayout.Label($"<b>Drone spawn points: {SpawnPoints.Count}</b>   (drag a red square to move it)", label);
+            GUILayout.Label(SpawnPoints.Count == 0 ? $"None placed, so drones appear on a {Scenario.spawnRingRadius:F0} m ring in front of the post (the dotted circle)." : "Drones appear at these points, spread about 30 m around each.", small);
+            if (GUILayout.Button("Clear spawn points (use the ring)", button, GUILayout.Height(row))) SpawnPoints.Clear();
             GUILayout.Space(8f);
             pathEd.PathPanel(row);
             GUILayout.Space(8f);

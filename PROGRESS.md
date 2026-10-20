@@ -2,6 +2,12 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Owner round, item 4: player posts and drone spawn points in 2D and 3D, saved (compile check only)
+- Cause: commit e03103e removed the Spawn points / Player posts tools and the Players block from the MAP tab; and neither list was ever part of a saved scenario or package (they lived only in TrainerMenu / SessionSetup).
+- Changed: MAP tab gets ToolGrid(true, true), the Players block (select, Add player, Remove last) and the spawn point block (count, Clear to ring) back; the "Want more control? 3D editor" note and decluttered path labels are unchanged. Shared data: TrainerMenu.Players / SpawnPoints are the same lists SessionSetup hands to the 3D editor (it already placed, moved and deleted both; AdoptEditorSession brings them back). New saved data: PostPoint, ScenarioConfig.playerPosts / spawnPoints and ScenarioSpec.playerPosts / spawnPoints (cloned, round-tripped by FromConfig / Expand). Saved by the 3D editor "save package" and by the menu "Save package" (writes the current map posts and spawns); the menu "Use for START" loads a package's posts and spawns back onto the map. Older packages without posts leave the map unchanged. LAN: the start packet already carried players and spawnPoints (unchanged).
+- Verified: compile only. Not verified: on screen, a save / load round trip, LAN.
+- NEXT: owner hand test of items 1 to 4.
+
 ## 2026-10-20 - Owner round, item 3: progress on the OpenStreetMap fetch button (compile check only)
 - Changed: TrainerMenu terrain tab. While fetching, the "Fetch map features (OpenStreetMap) for this area" button shows a blue fill bar, the percent and the step text (from OsmFetcher's progress callback, non-blocking coroutine). On failure the button reads "Failed: <reason> (click to retry)"; on success the button is replaced by the usual data line and the status message. The map area download button already has its own progress display (downloadProgress / downloadStep) and does not share this code path, so it was left alone.
 - Verified: compile only. Not verified: on screen, a real fetch.

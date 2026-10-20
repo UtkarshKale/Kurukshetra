@@ -160,6 +160,9 @@ namespace Chaukanna.Scenario
         public List<ClearArea> clearAreas = new List<ClearArea>();
         [Tooltip("Drone and bird groups dropped at a point in the 3D editor.")]
         public List<PlacedGroup> placedGroups = new List<PlacedGroup>();
+        // Player posts and drone spawn points placed on the map or in the 3D editor (metres east / north of the terrain centre). Saved with the scenario and package.
+        public List<PostPoint> playerPosts = new List<PostPoint>();
+        public List<Vector2> spawnPoints = new List<Vector2>();
 
         [Header("Spawn and flight options (scenario settings)")]
         [Tooltip("Metres above the ground that contacts appear at (min, max). Negative = each contact definition's own height range.")]
@@ -254,6 +257,8 @@ namespace Chaukanna.Scenario
             c.manualObjects = ManualLayout.CloneObjects(manualObjects);
             c.clearAreas = ManualLayout.CloneAreas(clearAreas);
             c.placedGroups = ManualLayout.CloneGroups(placedGroups);
+            c.playerPosts = PostPoint.CloneAll(playerPosts);
+            c.spawnPoints = spawnPoints != null ? new List<Vector2>(spawnPoints) : new List<Vector2>();
             return c;
         }
 

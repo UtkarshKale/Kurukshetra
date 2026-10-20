@@ -238,6 +238,9 @@ namespace Chaukanna.Trainer
 
         void SavePackage()
         {
+            cfg.playerPosts.Clear();
+            foreach (var p in players) cfg.playerPosts.Add(new PostPoint { name = p.name, post = p.post });
+            cfg.spawnPoints.Clear(); cfg.spawnPoints.AddRange(spawns);
             var spec = SpecExpander.FromConfig(cfg, packageName);
             var issues = SpecValidator.Validate(spec);
             foreach (var i in issues)

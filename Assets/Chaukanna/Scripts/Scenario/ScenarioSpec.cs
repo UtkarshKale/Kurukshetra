@@ -38,6 +38,8 @@ namespace Chaukanna.Scenario
         public List<ManualObject> manualObjects = new List<ManualObject>();   // trees, bushes, rocks, buildings placed in the 3D editor (older packages: none)
         public List<ClearArea> clearAreas = new List<ClearArea>();
         public List<PlacedGroup> placedGroups = new List<PlacedGroup>();
+        public List<PostPoint> playerPosts = new List<PostPoint>();           // player posts (older packages: none, the posts stay as they are)
+        public List<Vector2> spawnPoints = new List<Vector2>();               // drone spawn points (empty = the ring)
 
         public ScenarioSpec Clone()
         {
@@ -46,7 +48,24 @@ namespace Chaukanna.Scenario
             c.manualObjects = ManualLayout.CloneObjects(manualObjects);
             c.clearAreas = ManualLayout.CloneAreas(clearAreas);
             c.placedGroups = ManualLayout.CloneGroups(placedGroups);
+            c.playerPosts = PostPoint.CloneAll(playerPosts);
+            c.spawnPoints = spawnPoints != null ? new List<Vector2>(spawnPoints) : new List<Vector2>();
             return c;
+        }
+    }
+
+    // One player post as saved with a scenario / package.
+    [Serializable]
+    public class PostPoint
+    {
+        public string name = "Player";
+        public Vector2 post;
+
+        public static List<PostPoint> CloneAll(List<PostPoint> list)
+        {
+            var r = new List<PostPoint>();
+            if (list != null) foreach (var p in list) r.Add(new PostPoint { name = p.name, post = p.post });
+            return r;
         }
     }
 
@@ -146,6 +165,8 @@ namespace Chaukanna.Scenario
                 manualObjects = ManualLayout.CloneObjects(c.manualObjects),
                 clearAreas = ManualLayout.CloneAreas(c.clearAreas),
                 placedGroups = ManualLayout.CloneGroups(c.placedGroups),
+                playerPosts = PostPoint.CloneAll(c.playerPosts),
+                spawnPoints = c.spawnPoints != null ? new List<Vector2>(c.spawnPoints) : new List<Vector2>(),
             };
         }
 
@@ -187,6 +208,8 @@ namespace Chaukanna.Scenario
                 manualObjects = ManualLayout.CloneObjects(s.manualObjects),
                 clearAreas = ManualLayout.CloneAreas(s.clearAreas),
                 placedGroups = ManualLayout.CloneGroups(s.placedGroups),
+                playerPosts = PostPoint.CloneAll(s.playerPosts),
+                spawnPoints = s.spawnPoints != null ? new List<Vector2>(s.spawnPoints) : new List<Vector2>(),
             };
             c.spawnWindowStart = 3f;
             c.spawnWindowEnd = c.duration * 0.8f;
