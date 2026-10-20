@@ -57,7 +57,10 @@ namespace Chaukanna.Trainer
         public bool WithSatellite = true;      // also download a satellite picture to colour the terrain
         public bool WithMapFeatures = true;    // also fetch the OpenStreetMap features (buildings, trees, forests, grass) once, for the Realistic layers
         float downloadProgress;
-        string downloadStep = "";
+        string downloadStep = "", downloadStage = "";
+        float downloadStageStart, downloadStart;
+        bool downloadCanSkip;
+        DownloadControl downloadControl = new DownloadControl();
         List<string> areas = new List<string>();
         float areasCheckedAt = -100f;
         string deleteArmed;
@@ -235,17 +238,44 @@ namespace Chaukanna.Trainer
         {
             Downloading = true;
             downloadProgress = 0f;
+            downloadStep = "";
+            downloadControl = new DownloadControl();
+            var control = downloadControl;
+            downloadStart = Time.realtimeSinceStartup;
             System.Action<float, string> step(string part, float from, float span) => (f, what) => { downloadProgress = from + span * f; downloadStep = part + ": " + what; };
+            void Begin(string part, bool skippable)
+            {
+                control.skip = false;                                   // a skip ends one step only
+                downloadStage = part; downloadStageStart = Time.realtimeSinceStartup; downloadCanSkip = skippable;
+                downloadStep = part + ": starting";
+                Debug.Log("[Download] " + part + ": started");
+            }
+            void End(string outcome) => Debug.Log($"[Download] {downloadStage}: {outcome} in {Time.realtimeSinceStartup - downloadStageStart:F1} s");
+            bool Cancelled(string kept)
+            {
+                if (!control.cancel) return false;
+                Downloading = false; areasCheckedAt = -100f; downloadStep = "Cancelled";
+                Message = "Download cancelled." + kept;
+                Debug.Log("[Download] cancelled after " + (Time.realtimeSinceStartup - downloadStart).ToString("F1") + " s");
+                return true;
+            }
 
             AreaDownloadResult area = null;
-            yield return ElevationDownloader.Download(req, step("Elevation", 0f, 0.3f), r => area = r);
+            Begin("Elevation", false);
+            yield return ElevationDownloader.Download(req, step("Elevation", 0f, 0.3f), r => area = r, control);
+            End(area != null && area.ok ? "ok" : "failed (" + area?.error + ")");
             if (area == null || !area.ok) { Downloading = false; areasCheckedAt = -100f; Message = area?.error ?? "Download failed."; downloadStep = "Failed"; yield break; }
             string notes = area.summary;
+            string kept = " The elevation file is kept (see Downloaded before) and can be used as it is.";
+            if (Cancelled(kept)) yield break;
 
             if (WithSatellite)
             {
                 ImageryDownloadResult picture = null;
-                yield return ImageryDownloader.Download(req, ImageryDownloader.PathFor(area.rawPath), step("Satellite", 0.3f, 0.2f), r => picture = r);
+                Begin("Satellite", true);
+                yield return ImageryDownloader.Download(req, ImageryDownloader.PathFor(area.rawPath), step("Satellite", 0.3f, 0.2f), r => picture = r, control);
+                End(picture != null && picture.ok ? "ok" : "no picture (" + picture?.error + ")");
+                if (Cancelled(kept)) yield break;
                 notes += "\n" + (picture != null && picture.ok ? picture.summary : picture?.error);
             }
 
@@ -253,20 +283,44 @@ namespace Chaukanna.Trainer
             var around = new AreaRequest { name = System.IO.Path.GetFileNameWithoutExtension(area.rawPath) + ElevationDownloader.SurroundSuffix, folder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(area.rawPath)),
                 latitude = req.latitude, longitude = req.longitude, radiusMetres = req.radiusMetres * ElevationDownloader.SurroundFactor };
             AreaDownloadResult surround = null;
-            yield return ElevationDownloader.Download(around, step("Surround", 0.5f, 0.1f), r => surround = r);
+            Begin("Surround", true);
+            yield return ElevationDownloader.Download(around, step("Surround", 0.5f, 0.1f), r => surround = r, control);
+            End(surround != null && surround.ok ? "ok" : "no surround (" + surround?.error + ")");
+            if (Cancelled(kept)) yield break;
             if (surround != null && surround.ok && WithSatellite)
-                yield return ImageryDownloader.Download(around, ImageryDownloader.PathFor(surround.rawPath), step("Surround picture", 0.6f, 0.15f), r => { });
+            {
+                ImageryDownloadResult surroundPicture = null;
+                Begin("Surround picture", true);
+                yield return ImageryDownloader.Download(around, ImageryDownloader.PathFor(surround.rawPath), step("Surround picture", 0.6f, 0.15f), r => surroundPicture = r, control);
+                End(surroundPicture != null && surroundPicture.ok ? "ok" : "no picture (" + surroundPicture?.error + ")");
+                if (Cancelled(kept)) yield break;
+            }
             notes += surround != null && surround.ok ? $"\nSurround for the horizon: {around.SideMetres / 1000f:F0} km square." : "\nNo surround (" + surround?.error + ")";
 
-            // Map features (OpenStreetMap) for the Realistic trees, grass and buildings. A failure keeps the terrain.
+            // Map features (OpenStreetMap) for the Realistic trees, grass and buildings. A failure, a skip or a slow server
+            // keeps the terrain: the area completes without map features, to be fetched later from the layers section.
             if (WithMapFeatures)
             {
                 OsmFetchResult features = null;
-                yield return OsmFetcher.Fetch(area.rawPath, step("Map features (OpenStreetMap)", 0.75f, 0.25f), r => features = r);
-                notes += features != null && features.ok ? "\nMap features (OpenStreetMap): " + features.file.CountsLine() + "." + (features.note.Length > 0 ? " " + features.note : "")
-                    : "\nNo map features (" + (features?.error ?? "not fetched") + "). Realistic layers use the satellite colour for trees and grass and have no buildings.";
+                Begin("Map features (OpenStreetMap)", true);
+                yield return OsmFetcher.Fetch(area.rawPath, step("Map features (OpenStreetMap)", 0.75f, 0.25f), r => features = r, control);
+                End(features != null && features.ok ? "ok" : "no map features (" + (features?.error ?? "not fetched") + ")");
+                if (Cancelled(kept)) yield break;
+                if (features != null && features.ok)
+                {
+                    featFailed = "";
+                    notes += "\nMap features (OpenStreetMap): " + features.file.CountsLine() + "." + (features.note.Length > 0 ? " " + features.note : "");
+                }
+                else
+                {
+                    string why = features?.error ?? "not fetched";
+                    featFailed = why + ". Map features can be fetched later";
+                    notes += "\nNo map features (" + why + "): fetch later with the 'Fetch map features' button under Trees, bushes, grass and buildings. Realistic layers use the satellite colour for trees and grass and have no buildings until then.";
+                }
+                layerInfoFor = "\u0001";
             }
 
+            Debug.Log($"[Download] all steps finished in {Time.realtimeSinceStartup - downloadStart:F1} s");
             Downloading = false;
             areasCheckedAt = -100f;
             downloadStep = "Done";
@@ -687,6 +741,7 @@ namespace Chaukanna.Trainer
 
         string layerInfoFor = "\u0001", layerInfo = "";
         bool fetchingFeatures;
+        DownloadControl featControl = new DownloadControl();
         float featProgress;
         string featStep = "", featFailed = "";
         static readonly string[] LayerModeNames = { "OFF", "REALISTIC", "PROCEDURAL" };
@@ -771,6 +826,9 @@ namespace Chaukanna.Trainer
                         }
                         GUI.Label(br, text, button);
                     }
+                    if (fetchingFeatures)
+                        using (new GUIEnabledScope(!featControl.Stop))
+                            if (GUILayout.Button("Cancel (the area keeps working without map features; fetch them later)", button, GUILayout.Height(row))) featControl.cancel = true;
                 }
             }
         }
@@ -781,7 +839,11 @@ namespace Chaukanna.Trainer
             string raw = ElevationDownloader.Resolve(Terrain.demPath);
             OsmFetchResult result = null;
             featProgress = 0f; featStep = ""; featFailed = "";
-            yield return OsmFetcher.Fetch(raw, (f, what) => { featProgress = f; featStep = what; Message = what; }, r => result = r);
+            featControl = new DownloadControl();
+            double began = Time.realtimeSinceStartupAsDouble;
+            Debug.Log("[Download] Map features (OpenStreetMap, fetched on its own): started");
+            yield return OsmFetcher.Fetch(raw, (f, what) => { featProgress = f; featStep = what; Message = "Map features (OpenStreetMap): " + what; }, r => result = r, featControl);
+            Debug.Log($"[Download] Map features (OpenStreetMap, fetched on its own): {(result != null && result.ok ? "ok" : "failed (" + (result?.error ?? "not fetched") + ")")} in {Time.realtimeSinceStartupAsDouble - began:F1} s");
             fetchingFeatures = false;
             featFailed = result != null && result.ok ? "" : (result?.error ?? "not fetched");
             layerInfoFor = "\u0001";
@@ -817,10 +879,21 @@ namespace Chaukanna.Trainer
             GUILayout.Label("Name", label, GUILayout.Width(44f), GUILayout.Height(row));
             areaName = GUILayout.TextField(areaName, 40, field, GUILayout.Width(150f), GUILayout.Height(row));
             using (new GUIEnabledScope(!Downloading))
-                if (GUILayout.Button(Downloading ? $"Downloading {downloadProgress * 100f:F0} %" : "<b>Download terrain</b>", button, GUILayout.Height(row)))
+                if (GUILayout.Button(Downloading ? $"Downloading {downloadProgress * 100f:F0} %  {downloadStage}" : "<b>Download terrain</b>", button, GUILayout.Height(row)))
                     DownloadArea(areaName, Map.PickLatitude, Map.PickLongitude, Map.RadiusMetres);
             GUILayout.EndHorizontal();
-            if (Downloading || downloadStep.Length > 0) GUILayout.Label(downloadStep + (Map.Status.Length > 0 ? "   " + Map.Status : ""), small);
+            if (Downloading)
+            {
+                // Never stuck: the step and its time are shown, one step can be skipped, the whole download can be cancelled.
+                GUILayout.BeginHorizontal();
+                using (new GUIEnabledScope(downloadCanSkip && !downloadControl.Stop))
+                    if (GUILayout.Button("Skip this step", button, GUILayout.Height(row))) downloadControl.skip = true;
+                using (new GUIEnabledScope(!downloadControl.cancel))
+                    if (GUILayout.Button("Cancel download", button, GUILayout.Height(row))) downloadControl.cancel = true;
+                GUILayout.EndHorizontal();
+                GUILayout.Label($"{downloadStep}   (this step {Time.realtimeSinceStartup - downloadStageStart:F0} s, all {Time.realtimeSinceStartup - downloadStart:F0} s)", small);
+            }
+            else if (downloadStep.Length > 0) GUILayout.Label(downloadStep + (Map.Status.Length > 0 ? "   " + Map.Status : ""), small);
             else if (Map.Status.Length > 0) GUILayout.Label(Map.Status, small);
 
             // Areas already downloaded: these work with no network at all.

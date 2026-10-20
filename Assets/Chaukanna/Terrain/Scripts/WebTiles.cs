@@ -84,6 +84,58 @@ namespace Chaukanna.TerrainGen
         }
     }
 
+    // Set by the Skip / Cancel buttons while an area downloads. skip ends only the current step (it is cleared when the next
+    // step starts); cancel ends the whole download.
+    public class DownloadControl
+    {
+        public volatile bool skip, cancel;
+        public bool Stop => skip || cancel;
+        public string StopWord => cancel ? "cancelled" : "skipped";
+    }
+
+    // One web request with a timeout, a bounded number of tries and a status text ("waiting for server, try 2/3, 35 s").
+    // Never waits longer than tries * timeoutSeconds + the pauses between tries, and gives up at once on skip / cancel.
+    public static class WebFetch
+    {
+        public static IEnumerator GetBytes(string url, string userAgent, int tries, float timeoutSeconds, float retryWaitSeconds,
+            DownloadControl control, Action<string> status, Action<byte[]> ok, Action<string> failed)
+        {
+            string last = "no answer";
+            for (int attempt = 1; attempt <= tries; attempt++)
+            {
+                using (var request = UnityWebRequest.Get(url))
+                {
+                    request.SetRequestHeader("User-Agent", userAgent);
+                    request.timeout = Mathf.Max(1, Mathf.RoundToInt(timeoutSeconds));
+                    double started = Time.realtimeSinceStartupAsDouble;
+                    int shown = -1;
+                    var op = request.SendWebRequest();
+                    while (!op.isDone)
+                    {
+                        if (control != null && control.Stop) { request.Abort(); break; }
+                        int sec = (int)(Time.realtimeSinceStartupAsDouble - started);
+                        if (sec != shown) { shown = sec; status?.Invoke($"waiting for server, try {attempt}/{tries}, {sec} s"); }
+                        yield return null;
+                    }
+                    if (control != null && control.Stop) { failed(control.StopWord); yield break; }
+                    if (request.result == UnityWebRequest.Result.Success) { ok(request.downloadHandler.data); yield break; }
+                    last = (request.responseCode > 0 ? "HTTP " + request.responseCode + " " : "") + request.error;
+                }
+                if (attempt < tries)
+                {
+                    double until = Time.realtimeSinceStartupAsDouble + retryWaitSeconds;
+                    while (Time.realtimeSinceStartupAsDouble < until)
+                    {
+                        if (control != null && control.Stop) { failed(control.StopWord); yield break; }
+                        status?.Invoke($"failed ({last}), next try {attempt + 1}/{tries} in {Mathf.CeilToInt((float)(until - Time.realtimeSinceStartupAsDouble))} s");
+                        yield return null;
+                    }
+                }
+            }
+            failed(last);
+        }
+    }
+
     public class AreaDownloadResult
     {
         public bool ok;
@@ -266,7 +318,7 @@ namespace Chaukanna.TerrainGen
             return p.StartsWith(project, StringComparison.OrdinalIgnoreCase) ? p.Substring(project.Length) : p;
         }
 
-        public static IEnumerator Download(AreaRequest req, Action<float, string> progress, Action<AreaDownloadResult> done)
+        public static IEnumerator Download(AreaRequest req, Action<float, string> progress, Action<AreaDownloadResult> done, DownloadControl control = null)
         {
             var result = new AreaDownloadResult();
             int zoom = req.Zoom(out int count);
@@ -288,19 +340,17 @@ namespace Chaukanna.TerrainGen
                 else
                 {
                     string url = TileUrl.Replace("{z}", zoom.ToString()).Replace("{x}", tx.ToString()).Replace("{y}", ty.ToString());
-                    using (var request = UnityWebRequest.Get(url))
+                    byte[] got = null; string failure = null;
+                    yield return WebFetch.GetBytes(url, UserAgent, 3, 30f, 3f, control,
+                        t => progress?.Invoke(0.9f * index / count, $"Elevation tile {index + 1} of {count} (zoom {zoom}): {t}"), b => got = b, f => failure = f);
+                    if (got == null)
                     {
-                        request.SetRequestHeader("User-Agent", UserAgent);
-                        request.timeout = 30;
-                        yield return request.SendWebRequest();
-                        if (request.result != UnityWebRequest.Result.Success)
-                        {
-                            result.error = $"Could not download elevation tile {zoom}/{tx}/{ty}: {request.error}. Check the internet connection; tiles already downloaded are kept.";
-                            done?.Invoke(result);
-                            yield break;
-                        }
-                        png = request.downloadHandler.data;
+                        result.error = control != null && control.Stop ? "Elevation download " + control.StopWord + "."
+                            : $"Could not download elevation tile {zoom}/{tx}/{ty}: {failure}. Check the internet connection; tiles already downloaded are kept.";
+                        done?.Invoke(result);
+                        yield break;
                     }
+                    png = got;
                     Directory.CreateDirectory(Path.GetDirectoryName(cache));
                     File.WriteAllBytes(cache, png);
                     result.tilesFetched++;
@@ -445,7 +495,7 @@ namespace Chaukanna.TerrainGen
             return n;
         }
 
-        public static IEnumerator Download(AreaRequest req, string outPath, Action<float, string> progress, Action<ImageryDownloadResult> done)
+        public static IEnumerator Download(AreaRequest req, string outPath, Action<float, string> progress, Action<ImageryDownloadResult> done, DownloadControl control = null)
         {
             var result = new ImageryDownloadResult();
             var tileReq = new AreaRequest { name = req.name, latitude = req.latitude, longitude = req.longitude, radiusMetres = req.radiusMetres, maxTiles = MaxTiles, maxZoom = MaxZoom };
@@ -467,19 +517,17 @@ namespace Chaukanna.TerrainGen
                 else
                 {
                     string url = TileUrl.Replace("{z}", zoom.ToString()).Replace("{x}", tx.ToString()).Replace("{y}", ty.ToString());
-                    using (var request = UnityWebRequest.Get(url))
+                    byte[] got = null; string failure = null;
+                    yield return WebFetch.GetBytes(url, ElevationDownloader.UserAgent, 3, 30f, 3f, control,
+                        t => progress?.Invoke(0.9f * index / count, $"Satellite tile {index + 1} of {count}: {t}"), b => got = b, f => failure = f);
+                    if (got == null)
                     {
-                        request.SetRequestHeader("User-Agent", ElevationDownloader.UserAgent);
-                        request.timeout = 30;
-                        yield return request.SendWebRequest();
-                        if (request.result != UnityWebRequest.Result.Success)
-                        {
-                            result.error = $"Could not download satellite tile {zoom}/{tx}/{ty}: {request.error}. The terrain is still built, coloured by its materials.";
-                            done?.Invoke(result);
-                            yield break;
-                        }
-                        jpg = request.downloadHandler.data;
+                        result.error = control != null && control.Stop ? "Satellite picture " + control.StopWord + ". The terrain is still built, coloured by its materials."
+                            : $"Could not download satellite tile {zoom}/{tx}/{ty}: {failure}. The terrain is still built, coloured by its materials.";
+                        done?.Invoke(result);
+                        yield break;
                     }
+                    jpg = got;
                     Directory.CreateDirectory(Path.GetDirectoryName(cache));
                     File.WriteAllBytes(cache, jpg);
                     result.tilesFetched++;
@@ -495,8 +543,24 @@ namespace Chaukanna.TerrainGen
 
             progress?.Invoke(0.92f, "Fitting the picture to the terrain");
             yield return null;
-            try { Write(req, mosaic, stride, down * WebMercator.TileSize, x0 * WebMercator.TileSize, y0 * WebMercator.TileSize, zoom, outPath, result); }
-            catch (Exception ex) { result.error = "Could not write the satellite picture: " + ex.Message; }
+            // Up to 4096 x 4096 samples with map-projection maths each: done on a worker thread so the window keeps painting
+            // (on the main thread this froze the menu for many seconds at the end of the satellite steps).
+            Color32[] fitted = null;
+            string fitError = null;
+            int fitWidth = stride, fitHeight = down * WebMercator.TileSize;
+            double fitOx = x0 * WebMercator.TileSize, fitOy = y0 * WebMercator.TileSize;
+            var fitTask = System.Threading.Tasks.Task.Run(() =>
+            {
+                try { fitted = Sample(req, mosaic, fitWidth, fitHeight, fitOx, fitOy, zoom, result); }
+                catch (Exception ex) { fitError = ex.Message; }
+            });
+            while (!fitTask.IsCompleted) yield return null;
+            if (fitted == null) result.error = "Could not fit the satellite picture: " + fitError;
+            else
+            {
+                try { Write(req, fitted, zoom, outPath, result); }
+                catch (Exception ex) { result.error = "Could not write the satellite picture: " + ex.Message; }
+            }
             progress?.Invoke(1f, result.ok ? "Done" : "Failed");
             done?.Invoke(result);
         }
@@ -518,7 +582,8 @@ namespace Chaukanna.TerrainGen
             finally { if (Application.isPlaying) UnityEngine.Object.Destroy(tex); else UnityEngine.Object.DestroyImmediate(tex); }
         }
 
-        static void Write(AreaRequest req, Color32[] mosaic, int width, int height, double originPx, double originPy, int zoom, string outPath, ImageryDownloadResult result)
+        // Pure maths (no Unity objects): safe on a worker thread.
+        static Color32[] Sample(AreaRequest req, Color32[] mosaic, int width, int height, double originPx, double originPy, int zoom, ImageryDownloadResult result)
         {
             result.metresPerPixel = WebMercator.MetresPerPixel(req.latitude, zoom);
             int size = PictureSize(req.SideMetres, result.metresPerPixel);
@@ -533,6 +598,13 @@ namespace Chaukanna.TerrainGen
                 WebMercator.ToPixel(lat, lon, zoom, out double px, out double py);
                 pixels[row * size + col] = Bilinear(mosaic, width, height, px - originPx - 0.5, py - originPy - 0.5);
             }
+            return pixels;
+        }
+
+        static void Write(AreaRequest req, Color32[] pixels, int zoom, string outPath, ImageryDownloadResult result)
+        {
+            int size = result.size;
+            double half = req.SideMetres * 0.5;
             var tex = new Texture2D(size, size, TextureFormat.RGB24, false);
             try
             {

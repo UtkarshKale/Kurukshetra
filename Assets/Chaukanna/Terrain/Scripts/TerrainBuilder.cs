@@ -127,6 +127,13 @@ namespace Chaukanna.TerrainGen
                 }
                 if (rules.Count > 0 || imageryLayer != null)
                     Paint(cfg, field, analysis, rules, data, imageryLayer, tx, tz, res, imageryExtent, new Vector2(-half + tx * tileSize, -half + tz * tileSize), tileSize);
+                // A tile with no layer at all (no ground materials, no picture: e.g. a half-downloaded area) must not render as the error
+                // colour: give it one neutral earth layer (runtime only; a tile saved as an editor asset keeps whatever it has).
+                if (makeData == null && (data.terrainLayers == null || data.terrainLayers.Length == 0) && Chaukanna.RuntimeMaterials.NeutralGround != null)
+                {
+                    data.terrainLayers = new[] { Chaukanna.RuntimeMaterials.NeutralGround };
+                    if (!result.warnings.Contains(NoLayersWarning)) result.warnings.Add(NoLayersWarning);
+                }
 
                 var go = Terrain.CreateTerrainGameObject(data);
                 go.name = name;
@@ -135,7 +142,9 @@ namespace Chaukanna.TerrainGen
                 var terrain = go.GetComponent<Terrain>();
                 terrain.allowAutoConnect = true;
                 // A material that is always in the build (the default terrain shader is left out of a built game: pink).
-                if (Chaukanna.RuntimeMaterials.Terrain != null) terrain.materialTemplate = Chaukanna.RuntimeMaterials.Terrain;
+                var groundMaterial = Chaukanna.RuntimeMaterials.Terrain;      // never null in practice: it falls back (and logs an error) when the Resources material is missing
+                if (groundMaterial != null) terrain.materialTemplate = groundMaterial;
+                else Debug.LogError("[Terrain] No terrain material at all: this tile will use the pipeline's default terrain shader, which a build leaves out (pink).");
                 grid[tx, tz] = terrain;
                 result.tiles.Add(terrain);
             }
@@ -147,6 +156,8 @@ namespace Chaukanna.TerrainGen
             existingRoot.report = result.report;
             progress?.Invoke(1f, "Ground ready");
         }
+
+        const string NoLayersWarning = "No ground materials and no satellite picture for this terrain: it is drawn in one neutral earth colour.";
 
         static void Destroy(UnityEngine.Object o)
         {

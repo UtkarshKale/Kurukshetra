@@ -16,6 +16,12 @@ SCOPE SOURCE: module-1-demo.md (the agreed Module 1 demo; the user rejected the 
 First restructured 2026-10-14 against the solution doc (solution-v2-council.md: §2 PS coverage table R1a-R9, §11.1 M1 scope, §12 demo script). No item was deleted; items were moved and tagged. New items from the gap check are numbered N1 and up.
 Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo moments in §12: (1) cold open, night, own drone engaged, "your call vs the sound call"; (2) the card flip mid-mission; (3) night 24-swarm with a wrong AI cue. Shot 5b is the VR sentry.
 
+## DOWNLOAD + PINK TERRAIN 2026-10-20 (owner, critical)
+- [x] DL-1 (compile only). Area download no longer hangs at 76 % (the OpenStreetMap step): per-try timeout 60 s, 3 tries, 10 s apart, a 200 s budget for the whole OSM fetch, status text with the try number and seconds, Skip this step / Cancel download buttons, the area completes without map features ("fetch later" button). Elevation / satellite tiles: 3 tries of 30 s. Cert errors now switch to curl.exe.
+- [x] PINK-1 (compile only). RuntimeMaterials.Terrain logs an error and falls back (URP terrain shader, then Lit in ground colour) instead of leaving the default terrain material; a terrain tile with no layers gets one neutral earth layer.
+- [ ] DL-2. Hand test DL-1 / PINK-1 (numbered list in PROGRESS.md 2026-10-20 entry). Owner to confirm in the Editor and in a build.
+- [ ] DL-3. Deferred: (a) a ShaderVariantCollection for URP Terrain/Lit in Resources so a build keeps the _NORMALMAP / _MASKMAP / height-blend variants whatever layers a terrain has (needs an Editor step and a build to verify; today only the variants the kit's layers need were seen working in a build); (b) the Overpass answer for a big play area can be several MB: Compact + file write run on the main thread after the parse, a short stall; (c) elevation WriteArea (up to 2049 x 2049 samples) still runs on the main thread, about a second; (d) a mirror Overpass endpoint to try on the last attempt; (e) Skip during elevation is not offered (nothing to continue with).
+
 ## GRAPHICS SETTINGS 2026-10-20
 - [x] GFX-1 (compile only; hand test open). Graphics tab in the F10 window, Settings buttons in the menu bar and F6 footer.
 - [ ] GFX-2. Optimisation, after the owner picks graphics presets (named Low / Medium / High / Ultra do not exist yet; QualitySettings has only Mobile and PC). View distance % (GraphicsPrefs.ViewDistanceScale) is stored but not applied anywhere.

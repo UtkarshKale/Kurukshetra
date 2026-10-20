@@ -287,12 +287,14 @@ namespace Chaukanna.TerrainGen
     }
 
     // Downloads the OpenStreetMap features for a downloaded area from the Overpass API, once, and stores them beside it.
-    // Polite: one area at a time, two queries, 2 s between them, the project's User-Agent, at most 2 tries per query 30 s apart.
+    // Polite: one area at a time, two queries, 2 s between them, the project's User-Agent, at most 3 tries per query 10 s apart.
+    // Bounded: each try waits at most TimeoutSeconds, and the whole fetch gives up after TotalBudgetSeconds (a slow or busy
+    // Overpass server then means "no map features, fetch later", never a download that hangs).
     public static class OsmFetcher
     {
         public const string Endpoint = "https://overpass-api.de/api/interpreter";
-        public const float PauseBetweenQueries = 2f, RetryAfter = 30f, TimeoutSeconds = 120f;
-        public const int TriesPerQuery = 2;
+        public const float PauseBetweenQueries = 2f, RetryAfter = 10f, TimeoutSeconds = 60f, TotalBudgetSeconds = 200f;
+        public const int TriesPerQuery = 3;
         const string Landcover = "[\"landuse\"~\"^(forest|orchard|grass|meadow|recreation_ground|village_green|farmland)$\"]";
 
         // Tests point the endpoint at nothing: null = the real one.
@@ -303,7 +305,7 @@ namespace Chaukanna.TerrainGen
         public static string PlayAreaQuery(double s, double w, double n, double e)
         {
             string b = Box(s, w, n, e);
-            return "[out:json][timeout:100][maxsize:1073741824];(" +
+            return "[out:json][timeout:60][maxsize:1073741824];(" +
                 "way[\"building\"]" + b + ";relation[\"building\"]" + b + ";way[\"building:part\"]" + b + ";" +
                 "node[\"natural\"=\"tree\"]" + b + ";way[\"natural\"=\"tree_row\"]" + b + ";" +
                 "way" + Landcover + b + ";relation" + Landcover + b + ";" +
@@ -314,7 +316,7 @@ namespace Chaukanna.TerrainGen
         public static string SurroundQuery(double s, double w, double n, double e)
         {
             string b = Box(s, w, n, e);
-            return "[out:json][timeout:100][maxsize:1073741824];(" +
+            return "[out:json][timeout:60][maxsize:1073741824];(" +
                 "way" + Landcover + b + ";relation" + Landcover + b + ";" +
                 "way[\"natural\"=\"wood\"]" + b + ";relation[\"natural\"=\"wood\"]" + b + ";" +
                 "way[\"leisure\"=\"park\"]" + b + ";relation[\"leisure\"=\"park\"]" + b + ";)->.lc;.lc out geom;" +
@@ -336,9 +338,10 @@ namespace Chaukanna.TerrainGen
 
         // Fetches both queries for the area whose elevation file is `rawPath` (absolute) and writes the three files.
         // progress(fraction, text) is optional. Always calls done, with ok false and an error text when it failed.
-        public static IEnumerator Fetch(string rawPath, Action<float, string> progress, Action<OsmFetchResult> done)
+        public static IEnumerator Fetch(string rawPath, Action<float, string> progress, Action<OsmFetchResult> done, DownloadControl control = null)
         {
             var result = new OsmFetchResult();
+            double deadline = Time.realtimeSinceStartupAsDouble + TotalBudgetSeconds;
             if (!Extent(rawPath, out double lat, out double lon, out float playHalf))
             {
                 result.error = "No usable area metadata beside " + Path.GetFileName(rawPath) + ".";
@@ -351,12 +354,12 @@ namespace Chaukanna.TerrainGen
             var seen = new HashSet<string>();
 
             // Query 1: the play area. Without it there is nothing to store.
-            progress?.Invoke(0.02f, "Map features (OpenStreetMap): the play area");
+            progress?.Invoke(0.02f, "play area query");
             string answer1 = null;
-            yield return Query(PlayAreaQuery(s, w, n, e), a => answer1 = a, err => result.error = err);
+            yield return Query(PlayAreaQuery(s, w, n, e), a => answer1 = a, err => result.error = err, control, deadline, t => progress?.Invoke(0.02f, "play area query: " + t));
             if (answer1 == null) { done?.Invoke(result); yield break; }
             File.WriteAllText(LayerFile.RawPathFor(rawPath), answer1);
-            progress?.Invoke(0.45f, "Map features: reading the answer");
+            progress?.Invoke(0.45f, "reading the play area answer");
             bool parsed = false;
             string parseError = null;
             var task = System.Threading.Tasks.Task.Run(() =>
@@ -376,14 +379,14 @@ namespace Chaukanna.TerrainGen
                 var sframe = new GeoFrame(slat, slon);
                 sframe.Bounds(surroundHalf, out double ss, out double sw, out double sn, out double se);
                 yield return new RealtimeWait(PauseBetweenQueries);
-                progress?.Invoke(0.55f, "Map features (OpenStreetMap): the surround");
+                progress?.Invoke(0.55f, "surround query");
                 string answer2 = null;
                 string surroundError = "";
-                yield return Query(SurroundQuery(ss, sw, sn, se), a => answer2 = a, err => surroundError = err);
+                yield return Query(SurroundQuery(ss, sw, sn, se), a => answer2 = a, err => surroundError = err, control, deadline, t => progress?.Invoke(0.55f, "surround query: " + t));
                 if (answer2 != null)
                 {
                     File.WriteAllText(LayerFile.RawSurroundPathFor(rawPath), answer2);
-                    progress?.Invoke(0.85f, "Map features: reading the surround");
+                    progress?.Invoke(0.85f, "reading the surround answer");
                     bool parsed2 = false; string parseError2 = null;
                     var task2 = System.Threading.Tasks.Task.Run(() =>
                     {
@@ -407,7 +410,7 @@ namespace Chaukanna.TerrainGen
             result.surroundOk = file.surroundOk;
             result.note = file.note;
             result.layersPath = layersPath;
-            progress?.Invoke(1f, "Map features done");
+            progress?.Invoke(1f, "done");
             done?.Invoke(result);
         }
 
@@ -455,12 +458,17 @@ namespace Chaukanna.TerrainGen
         // SSL failure the queries go through the system's curl (Windows 10 and later ship curl.exe). Same server, same request.
         static bool preferCurl;
 
-        // One Overpass query, at most TriesPerQuery times with RetryAfter seconds between.
-        static IEnumerator Query(string query, Action<string> ok, Action<string> failed)
+        // One Overpass query, at most TriesPerQuery times with RetryAfter seconds between, every try limited to TimeoutSeconds
+        // and the whole fetch to `deadline` (realtime). status(text) says what is happening; skip / cancel end it at once.
+        static IEnumerator Query(string query, Action<string> ok, Action<string> failed, DownloadControl control, double deadline, Action<string> status)
         {
             string last = "";
+            double begun = Time.realtimeSinceStartupAsDouble;
             for (int attempt = 1; attempt <= TriesPerQuery; attempt++)
             {
+                double left = deadline - Time.realtimeSinceStartupAsDouble;
+                if (left < 10.0) { last = (last.Length > 0 ? last + "; " : "") + $"gave up after {Time.realtimeSinceStartupAsDouble - begun:F0} s (time budget used up)"; break; }
+                float timeout = (float)Math.Min(TimeoutSeconds, left);
                 string text = null;
                 if (!preferCurl)
                 {
@@ -469,32 +477,62 @@ namespace Chaukanna.TerrainGen
                     using (var request = UnityWebRequest.Post(EndpointOverride ?? Endpoint, form))
                     {
                         request.SetRequestHeader("User-Agent", ElevationDownloader.UserAgent);
-                        request.timeout = (int)TimeoutSeconds;
-                        yield return request.SendWebRequest();
+                        request.timeout = Mathf.Max(1, Mathf.RoundToInt(timeout));
+                        double started = Time.realtimeSinceStartupAsDouble;
+                        int shown = -1;
+                        var op = request.SendWebRequest();
+                        while (!op.isDone)
+                        {
+                            if (control != null && control.Stop) { request.Abort(); break; }
+                            int sec = (int)(Time.realtimeSinceStartupAsDouble - started);
+                            if (sec != shown) { shown = sec; status?.Invoke($"waiting for server, try {attempt}/{TriesPerQuery}, {sec} s"); }
+                            yield return null;
+                        }
+                        if (control != null && control.Stop) { failed(control.StopWord); yield break; }
                         if (request.result == UnityWebRequest.Result.Success) text = request.downloadHandler.text;
                         else
                         {
                             last = $"HTTP {request.responseCode} {request.error}";
-                            if (request.result == UnityWebRequest.Result.ConnectionError && (request.error ?? "").IndexOf("SSL", StringComparison.OrdinalIgnoreCase) >= 0) preferCurl = true;
+                            if (request.result == UnityWebRequest.Result.ConnectionError && IsTlsProblem(request.error)) preferCurl = true;
                         }
                     }
                 }
                 if (text == null && preferCurl)
                 {
-                    var curl = Curl(query, t => text = t, e => last = e);
+                    int tryNo = attempt;
+                    var curl = Curl(query, t => text = t, e => last = e, control, timeout, sec => status?.Invoke($"waiting for server (curl), try {tryNo}/{TriesPerQuery}, {sec} s"));
                     while (curl.MoveNext()) yield return curl.Current;
+                    if (control != null && control.Stop) { failed(control.StopWord); yield break; }
                 }
                 if (text != null)
                 {
                     if (text.TrimStart().StartsWith("{")) { ok(text); yield break; }
                     last = "the server answered with something that is not JSON";
                 }
-                if (attempt < TriesPerQuery) yield return new RealtimeWait(RetryAfter);
+                if (attempt < TriesPerQuery)
+                {
+                    double until = Time.realtimeSinceStartupAsDouble + RetryAfter;
+                    while (Time.realtimeSinceStartupAsDouble < until)
+                    {
+                        if (control != null && control.Stop) { failed(control.StopWord); yield break; }
+                        status?.Invoke($"failed ({last}), next try {attempt + 1}/{TriesPerQuery} in {Mathf.CeilToInt((float)(until - Time.realtimeSinceStartupAsDouble))} s");
+                        yield return null;
+                    }
+                }
             }
             failed(last);
         }
 
-        static IEnumerator Curl(string query, Action<string> ok, Action<string> failed)
+        // UnityTLS fails the handshake in different words: "SSL ...", "Cert verify failed" (Curl error 35, UnityTls error code 7), "TLS ...".
+        static bool IsTlsProblem(string error)
+        {
+            if (string.IsNullOrEmpty(error)) return false;
+            foreach (var word in new[] { "SSL", "TLS", "Cert", "handshake" })
+                if (error.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
+        static IEnumerator Curl(string query, Action<string> ok, Action<string> failed, DownloadControl control, float timeoutSeconds, Action<int> elapsedSeconds)
         {
             string dir = Path.Combine(Application.temporaryCachePath, "osm");
             string queryFile = Path.Combine(dir, "query.txt"), answerFile = Path.Combine(dir, "answer.json");
@@ -509,16 +547,38 @@ namespace Chaukanna.TerrainGen
                 var info = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = File.Exists(exe) ? exe : "curl",
-                    Arguments = $"-sS -m {(int)TimeoutSeconds + 10} -A \"{ElevationDownloader.UserAgent}\" --data-urlencode \"data@{queryFile}\" -o \"{answerFile}\" -w \"%{{http_code}}\" \"{EndpointOverride ?? Endpoint}\"",
+                    Arguments = $"-sS --connect-timeout 20 -m {Mathf.Max(5, (int)timeoutSeconds)} -A \"{ElevationDownloader.UserAgent}\" --data-urlencode \"data@{queryFile}\" -o \"{answerFile}\" -w \"%{{http_code}}\" \"{EndpointOverride ?? Endpoint}\"",
                     UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
                 };
                 process = System.Diagnostics.Process.Start(info);
             }
             catch (Exception e) { startError = e.Message; }
             if (process == null) { failed("could not start curl: " + startError); yield break; }
-            while (!process.HasExited) yield return null;
-            string code = process.StandardOutput.ReadToEnd().Trim(), error = process.StandardError.ReadToEnd().Trim();
+            double started = Time.realtimeSinceStartupAsDouble;
+            int shown = -1;
+            bool killed = false;
+            // curl stops itself after -m seconds; the check here is a safety net, and the Skip / Cancel buttons.
+            while (!process.HasExited)
+            {
+                double elapsed = Time.realtimeSinceStartupAsDouble - started;
+                if ((control != null && control.Stop) || elapsed > timeoutSeconds + 10.0)
+                {
+                    try { process.Kill(); } catch (Exception) { }
+                    killed = true;
+                    break;
+                }
+                if ((int)elapsed != shown) { shown = (int)elapsed; elapsedSeconds?.Invoke(shown); }
+                yield return null;
+            }
+            string code = "", error = "";
+            if (!killed) { code = process.StandardOutput.ReadToEnd().Trim(); error = process.StandardError.ReadToEnd().Trim(); }
             process.Dispose();
+            if (killed)
+            {
+                try { if (File.Exists(answerFile)) File.Delete(answerFile); } catch (Exception) { }
+                failed(control != null && control.Stop ? control.StopWord : "curl did not answer in time");
+                yield break;
+            }
             if (code == "200" && File.Exists(answerFile)) { string text = File.ReadAllText(answerFile); try { File.Delete(answerFile); } catch (Exception) { } ok(text); yield break; }
             failed($"HTTP {code} {error}".Trim());
         }
