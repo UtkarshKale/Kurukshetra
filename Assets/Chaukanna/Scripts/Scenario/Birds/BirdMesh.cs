@@ -270,10 +270,11 @@ namespace Chaukanna.Scenario
     // The minimum on-screen size of a bird. A kite at 300 m is 0.3 degrees wide and a sparrow at 100 m less. Drawn as the true model
     // its flat wings are seen almost edge on from the ground, so their triangles are under a pixel thick and nothing is rasterised:
     // the birds looked invisible. Under ModelPx pixels a bird is therefore drawn as the flat far silhouette turned to face the
-    // camera, and never narrower than MinSpanPx pixels (it is made bigger, never smaller). Detection and scoring use the true size.
+    // camera, so its full wingspan shows instead of an edge-on sliver. It stays at TRUE size (owner, 2026-10-20: no enlargement,
+    // in normal view or with binoculars): MinSpanPx = 0 turns the old minimum-width boost off. Detection and scoring use the true size.
     public static class BirdView
     {
-        public const float MinSpanPx = 7f, ModelPx = 8f;
+        public const float MinSpanPx = 0f, ModelPx = 8f;
         static Camera cam;
         static Mesh dot;
         static Material dotMat;
