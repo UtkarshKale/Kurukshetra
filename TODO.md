@@ -349,3 +349,5 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [x] LOOP-1. Game loop: end screen with Restart (solo: menu; trainee: lobby, state waiting), trainer Back to lobby and Restart scenario (new seed optional), wrap-up before scene change. 2026-10-20, compile only.
 - [ ] LOOP-1a. Hand-test LOOP-1 (two PCs or host + built client).
 - [ ] LOOP-1b. Deferred (nothing deleted): the trainer's lobby shows who is waiting vs ready with a Start-for-everyone button; a late joiner during a run is still refused; restart with changed settings; a trainee-side countdown on Restart scenario; per-seat result tabs on the end screen.
+
+- [ ] VR-HOLD. VR is on hold by the owner's decision (2026-10-20: "do not build vr"). No VR work, packages or tests until the owner says so.
