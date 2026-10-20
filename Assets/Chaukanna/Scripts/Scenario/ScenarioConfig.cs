@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Chaukanna.Scenario
@@ -148,6 +149,10 @@ namespace Chaukanna.Scenario
         [Tooltip("Share (percent) of the hostiles that answer IFF with a valid-looking reply.")]
         public float hostileSpoofPercent;
 
+        [Header("Custom paths (2D path editor)")]
+        [Tooltip("Paths drawn on the 2D map. Waypoint 0 is the spawn; each waypoint has its own height above ground and speed. Contacts, the swarm and bird flocks that match a path fly it instead of the usual straight pass.")]
+        public List<FlightPath> paths = new List<FlightPath>();
+
         [Header("Geometry")]
         public float sectorArcDegrees = 120f;
         public float spawnRingRadius = 1000f;
@@ -193,7 +198,9 @@ namespace Chaukanna.Scenario
 
         public ScenarioConfig Clone()
         {
-            return (ScenarioConfig)MemberwiseClone();
+            var c = (ScenarioConfig)MemberwiseClone();
+            c.paths = FlightPath.CloneAll(paths);      // the list is not shared between copies
+            return c;
         }
 
         public const int ViewDesktop = 0, ViewVrSim = 1, ViewHeadset = 2;
@@ -240,6 +247,9 @@ namespace Chaukanna.Scenario
             moveRadius = Mathf.Max(moveRadius, 0f);
             walkSpeed = Mathf.Max(walkSpeed, 0.5f);
             runSpeed = Mathf.Max(runSpeed, walkSpeed);
+            if (paths == null) paths = new List<FlightPath>();      // a scenario saved before paths existed
+            paths.RemoveAll(p => p == null);
+            foreach (var p in paths) p.Sanitise();
             return this;
         }
 

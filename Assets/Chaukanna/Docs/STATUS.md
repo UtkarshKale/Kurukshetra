@@ -25,6 +25,7 @@ Status words:
 | ROE cards A / B / C with scheduled or random flips, banner + tone | §5.4.4, F18 | Built | Rename to Weapons Free / Tight / Hold (F18) not done; waits on owner Q1 |
 | PID rule per card | §1.17a, F11 | Planned | |
 | Day / dusk / night, fog, NV (N key) | §1.15c, F32 | Hand-tested (early) | Image-intensifier look (scintillation, halo) not built |
+| 2D path editor (waypoints with height and speed per point, spawn points, player posts; one-way / loop / ping-pong; single drones, swarm, bird flocks) | trainer request 2026-10-20 | Built (2026-10-20, compile only) | Menu MAP tab and F6 truth map (EDIT PATHS). Paths save in the scenario and package JSON (older saves load without). Profile strip under the map. Runtime: ContactMotion, SwarmGroup, SwarmSim (Burst goal). Not run yet; spawn points and posts are not saved with a scenario. |
 | Swarms + bird flocks (boids) | F9, F13 | Built | Flock count typeable; density parameter Planned. Birds (single, small flock, big flock) are never drawn narrower than 7 px: far away they become a flat silhouette facing the camera (fix 2026-10-20: true-size flat wings were under a pixel thick and vanished). Crowd-pattern birds (CrowdJobs) and the replay do not have this yet |
 | Urban / rural site (watchtower, cantonment) | §1.17d | Built | Hand test U1 open. Coastal site (F12) Planned |
 | Terrain: generator, real-terrain download, map picker, satellite drape | §1.17d | Hand-tested | |

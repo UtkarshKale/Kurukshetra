@@ -105,6 +105,35 @@ namespace Chaukanna.Scenario
             public int motionSeed;
             public int group = -1;              // swarm or flock id; -1 = flies on its own
             public bool frozen;                 // a promoted crowd drone: its CrowdFollower moves it, not ContactMotion
+            public FlightPath path;             // a custom path from the 2D editor (single contacts; groups carry theirs themselves)
+        }
+
+        // The custom paths of this run that fit: the use, and for single drones the class. pick chooses between several that fit
+        // (taken from values the plan already drew, so adding a path never shifts the rest of the plan). Null = none.
+        FlightPath PickPath(PathUse use, int cls, int pick)
+        {
+            var cfg = TrainerConfig;
+            if (cfg == null || cfg.paths == null || RunConditions.RangeDrill) return null;
+            int matches = 0;
+            foreach (var fp in cfg.paths) if (PathFits(fp, use, cls)) matches++;
+            if (matches == 0) return null;
+            int k = (pick & 0x7FFFFFFF) % matches;
+            foreach (var fp in cfg.paths) if (PathFits(fp, use, cls) && k-- == 0) return fp;
+            return null;
+        }
+
+        static bool PathFits(FlightPath fp, PathUse use, int cls) => fp != null && fp.Usable && fp.use == use && (use != PathUse.Drone || fp.cls < 0 || fp.cls == cls);
+
+        // What a one-way path logs when it is flown out: a hostile that ends within 60 m of the post has reached it.
+        string PathEndReason(FlightPath fp, bool hostile)
+        {
+            if (hostile && fp.mode == PathMode.OneWay && defendedPoint != null)
+            {
+                var e = fp.points[fp.points.Count - 1];
+                Vector3 post = defendedPoint.position;
+                if (Vector2.Distance(e.Xz, new Vector2(post.x, post.z)) <= 60f) return "ReachedDefendedPoint";
+            }
+            return "ExitedSector";
         }
 
         // Swarms and flocks of this run, keyed by id; members join as they spawn.
@@ -436,17 +465,23 @@ namespace Chaukanna.Scenario
                     float altitude = Mathf.Lerp(def.altitudeRange.x, def.altitudeRange.y, 0.5f);
                     Vector3 centre = GroupCentre(OnSector(bearing, r, altitude), altitude, rng.Next());
                     float speed = Mathf.Lerp(def.speedRange.x, def.speedRange.y, 0.5f) * activeSpeed;
+                    // A path drawn for the swarm: it appears at waypoint 0 and its centre follows the waypoints (the members flock round it).
+                    var swarmPath = PickPath(PathUse.Swarm, -1, 0);
+                    Vector3 aim = defendedPoint.position + Vector3.up * 10f;
+                    if (swarmPath != null) { centre = swarmPath.World(0); aim = swarmPath.EndWorld(); }
                     var prof = swarmProfile != null ? swarmProfile : (defaultSwarm != null ? defaultSwarm : (defaultSwarm = SwarmProfile.Drones()));
                     if (aSwarmSize > SwarmSky.Threshold && !RunConditions.RangeDrill)
                     {
                         // Big swarm: data-oriented simulation and instanced drawing (SwarmSky); members become contacts only when picked out.
                         if (bigSky == null) bigSky = gameObject.AddComponent<SwarmSky>();
-                        bigSky.Begin(this, id++, def, ModelsFor(def.contactClass), aSwarmSize, centre, defendedPoint.position + Vector3.up * 10f, speed, Mathf.Min(aSwarmTime, active.duration), rng.Next(), aSwarmTactic);
+                        bigSky.Begin(this, id++, def, ModelsFor(def.contactClass), aSwarmSize, centre, aim, speed, Mathf.Min(aSwarmTime, active.duration), rng.Next(), aSwarmTactic);
+                        if (swarmPath != null) bigSky.SetPath(swarmPath, activeSpeed);
                         log.Add($"a big swarm of {aSwarmSize} {def.contactClass} ({aSwarmTactic}) at {aSwarmTime:F0} s from {bearing:F0} deg, simulated as data");
                     }
                     else
                     {
-                        AddGroup(list, id++, def, aSwarmSize, centre, defendedPoint.position + Vector3.up * 10f, speed, Mathf.Min(aSwarmTime, active.duration), prof, rng.Next(), "ReachedDefendedPoint");
+                        var swarmGroup = AddGroup(list, id++, def, aSwarmSize, centre, aim, speed, Mathf.Min(aSwarmTime, active.duration), prof, rng.Next(), "ReachedDefendedPoint");
+                        if (swarmPath != null) swarmGroup.SetPath(swarmPath, activeSpeed);
                         log.Add($"a swarm of {aSwarmSize} {def.contactClass} at {aSwarmTime:F0} s from {bearing:F0} deg");
                     }
                 }
@@ -461,6 +496,8 @@ namespace Chaukanna.Scenario
                 float speed = Mathf.Lerp(bird.speedRange.x, bird.speedRange.y, (float)rng.NextDouble()) * activeSpeed;
                 float time = Range(rng, active.spawnWindowStart, Mathf.Min(active.spawnWindowEnd, active.duration));
                 var prof = flockProfile != null ? flockProfile : (defaultFlock != null ? defaultFlock : (defaultFlock = SwarmProfile.Birds()));
+                var flockPath = PickPath(PathUse.Flock, -1, f);
+                if (flockPath != null) centre = flockPath.World(0);
                 if (aFlockSize > SwarmSky.Threshold && !RunConditions.RangeDrill)
                 {
                     // Big bird flock: the swarm engine with the bird profile (topological neighbours, banked turns, a roost to circle),
@@ -470,12 +507,14 @@ namespace Chaukanna.Scenario
                     go.transform.SetParent(transform, false);
                     var sky = go.AddComponent<SwarmSky>();
                     birdSkies.Add(sky);
-                    Vector3 roost = OnSector(exit * 0.5f, Mathf.Min(r * 0.5f, 450f), altitude + 20f);
+                    Vector3 roost = flockPath != null ? flockPath.EndWorld() : OnSector(exit * 0.5f, Mathf.Min(r * 0.5f, 450f), altitude + 20f);
                     int species = (flockSeed & 1) == 0 ? BirdSpeciesInfo.Pigeon : BirdSpeciesInfo.Sparrow;
                     sky.BeginBirds(this, id++, bird, aFlockSize, centre, roost, time, flockSeed, species);
+                    if (flockPath != null) sky.SetPath(flockPath, activeSpeed);
                     continue;
                 }
-                AddGroup(list, id++, bird, aFlockSize, centre, OnSector(exit, r, altitude), speed, time, prof, rng.Next(), "ExitedSector");
+                var flockGroup = AddGroup(list, id++, bird, aFlockSize, centre, flockPath != null ? flockPath.EndWorld() : OnSector(exit, r, altitude), speed, time, prof, rng.Next(), "ExitedSector");
+                if (flockPath != null) flockGroup.SetPath(flockPath, activeSpeed);
             }
             if (aBirdFlocks > 0) log.Add($"{aBirdFlocks} bird flock{(aBirdFlocks > 1 ? "s" : "")} of {aFlockSize}");
             if (log.Count > 0) Debug.Log("[Scenario] Groups: " + string.Join("; ", log) + ".");
@@ -491,9 +530,9 @@ namespace Chaukanna.Scenario
             return point;
         }
 
-        void AddGroup(List<PlannedSpawn> list, int id, ContactDefinition def, int count, Vector3 centre, Vector3 target, float speed, float time, SwarmProfile prof, int seed, string arrival)
+        SwarmGroup AddGroup(List<PlannedSpawn> list, int id, ContactDefinition def, int count, Vector3 centre, Vector3 target, float speed, float time, SwarmProfile prof, int seed, string arrival)
         {
-            groups[id] = new SwarmGroup(id, prof, target, speed, arrival);
+            var group = groups[id] = new SwarmGroup(id, prof, target, speed, arrival);
             var offsets = SwarmPlanner.Layout(count, seed, prof, target - centre);
             for (int i = 0; i < count; i++)
                 list.Add(new PlannedSpawn
@@ -502,6 +541,7 @@ namespace Chaukanna.Scenario
                     def = def, look = def, start = centre + offsets[i], goal = target, speed = speed,
                     motionSeed = seed + i * 7919, group = id,
                 });
+            return group;
         }
 
         void Add(List<PlannedSpawn> list, System.Random rng, ContactClass contactClass)
@@ -576,6 +616,9 @@ namespace Chaukanna.Scenario
                     p.goal = OnSector(exit, r, altitude);
                     break;
             }
+            // A custom path from the 2D editor replaces the spawn point and the straight pass: waypoint 0 is the spawn.
+            var route = PickPath(contactClass == ContactClass.Bird ? PathUse.Bird : PathUse.Drone, (int)contactClass, motionSeed >> 5);
+            if (route != null) { p.path = route; p.start = route.World(0); p.goal = route.EndWorld(); }
             list.Add(p);
         }
 
@@ -641,6 +684,11 @@ namespace Chaukanna.Scenario
             contact.Data.lookSeed = p.motionSeed;
             var motion = go.AddComponent<ContactMotion>();
             motion.Initialise(contact, p.look.behaviour, p.speed, p.goal, p.orbitRadius, p.motionSeed, wingL, wingR);
+            if (p.path != null)
+            {
+                bool hostileTruth = p.def.contactClass == ContactClass.HostileQuad || p.def.contactClass == ContactClass.HostileFixedWing;
+                motion.SetPath(p.path, PathEndReason(p.path, hostileTruth), activeSpeed);
+            }
             if (p.deceptive) motion.SetDeception(p.anomalyDelay, defendedPoint.position + Vector3.up * 10f);
             if (p.group >= 0 && groups.TryGetValue(p.group, out var group))
             {

@@ -35,11 +35,10 @@ namespace Chaukanna.Trainer
         public string Message { get; private set; } = "";
 
         enum Tab { Terrain, Scenario, Map, Editor, Board, Lobby }
-        enum MapTool { PlacePost, AddSpawn, RemoveSpawn }
 
         Tab tab;
-        MapTool tool;
         int selectedPlayer;
+        readonly PathEditor pathEd = new PathEditor();       // the 2D path / spawn / post editor on the MAP tab
         ProceduralPreset terrainPreset = ProceduralPreset.RollingHills;
         Texture2D preview;
         bool previewStale = true;
@@ -752,6 +751,12 @@ namespace Chaukanna.Trainer
             if (GUILayout.Button("Site: " + spec.site, button, GUILayout.Height(row))) spec.site = Cycle(spec.site);
             if (GUILayout.Button("Sensors: " + (spec.sensorsDegraded ? "DEGRADED" : "OK"), button, GUILayout.Height(row))) spec.sensorsDegraded = !spec.sensorsDegraded;
             GUILayout.EndHorizontal();
+            if (spec.paths == null) spec.paths = new List<FlightPath>();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Custom paths: {spec.paths.Count}", label, GUILayout.Width(140f), GUILayout.Height(row));
+            if (GUILayout.Button("Take the paths drawn on the MAP tab", button, GUILayout.Height(row))) spec.paths = FlightPath.CloneAll(Scenario.paths);
+            if (GUILayout.Button("Clear", button, GUILayout.Width(80f), GUILayout.Height(row))) spec.paths.Clear();
+            GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Card at start: " + RoeCards.Short(spec.roeStart), button, GUILayout.Height(row))) spec.roeStart = RoeCards.Next(spec.roeStart);
             spec.roeChangeSecond = Stepper("Change at s (-1 none)", spec.roeChangeSecond, 30, row, -1, 7200);
@@ -1068,10 +1073,24 @@ namespace Chaukanna.Trainer
             return NumberEntry.Stepper("menu." + name, name, value, step, min, max, label, field, button, row, 110f);
         }
 
+        // Ground height from the preview heightfield (bilinear), for the path editor's altitude profile. Metres east / north of the centre.
+        float PreviewGround(Vector2 m)
+        {
+            var f = PreviewField;
+            if (f == null || f.metres == null || f.resolution < 2) return 0f;
+            float fx = Mathf.Clamp((m.x / f.sizeMetres + 0.5f) * (f.resolution - 1), 0f, f.resolution - 1.001f);
+            float fz = Mathf.Clamp((m.y / f.sizeMetres + 0.5f) * (f.resolution - 1), 0f, f.resolution - 1.001f);
+            int ix = (int)fx, iz = (int)fz;
+            float tx = fx - ix, tz = fz - iz;
+            float a = Mathf.Lerp(f.At(ix, iz), f.At(ix + 1, iz), tx), b = Mathf.Lerp(f.At(ix, iz + 1), f.At(ix + 1, iz + 1), tx);
+            return Mathf.Lerp(a, b, tz);
+        }
+
         void MapTab(Rect body)
         {
             if (preview == null || previewStale) GeneratePreview();
-            float size = Mathf.Min(body.height, body.width - 360f);
+            float stripH = PathEditor.StripHeight;
+            float size = Mathf.Max(120f, Mathf.Min(body.height - stripH - 8f, body.width - 380f));
             var map = new Rect(body.x, body.y, size, size);
             Fill(map, new Color(0.1f, 0.12f, 0.15f));
             if (preview != null) GUI.DrawTexture(map, preview);
@@ -1079,17 +1098,27 @@ namespace Chaukanna.Trainer
             float area = Terrain.sizeMetres;
             Func<Vector2, Vector2> toMap = m => new Vector2(map.x + (m.x / area + 0.5f) * map.width, map.y + (0.5f - m.y / area) * map.height);
 
-            // A click on the map does what the selected tool says.
-            var e = Event.current;
-            if (e.type == EventType.MouseDown && e.button == 0 && map.Contains(e.mousePosition))
+            // The editor: drag waypoints, spawn points and posts; click does what the selected tool says.
+            if (Scenario.paths == null) Scenario.paths = new List<FlightPath>();
+            pathEd.Bind(label, small, button, field, fontSize);
+            pathEd.Paths = Scenario.paths;
+            pathEd.SpawnPoints = SpawnPoints;
+            pathEd.Players = Players;
+            pathEd.Clamp = m => ClampToArea(m, 20f);
+            pathEd.Ground = PreviewGround;
+            pathEd.PostsChanged = () => { for (int i = 0; i < Players.Count; i++) Players[i].post = ClampToArea(Players[i].post, 100f); previewStale = true; };
+            pathEd.SelectedPlayer = selectedPlayer;
+            var view = new PathEditor.View
             {
-                var metres = new Vector2(((e.mousePosition.x - map.x) / map.width - 0.5f) * area, (0.5f - (e.mousePosition.y - map.y) / map.height) * area);
-                if (tool == MapTool.PlacePost) PlacePost(selectedPlayer, metres);
-                else if (tool == MapTool.AddSpawn) AddSpawnPoint(metres);
-                else RemoveNearestSpawnPoint(metres);
-                e.Use();
-            }
+                toScreen = toMap,
+                toWorld = sp => new Vector2(((sp.x - map.x) / map.width - 0.5f) * area, (0.5f - (sp.y - map.y) / map.height) * area),
+                pxPerMetre = map.width / area,
+            };
+            pathEd.Input(map, view);
+            selectedPlayer = pathEd.SelectedPlayer;
+            pathEd.SpawnsChanged = false;
 
+            var e = Event.current;
             if (e.type == EventType.Repaint)
             {
                 // Drawn inside a clip group so a post or label near the map edge cannot spill into the panel beside it.
@@ -1103,7 +1132,6 @@ namespace Chaukanna.Trainer
                             float a = i * 5f * Mathf.Deg2Rad;
                             Dot(toLocal(p.post + new Vector2(Mathf.Sin(a), Mathf.Cos(a)) * Scenario.spawnRingRadius), 2f, new Color(1f, 0.4f, 0.3f, 0.7f));
                         }
-                foreach (var s in SpawnPoints) Dot(toLocal(s), 9f, new Color(1f, 0.3f, 0.25f));
                 for (int i = 0; i < Players.Count; i++)
                 {
                     Vector2 at = toLocal(Players[i].post);
@@ -1113,15 +1141,16 @@ namespace Chaukanna.Trainer
                 }
                 GUI.EndGroup();
             }
+            pathEd.Draw(map, view);
+            pathEd.Profile(new Rect(map.x, map.yMax + 6f, map.width, stripH));
 
             GUILayout.BeginArea(new Rect(map.xMax + 20f, body.y, body.width - size - 20f, body.height));
             mapPanelScroll = GUILayout.BeginScrollView(mapPanelScroll);
             const float row = 28f;
-            GUILayout.Label("<b>Click the map to...</b>", label);
-            tool = (MapTool)GUILayout.SelectionGrid((int)tool, new[] { "Place the selected player's post", "Add a drone spawn point", "Remove the nearest spawn point" }, 1, button, GUILayout.Height(row * 3.2f));
+            pathEd.ToolGrid(row, true, true);
 
             GUILayout.Space(8f);
-            GUILayout.Label("<b>Players</b>", label);
+            GUILayout.Label("<b>Players</b>   (drag a white square on the map to move it)", label);
             for (int i = 0; i < Players.Count; i++)
                 if (GUILayout.Toggle(selectedPlayer == i, $"{Players[i].name}{(Players[i].isLocal ? " (this machine)" : "")}   at {Players[i].post.x:F0} E, {Players[i].post.y:F0} N", button, GUILayout.Height(row))) selectedPlayer = i;
             GUILayout.BeginHorizontal();
@@ -1140,12 +1169,15 @@ namespace Chaukanna.Trainer
             GUILayout.EndHorizontal();
 
             GUILayout.Space(8f);
-            GUILayout.Label($"<b>Drone spawn points: {SpawnPoints.Count}</b>", label);
-            GUILayout.Label(SpawnPoints.Count == 0 ? $"None placed, so drones appear on a {Scenario.spawnRingRadius:F0} m ring in front of the post (the dotted circle)." : "Drones appear at these points, spread about 30 m around each.", small);
+            GUILayout.Label($"<b>Drone spawn points: {SpawnPoints.Count}</b>   (drag a red square to move it)", label);
+            GUILayout.Label(SpawnPoints.Count == 0 ? $"None placed, so drones appear on a {Scenario.spawnRingRadius:F0} m ring in front of the post (the dotted circle)." : "Drones appear at these points, spread about 30 m around each. A drone, swarm or flock that has a path appears at the path's first waypoint instead.", small);
             if (GUILayout.Button("Clear spawn points (use the ring)", button, GUILayout.Height(row))) SpawnPoints.Clear();
 
             GUILayout.Space(8f);
-            GUILayout.Label("White square = player post, red = drone spawn. Only Player 1 is played on this machine until LAN multiplayer is added; the other posts are placed and flattened now so they are ready for it.", small);
+            pathEd.PathPanel(row);
+
+            GUILayout.Space(8f);
+            GUILayout.Label("White square = player post, red = drone spawn, coloured lines = flight paths (the number beside a waypoint is its height above ground in metres). Only Player 1 is played on this machine until LAN multiplayer is added; the other posts are placed and flattened now so they are ready for it.", small);
             GUILayout.EndScrollView();
             GUILayout.EndArea();
         }

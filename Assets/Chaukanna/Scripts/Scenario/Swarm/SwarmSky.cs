@@ -49,6 +49,9 @@ namespace Chaukanna.Scenario
         Vector3 centre, target;
         float speed, startT;
         SwarmTactic tactic;
+        FlightPath path;                  // a custom path from the 2D editor (null = the usual straight in / roost)
+        float pathScale = 1f;
+        Bounds pathBounds;
         bool birds;
         int species;
         ContactSensor sensor;
@@ -66,6 +69,7 @@ namespace Chaukanna.Scenario
             spawner = owner; GroupId = groupId; def = definition; models = modelList; count = agents; centre = start; target = aim;
             speed = cruiseSpeed; startT = startTime; seed = seedValue; tactic = how;
             Promoted = 0; noted = false; hasResults = false;
+            path = null;
             if (!All.Contains(this)) All.Add(this);
             enabled = true;
         }
@@ -77,6 +81,26 @@ namespace Chaukanna.Scenario
         {
             Begin(owner, groupId, definition, null, agents, start, roostPoint, BirdSpeciesInfo.Cruise(speciesIndex), startTime, seedValue, SwarmTactic.Direct);
             birds = true; species = speciesIndex;
+        }
+
+        // This swarm / flock flies a path drawn on the map instead of heading straight for the post (or a roost). Call before it appears.
+        public void SetPath(FlightPath p, float speedScale)
+        {
+            path = p != null && p.Usable ? p : null;
+            pathScale = speedScale;
+        }
+
+        // Where the ground-height grid and the draw bounds sit: round the whole path when there is one.
+        void Extent(out float2 mid, out float side, out Bounds bounds)
+        {
+            float minX = centre.x, maxX = centre.x, minZ = centre.z, maxZ = centre.z, minY = centre.y, maxY = centre.y;
+            void Add(Vector3 v) { minX = Mathf.Min(minX, v.x); maxX = Mathf.Max(maxX, v.x); minZ = Mathf.Min(minZ, v.z); maxZ = Mathf.Max(maxZ, v.z); minY = Mathf.Min(minY, v.y); maxY = Mathf.Max(maxY, v.y); }
+            Add(target);
+            if (path != null) for (int i = 0; i < path.points.Count; i++) Add(path.World(i));
+            mid = new float2((minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f);
+            float spread = Mathf.Max(maxX - minX, maxZ - minZ);
+            side = Mathf.Max(path != null ? spread * 1.25f + 1000f : 3f * Vector3.Distance(centre, target), 2f * sim.Radius + 2000f);
+            bounds = new Bounds(new Vector3(mid.x, (minY + maxY) * 0.5f, mid.y), new Vector3(spread, maxY - minY, spread) + Vector3.one * (4f * sim.Radius + 4000f));
         }
 
         public void Stop()
@@ -101,13 +125,14 @@ namespace Chaukanna.Scenario
             var offsets = SwarmPlanner.Layout(count, seed, prof, target - centre);
             var arr = new float3[count];
             for (int i = 0; i < count; i++) arr[i] = new float3(offsets[i].x, offsets[i].y, offsets[i].z);
-            sim = new SwarmSim(centre, target, arr, p, tactic);
-            float side = Mathf.Max(3f * Vector3.Distance(centre, target), 2f * sim.Radius + 2000f);
-            sim.SetHeights(new float2((centre.x + target.x) * 0.5f, (centre.z + target.z) * 0.5f), side, (x, z) =>
+            sim = new SwarmSim(centre, target, arr, p, path != null ? SwarmTactic.Direct : tactic);      // a drawn path replaces the tactic
+            Extent(out float2 mid, out float side, out pathBounds);
+            sim.SetHeights(mid, side, (x, z) =>
             {
                 float g = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(new Vector3(x, 0f, z));
                 return float.IsNaN(g) ? 0f : g;
             });
+            if (path != null) sim.SetPath(path, pathScale);
             rend = new SwarmRenderer(def, models, count);
             Debug.Log($"[Swarm] {count} drones ({tactic}) appear at {startT:F0} s; {rend.BucketCount - 1} model parts, grid height field {side:F0} m wide.");
         }
@@ -121,13 +146,14 @@ namespace Chaukanna.Scenario
             var arr = new float3[count];
             for (int i = 0; i < count; i++) arr[i] = new float3(offsets[i].x, offsets[i].y, offsets[i].z);
             sim = new SwarmSim(centre, target, arr, p, SwarmTactic.Direct) { Seed = (uint)seed };
-            float side = Mathf.Max(3f * Vector3.Distance(centre, target), 2f * sim.Radius + 2000f);
-            sim.SetHeights(new float2((centre.x + target.x) * 0.5f, (centre.z + target.z) * 0.5f), side, (x, z) =>
+            Extent(out float2 mid, out float side, out pathBounds);
+            sim.SetHeights(mid, side, (x, z) =>
             {
                 float g = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(new Vector3(x, 0f, z));
                 return float.IsNaN(g) ? 0f : g;
             });
-            sim.EnableRoost(new float3(target.x, target.y, target.z), 220f);
+            if (path != null) sim.SetPath(path, pathScale);
+            else sim.EnableRoost(new float3(target.x, target.y, target.z), 220f);
             rend = new SwarmRenderer(species, count);
             Debug.Log($"[Swarm] {count} {BirdSpeciesInfo.Name(species).ToLower()}s (a bird flock) appear at {startT:F0} s and circle a roost; {rend.BucketCount - 1} flap-pose buckets.");
         }
@@ -163,7 +189,7 @@ namespace Chaukanna.Scenario
             var cam = PlayerCamera();
             if (cam == null || !cam.isActiveAndEnabled) return;
             Refresh(cam, sensor != null ? sensor.EffectiveMaxRange : 2000f);
-            var bounds = new Bounds((centre + target) * 0.5f, Vector3.one * (Vector3.Distance(centre, target) + 4f * sim.Radius + 4000f));
+            var bounds = path != null ? pathBounds : new Bounds((centre + target) * 0.5f, Vector3.one * (Vector3.Distance(centre, target) + 4f * sim.Radius + 4000f));
             DrawnInstances = rend.Draw(cam, bounds);
             LastCpuMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000f / System.Diagnostics.Stopwatch.Frequency;
         }

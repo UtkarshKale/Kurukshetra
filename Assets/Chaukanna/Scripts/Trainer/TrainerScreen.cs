@@ -46,6 +46,11 @@ namespace Chaukanna.Trainer
         string viewNote = "";                 // why the headset would not start, shown for a few seconds
         float viewNoteUntil;
         GUIStyle label, button, title, small, field, statusStyle;
+        // The 2D path editor on the truth map (EDIT PATHS in the controls). Spawn points live on the spawner as Vector3; the editor works on a Vector2 copy.
+        readonly PathEditor pathEd = new PathEditor();
+        readonly List<Vector2> editSpawns = new List<Vector2>();
+        bool editPaths;
+        float frozenView;
         bool wasTyping;
         bool applied;   // a trainer config has been started at least once
         float controlsBottom = 340f;   // height of all the controls in the scroll view, measured each repaint so the box fits them (up to its cap)
@@ -355,6 +360,7 @@ namespace Chaukanna.Trainer
             Working.hostileSpoofPercent = Stepper("Spoof %", Mathf.RoundToInt(Working.hostileSpoofPercent), 5, row, 0, 100);
             GUILayout.EndHorizontal();
 
+            PathsPanel(row);
             LayersPanel(row);
             Chaukanna.Audio.SoundEngine.DrawPanel(label, small, button, row, fontSize);
             if (Chaukanna.Net.LanSession.Current == Chaukanna.Net.LanSession.Role.Host) CommsPanel.Draw(label, small, button, row, fontSize);
@@ -423,14 +429,70 @@ namespace Chaukanna.Trainer
             float roomW = w - pad * 2f - 10f;
             float mapSize = Mathf.Max(80f, Mathf.Min(avail, stacked ? roomW - 150f : roomW - 305f));
             var mapRect = new Rect(pad, top, mapSize, mapSize);
-            MapLassoInput(mapRect);
+            var pathView = PathView(mapRect);
+            if (editPaths) pathEd.Input(mapRect, pathView);
+            else MapLassoInput(mapRect);
             DrawMap(mapRect);
+            pathEd.Draw(mapRect, pathView, editPaths);
             DrawLegend(pad + mapSize + 10f, top);
             if (stacked) DrawMapSelection(pad + mapSize + 10f, top + 8f * 22f + 14f, row);
             else DrawMapSelection(pad + mapSize + 10f + 155f, top + 8f, row);
-            DrawFeed(new Rect(pad, h - feedH - pad, w - pad * 2f, feedH));
+            if (editPaths) pathEd.Profile(new Rect(pad, h - feedH - pad, w - pad * 2f, feedH));
+            else DrawFeed(new Rect(pad, h - feedH - pad, w - pad * 2f, feedH));
+            PathsCommit();
 
             GUI.matrix = saved;
+        }
+
+        // Hands the editor this scenario's paths and the spawner's spawn points (as a Vector2 copy), once per GUI event.
+        void PathsBind()
+        {
+            if (Working.paths == null) Working.paths = new List<FlightPath>();
+            if (field == null) field = new GUIStyle(GUI.skin.textField);
+            field.fontSize = fontSize;
+            pathEd.Bind(label, small, button, field, fontSize);
+            pathEd.Paths = Working.paths;
+            editSpawns.Clear();
+            if (spawner.customSpawnPoints != null) foreach (var v in spawner.customSpawnPoints) editSpawns.Add(new Vector2(v.x, v.z));
+            pathEd.SpawnPoints = editSpawns;
+            pathEd.Players = null;
+            var terrain = Chaukanna.Session.SessionSetup.terrain;
+            float half = terrain != null ? terrain.sizeMetres * 0.5f - 20f : float.MaxValue;
+            pathEd.Clamp = m => new Vector2(Mathf.Clamp(m.x, -half, half), Mathf.Clamp(m.y, -half, half));
+            pathEd.Ground = m => FlightPath.Ground(m.x, m.y);
+        }
+
+        // Spawn points the editor changed go back to the spawner (they apply at the next START).
+        void PathsCommit()
+        {
+            if (!pathEd.SpawnsChanged) return;
+            pathEd.SpawnsChanged = false;
+            spawner.customSpawnPoints = editSpawns.ConvertAll(v => new Vector3(v.x, 0f, v.y));
+        }
+
+        PathEditor.View PathView(Rect r)
+        {
+            var frame = Frame(r);
+            return new PathEditor.View
+            {
+                toScreen = w => ToMap(frame, new Vector3(w.x, frame.origin.y, w.y)) + r.position,
+                toWorld = sp => { var wv = ToWorld(frame, sp - r.position); return new Vector2(wv.x, wv.z); },
+                pxPerMetre = frame.scale,
+            };
+        }
+
+        // The EDIT PATHS switch and, when on, the path / waypoint controls. Changes apply at the next START.
+        void PathsPanel(float row)
+        {
+            PathsBind();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Edit paths and spawn points on the map: " + (editPaths ? "ON" : "OFF"), button, GUILayout.Height(row))) editPaths = !editPaths;
+            GUILayout.Label($"{Working.paths.Count} paths", small, GUILayout.Width(70f), GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            if (!editPaths) return;
+            GUILayout.Label("Click / drag on the map below. Applies at the next START.", small);
+            pathEd.ToolGrid(row, true, false);
+            pathEd.PathPanel(row);
         }
 
         // Trees, bushes, grass and buildings of a real-terrain or procedural-terrain run. Each button steps Off > Realistic > Procedural
@@ -651,10 +713,20 @@ namespace Chaukanna.Trainer
         public MapFrame Frame(Rect r)
         {
             float radius = Mathf.Max(1f, spawner.ActiveRadius);
+            // The map also covers every path the trainer has drawn. While a point is being dragged the zoom stays where it was.
+            float view = radius;
+            if (pathEd.Dragging && frozenView > 0f) view = frozenView;
+            else
+            {
+                if (Working != null && Working.paths != null)
+                    foreach (var fp in Working.paths)
+                        if (fp != null) foreach (var pt in fp.points) view = Mathf.Max(view, Vector2.Distance(pt.Xz, new Vector2(spawner.transform.position.x, spawner.transform.position.z)));
+                frozenView = view;
+            }
             return new MapFrame
             {
                 radius = radius,
-                scale = r.width * 0.5f / (radius * 1.08f),
+                scale = r.width * 0.5f / (view * 1.08f),
                 centre = new Vector2(r.width * 0.5f, r.height * 0.5f),
                 origin = spawner.transform.position,
                 yaw = spawner.transform.eulerAngles.y,
@@ -665,6 +737,13 @@ namespace Chaukanna.Trainer
         {
             Vector3 d = Quaternion.Euler(0f, -f.yaw, 0f) * (world - f.origin);
             return f.centre + new Vector2(d.x, -d.z) * f.scale;
+        }
+
+        // The inverse of ToMap: a map-local position back to world metres (y = the origin's height).
+        public static Vector3 ToWorld(MapFrame f, Vector2 local)
+        {
+            Vector2 d = (local - f.centre) / f.scale;
+            return f.origin + Quaternion.Euler(0f, f.yaw, 0f) * new Vector3(d.x, 0f, -d.y);
         }
 
         // The selectable parts of the generated site: everything under its Cantonment and Fields groups (not the watchtower).

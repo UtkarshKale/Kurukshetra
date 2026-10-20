@@ -469,9 +469,73 @@ namespace Chaukanna.Scenario
             }
         }
 
+        // --- A custom path from the 2D editor: the (single) group's aim point runs from waypoint to waypoint. The aim point and the speed
+        // are plain per-group numbers the Burst step job already reads, so this costs one comparison per step however many agents fly. ---
+        float[] pathX, pathZ, pathAlt, pathSpeed;
+        PathMode pathMode;
+        PathCursor pathCur;
+        bool pathActive, pathFinal;
+        float pathScale = 1f;
+
+        public bool HasPath => pathActive;
+
+        // Call after SetHeights (the aim height is the ground under the waypoint plus its height above ground).
+        public void SetPath(FlightPath p, float speedScale)
+        {
+            if (p == null || !p.Usable) return;
+            int n = p.points.Count;
+            pathX = new float[n]; pathZ = new float[n]; pathAlt = new float[n]; pathSpeed = new float[n];
+            float lo = P.vCruise, hi = P.vCruise;
+            for (int i = 0; i < n; i++)
+            {
+                var w = p.points[i];
+                pathX[i] = w.x; pathZ[i] = w.z; pathAlt[i] = w.alt; pathSpeed[i] = w.speed;
+                if (w.speed > 0f) { lo = math.min(lo, w.speed * speedScale); hi = math.max(hi, w.speed * speedScale); }
+            }
+            // No cap on typed speeds: the limits widen to fit the fastest and slowest leg.
+            P.vMax = math.max(P.vMax, hi * (P.bird != 0 ? 1.35f : 1.3f));
+            P.vMin = math.min(P.vMin, lo * 0.4f);
+            pathMode = p.mode; pathCur = PathCursor.Start(); pathFinal = false; pathActive = true; pathScale = speedScale; roostMode = false;
+            ApplyPathGoal();
+        }
+
+        void ApplyPathGoal()
+        {
+            int i = pathCur.index;
+            float gy = SwarmMath.Ground(heights, hOrigin, hInvCell, pathX[i], pathZ[i]) + pathAlt[i];
+            float sp = pathSpeed[i] > 0f ? pathSpeed[i] * pathScale : P.vCruise;
+            for (int g = 0; g < Groups; g++)
+            {
+                goals[g] = new float3(pathX[i], gy, pathZ[i]);
+                goalSpeed[g] = sp;
+                goalFinal[g] = (byte)(pathFinal && P.bird == 0 ? 1 : 0);      // a flock never arrives: it settles into a roost
+            }
+        }
+
+        void UpdatePath()
+        {
+            if (pathFinal) return;
+            if (groupCount[0] > 0)
+            {
+                int i = pathCur.index;
+                float3 c = centroid[0];
+                if (math.distance(c.xz, new float2(pathX[i], pathZ[i])) < waypointSwitch)
+                {
+                    pathCur.Arrive(pathX.Length, pathMode);
+                    if (pathCur.done)
+                    {
+                        pathFinal = true;
+                        if (P.bird != 0) { pathActive = false; EnableRoost(new float3(pathX[i], goals[0].y, pathZ[i]), 150f); return; }
+                    }
+                }
+            }
+            ApplyPathGoal();
+        }
+
         // Moves a group on to its next phase when its centre has reached the current waypoint.
         void UpdateTactics()
         {
+            if (pathActive) { UpdatePath(); return; }
             if (roostMode) { UpdateRoost(); return; }
             if (Tactic == SwarmTactic.Direct) return;
             for (int g = 0; g < Groups; g++)

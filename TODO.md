@@ -168,6 +168,7 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [ ] P7. Proper EditMode tests once the Unity Test Framework package is allowed; the self-tests (scoring, sensors, trainer, dashboard) stand in for now.
 
 ## Polish
+- [ ] PATH-1. 2D path editor built 2026-10-20 (compile only): hand-test it (see PROGRESS.md "Polish 8"), then check a 5000-agent swarm on a loop path for frame time. Follow-ups logged: editing players in the F6 map (posts only move in the menu); spawn points and posts are not saved with a scenario (only paths are); per-path spawn time and count; a path for the Crowd and the Director's extra contacts; terrain clearance check (waypoint under the ground) is only the contact's 2 m floor (big swarms 15 m, flocks 20 m).
 - [ ] P-ArcGIS. ArcGIS API key for Google-Earth-sharp imagery (Esri World Imagery 0.3-1 m) in the map preview and the terrain drape. The map already switches to it when %USERPROFILE%/.chaukanna/arcgis.key (or ARCGIS_API_KEY) exists; the drape still uses Sentinel-2 until Esri's terms for stored imagery are checked.
 - [ ] D21. Higher-resolution satellite preview: needs the user's own ArcGIS key (free tier) for Esri World Imagery, or another source with clear terms. CARTO labels are free for non-commercial use only: revisit before any commercial use.
 - [ ] P-Rotate. The CARTO key was posted in the project chat: rotate it in the CARTO dashboard and put the new one in %USERPROFILE%/.chaukanna/carto.key.

@@ -33,8 +33,9 @@ namespace Chaukanna.Scenario
         public bool director;
         public bool reference;                    // a locked reference package: only these count on the board
         public string fairnessId = "";
+        public List<FlightPath> paths = new List<FlightPath>();     // custom paths from the 2D editor; empty = none (older packages)
 
-        public ScenarioSpec Clone() => (ScenarioSpec)MemberwiseClone();
+        public ScenarioSpec Clone() { var c = (ScenarioSpec)MemberwiseClone(); c.paths = FlightPath.CloneAll(paths); return c; }
     }
 
     [Serializable]
@@ -141,6 +142,7 @@ namespace Chaukanna.Scenario
                 referencePackage = s.reference,
                 packageId = s.name,
                 fairnessId = s.fairnessId,
+                paths = FlightPath.CloneAll(s.paths),
             };
             c.spawnWindowStart = 3f;
             c.spawnWindowEnd = c.duration * 0.8f;

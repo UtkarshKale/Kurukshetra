@@ -54,10 +54,16 @@ namespace Chaukanna.Scenario
             {
                 // The blend-in hostile drops the act: it leaves the patrol orbit and runs in on the post.
                 breakOffAfter = -1f;
+                path = null;                    // a blend-in hostile drops its route as well as its patrol
                 behaviour = FlightBehaviour.Approach;
                 goal = breakOffGoal;
                 speed *= BreakOffSpeedUp;
                 contact.MarkAnomaly("left its patrol orbit and turned for the post");
+            }
+            if (path != null)
+            {
+                if (FollowPath(dt)) contact.Despawn(pathEndReason);
+                return;
             }
             switch (behaviour)
             {
@@ -74,6 +80,69 @@ namespace Chaukanna.Scenario
                     if (Erratic(dt)) contact.Despawn("ExitedSector");
                     break;
             }
+        }
+
+        // --- A custom path from the 2D editor (FlightPath): waypoints with their own height above ground and speed. ---
+        FlightPath path;
+        PathCursor cursor;
+        string pathEndReason = "ExitedSector";
+        float pathSpeedScale = 1f, segFromAlt, segLength = 1f;
+        Vector2 segFrom;
+        const float PathClearance = 2f;
+
+        public bool OnPath => path != null;
+
+        // From now on this contact flies `p` instead of its usual pattern. Waypoint 0 is where it is (the spawner puts it there).
+        // endReason is what a one-way path logs when it is flown out (ReachedDefendedPoint for a hostile that ends at the post).
+        public void SetPath(FlightPath p, string endReason, float speedScale)
+        {
+            if (p == null || !p.Usable) return;
+            path = p;
+            pathEndReason = endReason;
+            pathSpeedScale = speedScale;
+            cursor = PathCursor.Start();
+            BeginLeg();
+            var w = p.points[1];
+            Face(new Vector3(w.x - transform.position.x, 0f, w.z - transform.position.z));
+        }
+
+        void BeginLeg()
+        {
+            var a = path.points[Mathf.Clamp(cursor.from, 0, path.points.Count - 1)];
+            var b = path.points[Mathf.Clamp(cursor.index, 0, path.points.Count - 1)];
+            segFrom = a.Xz;
+            segFromAlt = a.alt;
+            segLength = Mathf.Max(1f, Vector2.Distance(a.Xz, b.Xz));
+        }
+
+        // One frame along the path. True when a one-way path has been flown out.
+        bool FollowPath(float dt)
+        {
+            var wp = path.points[cursor.index];
+            Vector3 pos = transform.position;
+            float dx = wp.x - pos.x, dz = wp.z - pos.z;
+            float dist = Mathf.Sqrt(dx * dx + dz * dz);
+            float sp = wp.speed > 0f ? wp.speed * pathSpeedScale : speed;
+            if (dist <= Mathf.Max(2f, sp * dt))
+            {
+                cursor.Arrive(path.points.Count, path.mode);
+                if (cursor.done) return true;
+                BeginLeg();
+                return false;
+            }
+            float step = sp * dt;
+            pos.x += dx / dist * step;
+            pos.z += dz / dist * step;
+            // Height above ground blends from the leg's first waypoint to its last; the ground under the contact is added.
+            float t = Mathf.Clamp01(1f - dist / segLength);
+            float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(pos);
+            float targetY = (float.IsNaN(ground) ? 0f : ground) + Mathf.Lerp(segFromAlt, wp.alt, t);
+            if (behaviour == FlightBehaviour.Erratic) targetY += Mathf.Sin(age * 1.7f + bobPhase) * 2.5f;
+            pos.y = Mathf.MoveTowards(pos.y, targetY, Mathf.Max(20f, sp) * dt);
+            transform.position = pos;
+            Face(new Vector3(dx, 0f, dz));
+            if (behaviour == FlightBehaviour.Erratic) Flap(1f);
+            return false;
         }
 
         // Blend-in hostiles only: after this many seconds in the air, stop patrolling and attack `target`.
@@ -101,7 +170,7 @@ namespace Chaukanna.Scenario
             float ground = Chaukanna.TerrainGen.TerrainBuilder.GroundHeight(transform.position);
             if (float.IsNaN(ground)) return;
             Vector3 p = transform.position;
-            float floor = ground + MinGroundClearance;
+            float floor = ground + (path != null ? PathClearance : MinGroundClearance);
             if (behaviour == FlightBehaviour.Approach && Vector3.Distance(p, goal) < 60f) return;   // let it come down onto the post
             if (p.y < floor) { p.y = floor; transform.position = p; }
         }

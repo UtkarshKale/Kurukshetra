@@ -163,6 +163,47 @@ namespace Chaukanna.Scenario
 
         public int Alive { get; private set; }
 
+        // --- A custom path (2D editor): the group's aim point moves from waypoint to waypoint, the members flock round it. ---
+        FlightPath path;
+        PathCursor cursor;
+        float baseSpeed, speedScale = 1f;
+        bool pathFinal;                      // a one-way path has reached its last point: members now arrive there and leave
+
+        public bool OnPath => path != null;
+
+        public void SetPath(FlightPath p, float scale)
+        {
+            if (p == null || !p.Usable) return;
+            path = p;
+            speedScale = scale;
+            baseSpeed = speed;
+            cursor = PathCursor.Start();
+            pathFinal = false;
+            AimAtWaypoint();
+        }
+
+        void AimAtWaypoint()
+        {
+            var w = path.points[cursor.index];
+            target = path.World(cursor.index);
+            speed = w.speed > 0f ? w.speed * speedScale : baseSpeed;
+        }
+
+        // Moves the aim point on when the middle of the group has got near it.
+        void StepPath(int n)
+        {
+            if (path == null || pathFinal) return;
+            Vector3 centre = Vector3.zero;
+            for (int i = 0; i < n; i++) centre += pos[i];
+            centre /= n;
+            float reach = 40f + Mathf.Sqrt(n) * profile.spawnSpacing * 0.5f;
+            var w = path.points[cursor.index];
+            if (Vector2.Distance(new Vector2(centre.x, centre.z), w.Xz) > reach) return;
+            cursor.Arrive(path.points.Count, path.mode);
+            if (cursor.done) { pathFinal = true; return; }       // the aim stays on the last point
+            AimAtWaypoint();
+        }
+
         // How many living members are nearer the target than this one (0 = the leader, nearest the target).
         public int RankByDistance(ContactMotion m)
         {
@@ -183,13 +224,14 @@ namespace Chaukanna.Scenario
             if (n == 0 || dt <= 0f) return;
             if (pos.Length < n) { pos = new Vector3[n * 2]; vel = new Vector3[n * 2]; scratch = new Vector3[n * 2]; }
             for (int i = 0; i < n; i++) { pos[i] = members[i].transform.position; vel[i] = velocities[i]; }
+            StepPath(n);
             Boids.Step(pos, vel, n, target, speed, profile, dt, scratch);
             for (int i = n - 1; i >= 0; i--)
             {
                 var m = members[i];
                 velocities[i] = vel[i];
                 m.FlyGroupStep(pos[i], vel[i], profile.flapRate);
-                if (Vector3.Distance(pos[i], target) <= profile.arriveDistance)
+                if ((path == null || pathFinal) && Vector3.Distance(pos[i], target) <= profile.arriveDistance)
                 {
                     members.RemoveAt(i);
                     velocities.RemoveAt(i);
