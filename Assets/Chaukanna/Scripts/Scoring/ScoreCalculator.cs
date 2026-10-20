@@ -159,7 +159,11 @@ namespace Chaukanna.Scoring
         public GroupCallResult groupCall = new GroupCallResult();   // K key: the trainee's call on whole swarms / flocks
 
         // Full scoring roll-up.
-        public float processScore = -1f;            // mean of the decided contacts' process scores
+        public float processScore = -1f;            // decision quality (field name kept for saved sessions): mean over the scored contacts that needed a decision; -1 = n/a
+        public const string DecisionQualityHelp = "Did you follow the drill for what you could see? 100 = by the book. A hostile you saw and never acted on counts as 0.";
+        public string DecisionQualityValue => processScore < 0f ? "n/a" : processScore.ToString("F0") + " / 100";
+        public string DecisionQualityCaption => "Decision quality (n = " + (processScore < 0f ? 0 : processCount > 0 ? processCount : gridSoundSuccessful + gridSoundUnlucky + gridLucky + gridUnsound) + ")";
+        public int processCount;                    // n: how many decisions went into processScore
         public int gridSoundSuccessful, gridSoundUnlucky, gridLucky, gridUnsound;
         public int clockMisses, correctRejections, unverifiedEngagements;
         public int searchFailures, perceptionFailures;   // never brought into view / in view but never marked before the deadline
@@ -514,6 +518,8 @@ namespace Chaukanna.Scoring
                 var r = records[i];
                 var c = s.contacts[i];
                 if (!c.scored) continue;
+                // A hostile that came into view and was never acted on counts as a zero, so doing nothing cannot read as 100.
+                if (c.processScore < 0 && c.detected && c.grid == "No decision" && Category(r.truthClass) == ContactCategory.Hostile) { c.processScore = 0; c.processSeverity = "Critical"; }
                 if (c.processScore >= 0) { processSum += c.processScore; processN++; }
                 switch (c.grid)
                 {
@@ -542,6 +548,7 @@ namespace Chaukanna.Scoring
                 else { eNoise++; if (fired) eFa++; }
             }
             s.processScore = processN > 0 ? (float)processSum / processN : -1f;
+            s.processCount = processN;
             s.reportSdt = SdtResult.From(rHits, rSignals, rFa, rNoise, rules.sdtMinimumTrials);
             s.engageSdt = SdtResult.From(eHits, eSignals, eFa, eNoise, rules.sdtMinimumTrials);
         }
@@ -1120,7 +1127,7 @@ namespace Chaukanna.Scoring
             if (s.cardChange != null && s.cardChange.happened) sb.AppendLine("[Score] Card change: " + s.cardChange.summary);
             if (s.swarm != null && s.swarm.happened) sb.AppendLine("[Score] Swarm triage: " + s.swarm.summary);
             if (s.groupCall != null && s.groupCall.happened) sb.AppendLine("[Score] Group calls: " + s.groupCall.summary);
-            sb.AppendLine($"[Score] Process {(s.processScore < 0f ? "-" : F(s.processScore))} / 100. Grid: sound-successful {s.gridSoundSuccessful}, sound-unlucky {s.gridSoundUnlucky}, lucky {s.gridLucky}, unsound {s.gridUnsound}. Clock misses {s.clockMisses}, correct rejections {s.correctRejections}, unverified engagements {s.unverifiedEngagements}, search failures {s.searchFailures}, perception failures {s.perceptionFailures}");
+            sb.AppendLine($"[Score] Decision quality {(s.processScore < 0f ? "n/a" : F(s.processScore) + " / 100")} (n = {s.processCount}). Grid: sound-successful {s.gridSoundSuccessful}, sound-unlucky {s.gridSoundUnlucky}, lucky {s.gridLucky}, unsound {s.gridUnsound}. Clock misses {s.clockMisses}, correct rejections {s.correctRejections}, unverified engagements {s.unverifiedEngagements}, search failures {s.searchFailures}, perception failures {s.perceptionFailures}");
             sb.AppendLine("[Score] " + s.reportSdt.Describe("Report (is there a drone?)"));
             sb.AppendLine("[Score] " + s.engageSdt.Describe("Engage (is it hostile?)"));
             sb.AppendLine($"[Score] AI assist: {s.aiHintsShown} hints shown, {s.wrongAiHints} wrong, followed a wrong hint {s.followedWrongHint}, overrode a wrong hint correctly {s.overrodeWrongHintCorrectly}");

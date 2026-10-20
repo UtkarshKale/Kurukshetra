@@ -2,6 +2,12 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Owner round, item 1: process score renamed Decision quality, maths fixed (compile check only)
+- Cause: the tile read "Process score (on belief)" (jargon). It was the mean of each decided contact's process score (100 minus penalty for the player's own call vs the card). Contacts with no decision (hostile seen, run ended before its deadline) had score -1 and were left out, so doing nothing could read high.
+- Changed: now called Decision quality (subtitle "Did you follow the drill for what you could see? 100 = by the book") in the dashboard tile, AAR card, HTML tile and section, proficiency board header, debrief text. A hostile that came into view and was never acted on counts as 0 (Critical). Unscored contacts stay excluded. Shows n (new SessionResult.processCount; processScore name kept) and n/a with no decisions.
+- Verified: compile only. Not verified: on screen, FullScoringSelfTest (not run).
+- NEXT: item 2 (individual and unit scores).
+
 ## 2026-10-20 - Item 3: one-click DEMO, presenter checklist, DEMO-SCRIPT.md (compile check only)
 - Changed: TrainerMenu has an amber DEMO button left of START (the tab bar is a little narrower). StartDemo: refuses in a LAN lobby; picks the best real area already on this PC (DemoScenario.PickArea: map features +4, satellite +2, surround +1, Jammu +3, "Area" / "test" scratch folders -10; else a procedural Plains with peaks terrain); builds the fixed scenario (DemoScenario.Build: seed 2026, 210 s, 4 hostiles on a custom quad path, 2 own ISR, 2 civilians, 3 birds, a flock of 40, a swarm of 200 on a custom swarm path from 0:55, ROE card C to A at 1:30, day / clear, rural site only on procedural terrain); one player at the post; sound on (volume at least 70); then the ordinary StartSession. SessionSetup.demo marks the run.
 - In the run: DemoChecklist (Trainer/DemoChecklist.cs) is a hideable panel (F8, Hide, left / right) with the steps and keys (Tab lasso, K group call, E engage / Q jam, F6 trainer panel, F10 voice, SCORE, 3D REPLAY, HTML report); sound, run started, card change, run complete, dashboard open and 3D replay open tick themselves. The RUN COMPLETE box has an AAR dashboard button in a demo run (opens the dashboard expanded: cards, charts, player / unit select; 3D REPLAY and HTML report are on it).

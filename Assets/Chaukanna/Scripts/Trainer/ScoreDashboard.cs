@@ -628,7 +628,7 @@ namespace Chaukanna.Trainer
 
             // Process: judged on what the player could know (their own call, the card, the evidence), not on luck.
             float gap = 8f, tileW = Mathf.Min(220f, (w - gap) * 0.4f), th = 66f;
-            C.Tile(new Rect(x, y, tileW, th), s.processScore < 0f ? "-" : s.processScore.ToString("F0") + " / 100", "Process score (on belief)", s.processScore < 0f ? C.Dim : Grade(s.processScore));
+            C.Tile(new Rect(x, y, tileW, th), s.DecisionQualityValue, s.DecisionQualityCaption, s.processScore < 0f ? C.Dim : Grade(s.processScore));
 
             // 2 x 2 grid: rows = decision sound / unsound, columns = good / bad result.
             float gx = x + tileW + gap, gw = w - tileW - gap, cw = gw * 0.5f - 2f, chh = th * 0.5f - 2f;
@@ -667,7 +667,7 @@ namespace Chaukanna.Trainer
             }
             y = SdtRow(x, y, w, "Report: is there a drone?", s.reportSdt);
             y = SdtRow(x, y, w, "Engage: is it hostile?", s.engageSdt);
-            GUI.Label(new Rect(x, y, w, 18f), "Process uses the player's own call, the card and the evidence they had; the result is what happened. Thresholds are set in the scoring rules.", C.Small);
+            GUI.Label(new Rect(x, y, w, 18f), SessionResult.DecisionQualityHelp + " The result is what actually happened.", C.Small);
             return y + 28f;
         }
 

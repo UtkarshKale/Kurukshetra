@@ -173,6 +173,7 @@ namespace Chaukanna.Scoring
             m.classificationAccuracy = detN > 0 ? 100f * right / detN : 0f;
             m.engagementDecisionScore = actioned > 0 ? 100f * correct / actioned : 0f;
             m.processScore = procN > 0 ? (float)procSum / procN : -1f;
+            m.processCount = procN;
             m.reportSdt = SdtResult.From(rHits, rSig, rFa, rNoise, minTrials);
             m.engageSdt = SdtResult.From(eHits, eSig, eFa, eNoise, minTrials);
 

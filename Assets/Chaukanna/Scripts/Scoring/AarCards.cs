@@ -169,9 +169,9 @@ namespace Chaukanna.Scoring
             c.labels = new[] { "sound, good result", "sound, bad luck", "unsound, lucky", "unsound" };
             c.barStatus = new[] { CardStatus.Good, CardStatus.Warn, CardStatus.Warn, CardStatus.Bad };
             int total = s.gridSoundSuccessful + s.gridSoundUnlucky + s.gridLucky + s.gridUnsound;
-            c.footer = $"n = {total} decisions";
+            c.footer = $"n = {total} decisions. {SessionResult.DecisionQualityHelp}";
             if (total == 0) { c.verdict = "No decisions to grade yet."; return c; }
-            c.hero = s.processScore < 0f ? "-" : s.processScore.ToString("F0", Inv) + " / 100";
+            c.hero = s.DecisionQualityValue;
             c.severity = Clamp100(130f * (s.gridUnsound + 0.5f * s.gridLucky) / total);
             int sound = s.gridSoundSuccessful + s.gridSoundUnlucky;
             c.verdict = s.gridLucky > 0 ? $"{sound} of {total} decisions were sound; {s.gridLucky} worked out only by luck."

@@ -77,7 +77,7 @@ Status words:
 
 | Feature | F# | Status | Note |
 |---|---|---|---|
-| Full scoring (decision clock, process x outcome, report / engage d' and c with a gate) | §5.4 | Built | Hand test F4 open |
+| Full scoring (decision clock, process x outcome (the process score is shown as Decision quality with n; unactioned seen hostiles count 0), report / engage d' and c with a gate) | §5.4 | Built | Hand test F4 open |
 | Learner model, prevalence, Quiet Watch, Director, scenario editor, proficiency board | v2 §1.9-1.11 | Built | Hand test H9 open; validator V5 / V10 only partial |
 | AAR replay with slider + "your call vs the sound call" (annotated, not re-simulated) | F17, F26 | Built | Replay green-lines bug open (FIX-2b). Backward-drag scrubber with keyframes and operator graphs Planned |
 | 3D replay (Replay3D: follow / chase / free / top views of the logged run) | F17 | Built (fixed 2026-10-20, compile only) | Contacts are positioned from the black box by the replay clock, interpolated between 10 Hz samples (groups 5 Hz), same result when scrubbing or changing speed; drawn as small drone / bird shapes in truth colours (hostile red, friendly blue, civilian white, bird yellow), at least 10 px on screen; trails are the last 5 s, fading, for the 40 nearest non-bird contacts and the selected one; click a contact to label it; labels are decluttered; one seat button per real seat (duplicate seat ids of one person are merged); a Buildings ON / OFF switch. Swarm agents that became real contacts are not drawn twice. Dense-sky agents are neutral grey (the log keeps no class per agent). Not seen on screen after this change. |

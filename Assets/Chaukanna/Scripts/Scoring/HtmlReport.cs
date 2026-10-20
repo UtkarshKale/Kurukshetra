@@ -82,7 +82,7 @@ namespace Chaukanna.Scoring
             Tile(h, s.averageDetectionSeconds < 0f ? "-" : F1(s.averageDetectionSeconds) + " s", "Avg detection time", "");
             Tile(h, F0(s.classificationAccuracy) + " %", "Classification accuracy", Grade(s.classificationAccuracy));
             Tile(h, F0(s.engagementDecisionScore) + " %", "Engagement decisions", Grade(s.engagementDecisionScore));
-            Tile(h, s.processScore < 0f ? "-" : F0(s.processScore) + " / 100", "Process score (on belief)", s.processScore < 0f ? "" : Grade(s.processScore));
+            Tile(h, s.DecisionQualityValue, s.DecisionQualityCaption, s.processScore < 0f ? "" : Grade(s.processScore));
             h.Append("</section>");
 
             h.Append("<div class=\"actions noprint\"><button type=\"button\" onclick=\"window.print()\">Print / Save as PDF</button><button type=\"button\" id=\"dl-json\">Download data (JSON)</button></div>");
@@ -92,7 +92,7 @@ namespace Chaukanna.Scoring
             Debrief(h, s);
 
             // Decision quality.
-            h.Append("<section><h2>Decision quality</h2><div class=\"grid2\">");
+            h.Append("<section><h2>Decision quality</h2><p class=\"small\">").Append(Esc(SessionResult.DecisionQualityHelp)).Append("</p><div class=\"grid2\">");
             h.Append($"<div class=\"g good\"><b>{s.gridSoundSuccessful}</b> sound call, good result</div><div class=\"g warn\"><b>{s.gridSoundUnlucky}</b> sound call, bad luck</div>");
             h.Append($"<div class=\"g warn\"><b>{s.gridLucky}</b> unsound call, lucky</div><div class=\"g bad\"><b>{s.gridUnsound}</b> unsound call</div></div>");
             h.Append($"<p>Clock misses <b>{s.clockMisses}</b> &middot; correct rejections <b>{s.correctRejections}</b> &middot; unverified engagements <b>{s.unverifiedEngagements}</b> &middot; search failures <b>{s.searchFailures}</b> &middot; perception failures <b>{s.perceptionFailures}</b> &middot; missed {s.missed} &middot; false engagements {s.falseEngagements}</p>");

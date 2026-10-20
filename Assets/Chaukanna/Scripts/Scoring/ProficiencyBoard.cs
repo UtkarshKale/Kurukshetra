@@ -212,7 +212,7 @@ namespace Chaukanna.Scoring
              .Append("body{font:14px system-ui,Segoe UI,Arial;margin:16px;color:#14181f}table{border-collapse:collapse}td,th{border-bottom:1px solid #ccc;padding:4px 8px;text-align:left}.d{background:#7a1f1f;color:#fff;font-weight:700;padding:4px 10px;display:inline-block}@media print{@page{size:A4;margin:10mm}}")
              .Append("</style></head><body><div class=\"d\">").Append(Disclaimer).Append("</div><h1>Sim proficiency board</h1>")
              .Append("<p>Locked reference packages only, Director off. Scores are the sim's, not a measure of real-sky performance.</p>")
-             .Append("<table><tr><th>Soldier ID</th><th>Package</th><th>n</th><th>Latest</th><th>Mean (95 % interval)</th><th>Process</th></tr>");
+             .Append("<table><tr><th>Soldier ID</th><th>Package</th><th>n</th><th>Latest</th><th>Mean (95 % interval)</th><th>Decision quality</th></tr>");
             foreach (var c in cells)
                 h.Append("<tr><td>").Append(HtmlReport.Esc(c.player)).Append("</td><td>").Append(HtmlReport.Esc(c.package)).Append("</td><td>").Append(c.n)
                  .Append("</td><td>").Append(c.latest.ToString("F0")).Append(" %</td><td>").Append(c.mean.ToString("F0")).Append(" %")
