@@ -181,11 +181,12 @@ namespace Chaukanna.Net
 
         public static byte[] Pack(float time, Vector3 origin, IList<SnapContact> list, int start, int count)
         {
-            using (var ms = new MemoryStream(8 + count * BytesPerContact))
+            using (var ms = new MemoryStream(16 + count * BytesPerContact))
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(time);
                 w.Write((ushort)count);
+                w.Write(origin.x); w.Write(origin.z);          // the host's frame travels with the data: every PC has its own post, so "origin = my post" shifted the sky
                 for (int i = start; i < start + count; i++)
                 {
                     var c = list[i];
@@ -208,6 +209,7 @@ namespace Chaukanna.Net
             {
                 float time = r.ReadSingle();
                 int n = r.ReadUInt16();
+                origin = new Vector3(r.ReadSingle(), origin.y, r.ReadSingle());
                 for (int i = 0; i < n; i++)
                 {
                     int id = r.ReadInt32();
@@ -223,6 +225,73 @@ namespace Chaukanna.Net
         static float D(ushort q, float lo, float hi) => lo + q / 65535f * (hi - lo);
     }
 
+    // A big swarm or bird flock (SwarmSky, thousands of agents, no GameObject each): the host sends every agent's position (16 bits
+    // per axis in the same 8 km box as Snapshot, about 12 cm) and state (flying / arrived / picked out / gone), in chunks, at a rate
+    // that keeps the stream near a fixed budget however big the swarm is. The trainee's copy draws what arrives; it does not simulate.
+    public static class SwarmSnapshot
+    {
+        public const int BytesPerAgent = 7;
+        public const int HeaderBytes = 4 + 4 + 4 + 4 + 2 + 4 + 4;
+        public const int MaxPerMessage = 140;           // about 1 KB a message
+        public const float BudgetBytesPerSecond = 80000f;   // per trainee, per swarm; a bigger swarm is sent less often, not thinned
+
+        // Seconds between two snapshots of a swarm of this many agents (0.2 s up to 3 s).
+        public static float Interval(int agents) => Mathf.Clamp(agents * (float)BytesPerAgent / BudgetBytesPerSecond, 0.2f, 3f);
+
+        public static byte[] Pack(int group, float time, Vector3 origin, int total, int start, int count, Unity.Collections.NativeArray<Unity.Mathematics.float3> pos, Unity.Collections.NativeArray<byte> state)
+        {
+            using (var ms = new MemoryStream(HeaderBytes + count * BytesPerAgent))
+            using (var w = new BinaryWriter(ms))
+            {
+                w.Write(group); w.Write(time); w.Write(total); w.Write(start); w.Write((ushort)count);
+                w.Write(origin.x); w.Write(origin.z);
+                for (int i = start; i < start + count; i++)
+                {
+                    var p = pos[i];
+                    w.Write(Q(p.x - origin.x, -Snapshot.Half, Snapshot.Half));
+                    w.Write(Q(p.z - origin.z, -Snapshot.Half, Snapshot.Half));
+                    w.Write(Q(p.y, -Snapshot.Height, Snapshot.Height));
+                    w.Write(state[i]);
+                }
+                return ms.ToArray();
+            }
+        }
+
+        // Reads a chunk into the scratch arrays (grown as needed); returns false if the bytes are not a valid chunk.
+        public static bool Unpack(byte[] data, out int group, out float time, out int total, out int start, out int count, ref Vector3[] pos, ref byte[] state)
+        {
+            group = total = start = count = 0; time = 0f;
+            if (data == null || data.Length < HeaderBytes) return false;
+            using (var ms = new MemoryStream(data))
+            using (var r = new BinaryReader(ms))
+            {
+                group = r.ReadInt32(); time = r.ReadSingle(); total = r.ReadInt32(); start = r.ReadInt32(); count = r.ReadUInt16();
+                float ox = r.ReadSingle(), oz = r.ReadSingle();
+                if (count < 0 || data.Length < HeaderBytes + count * BytesPerAgent || total < 0 || start < 0) return false;
+                if (pos == null || pos.Length < count) pos = new Vector3[count];
+                if (state == null || state.Length < count) state = new byte[count];
+                for (int i = 0; i < count; i++)
+                {
+                    float x = D(r.ReadUInt16(), -Snapshot.Half, Snapshot.Half), z = D(r.ReadUInt16(), -Snapshot.Half, Snapshot.Half), y = D(r.ReadUInt16(), -Snapshot.Height, Snapshot.Height);
+                    pos[i] = new Vector3(ox + x, y, oz + z);
+                    state[i] = r.ReadByte();
+                }
+                return true;
+            }
+        }
+
+        static ushort Q(float v, float lo, float hi) => (ushort)Mathf.RoundToInt(Mathf.Clamp01((v - lo) / (hi - lo)) * 65535f);
+        static float D(ushort q, float lo, float hi) => lo + q / 65535f * (hi - lo);
+    }
+
+    // A trainee's PC reports that its field is built and its scenario is running: from then on the host sends it the sky.
+    // SwarmPick: a trainee aimed at a drone of a big swarm; the host promotes it to a real contact.
+    [Serializable]
+    public class SwarmPickMsg
+    {
+        public int group, index;
+    }
+
     // Message names. Everything goes as NGO named messages: no networked objects, no scene sync, no relay or internet.
     public static class Msg
     {
@@ -233,6 +302,7 @@ namespace Chaukanna.Net
         public const string Decide = "chk.decide", Effect = "chk.effect", Live = "chk.live", Result = "chk.result";
         public const string Report = "chk.report", CrowdPick = "chk.crowdpick", Handled = "chk.handled";
         public const string Waiting = "chk.waiting", Restart = "chk.restart";
+        public const string FieldReady = "chk.fieldready", Swarm = "chk.swarm", SwarmPick = "chk.swarmpick";
         public const string Pose = "chk.pose", Ping = "chk.ping", Pong = "chk.pong", Voice = "chk.voice", Comms = "chk.comms";
     }
 }

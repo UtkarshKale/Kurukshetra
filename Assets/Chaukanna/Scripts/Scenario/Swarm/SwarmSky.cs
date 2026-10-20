@@ -168,7 +168,7 @@ namespace Chaukanna.Scenario
         void LateUpdate()
         {
             if (spawner == null || spawner.Waiting) return;
-            if (RunConditions.NetTeamClient) return;
+            if (RunConditions.NetTeamClient) { RemoteLate(); return; }
             if (spawner.Finished)
             {
                 if (!noted && sim != null)
@@ -186,12 +186,79 @@ namespace Chaukanna.Scenario
             long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
             LastStepMs = (t1 - t0) * 1000f / System.Diagnostics.Stopwatch.Frequency;
             alpha = Mathf.Clamp01((t - sim.StepCount * sim.P.dt) / sim.P.dt);
+            DrawFrame(t0);
+        }
+
+        // Camera, visibility and the instanced draw for this frame (the host's own sim and a trainee's copy of the host's swarm).
+        void DrawFrame(long t0)
+        {
             var cam = PlayerCamera();
             if (cam == null || !cam.isActiveAndEnabled) return;
             Refresh(cam, sensor != null ? sensor.EffectiveMaxRange : 2000f);
             var bounds = path != null ? pathBounds : new Bounds((centre + target) * 0.5f, Vector3.one * (Vector3.Distance(centre, target) + 4f * sim.Radius + 4000f));
             DrawnInstances = rend.Draw(cam, bounds);
             LastCpuMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000f / System.Diagnostics.Stopwatch.Frequency;
+        }
+
+        // --- LAN team mode, trainee's PC ---
+        // The host owns the swarm. This PC never steps it: it keeps a sim object only as the data the draw job reads, and the host's
+        // snapshots (LanSession -> SwarmSnapshot) write every agent's position and state into it. Drawn between the last two snapshots.
+        bool[] remoteSeen;
+        float remoteHostT = -1f, remoteSnapAt, remoteInterval = 0.5f;
+        bool RunningNet => RunConditions.NetTeamClient;
+        public bool RemoteReady => sim != null && remoteSeen != null;
+
+        void RemoteLate()
+        {
+            if (spawner.Finished || sim == null || remoteSeen == null) return;
+            alpha = Mathf.Clamp((Time.time - remoteSnapAt) / remoteInterval, 0f, 1.5f);
+            DrawFrame(System.Diagnostics.Stopwatch.GetTimestamp());
+        }
+
+        // A chunk of the host's snapshot: agents start .. start+n-1.
+        public void ApplyRemote(float hostT, int start, int n, Vector3[] pos, byte[] st)
+        {
+            if (spawner == null || n <= 0) return;
+            if (sim == null)
+            {
+                Create();
+                remoteSeen = new bool[sim.Count];
+                var s0 = sim.State;
+                for (int i = 0; i < sim.Count; i++) s0[i] = SwarmSim.Gone;       // not drawn until the host has said where it is
+            }
+            if (hostT > remoteHostT + 1e-3f)
+            {
+                if (remoteHostT >= 0f) remoteInterval = Mathf.Clamp(hostT - remoteHostT, 0.05f, 4f);
+                remoteHostT = hostT;
+                remoteSnapAt = Time.time;
+            }
+            else if (hostT < remoteHostT - 1e-3f) return;          // an older snapshot that arrived late
+            var P = sim.Pos; var Q = sim.PrevPos; var V = sim.Vel; var PV = sim.PrevVel; var S = sim.State;
+            float inv = 1f / remoteInterval;
+            float3 aim = new float3(target.x, target.y, target.z);
+            for (int k = 0; k < n; k++)
+            {
+                int i = start + k;
+                if (i < 0 || i >= sim.Count) break;
+                float3 np = new float3(pos[k].x, pos[k].y, pos[k].z);
+                if (!remoteSeen[i])
+                {
+                    remoteSeen[i] = true;
+                    Q[i] = np; P[i] = np;
+                    float3 d = aim - np; d.y = 0f;
+                    float3 v0 = math.lengthsq(d) > 1f ? math.normalize(d) * Mathf.Max(5f, speed) : new float3(0f, 0f, 1f);
+                    V[i] = v0; PV[i] = v0;
+                }
+                else
+                {
+                    float3 old = P[i];
+                    Q[i] = old; P[i] = np;
+                    PV[i] = V[i];
+                    float3 dv = np - old;
+                    if (math.lengthsq(dv) > 1e-4f) V[i] = dv * inv;
+                }
+                S[i] = st[k];
+            }
         }
 
         // Visibility and instance matrices for this camera (public so a test can run it without the spawner).
@@ -204,7 +271,7 @@ namespace Chaukanna.Scenario
                 {
                     prevPos = sim.PrevPos, curPos = sim.Pos, prevVel = sim.PrevVel, curVel = sim.Vel, state = sim.State,
                     agents = sim.Count, bucketCount = rend.BucketCount, species = species, seed = (uint)seed, alpha = alpha, dt = sim.P.dt,
-                    time = sim.Time + alpha * sim.P.dt, span = rend.Size, maxRange = maxRange, minPx = 0.3f, modelPx = BirdView.ModelPx, minSpanPx = BirdView.MinSpanPx,
+                    time = RunningNet ? remoteHostT + (Time.time - remoteSnapAt) : sim.Time + alpha * sim.P.dt, span = rend.Size, maxRange = maxRange, minPx = 0.3f, modelPx = BirdView.ModelPx, minSpanPx = BirdView.MinSpanPx,
                     pxPerMetreAtOne = cam.pixelHeight / (2f * Mathf.Tan(vfov * 0.5f)), camPos = cam.transform.position,
                     viewProj = (float4x4)(cam.projectionMatrix * cam.worldToCameraMatrix),
                     counts = rend.counts, starts = rend.starts, fill = rend.fill, stats = rend.stats, bucketOf = rend.bucketOf, vis = rend.vis, drawPos = rend.drawPos, matrices = rend.matrices,
@@ -331,6 +398,12 @@ namespace Chaukanna.Scenario
         // others keep their spacing round it), and a SwarmFollower moves the contact from the agent's data.
         public Contact Promote(int index)
         {
+            // A trainee's PC: the host owns the swarm. Ask it; the new contact arrives like any other (LanSession.SendSwarmPick).
+            if (RunConditions.NetTeamClient)
+            {
+                if (sim != null && index >= 0 && index < sim.Count && sim.State[index] == SwarmSim.Flying) Chaukanna.Net.LanSession.SendSwarmPick(GroupId, index, TrackId(index));
+                return null;
+            }
             if (spawner == null || sim == null || index < 0 || index >= sim.Count || sim.State[index] != SwarmSim.Flying) return null;
             var contact = spawner.SpawnCrowdContact(def.contactClass, PositionOf(index), 7 * (index % 3) + index % 7, TrackId(index));
             if (contact == null) return null;

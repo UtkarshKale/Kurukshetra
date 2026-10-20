@@ -93,7 +93,9 @@ namespace Chaukanna.Net
             return 0f;
         }
 
-        Vector3 RunOrigin(ScenarioSpawner sp) => sp.defendedPoint != null ? sp.defendedPoint.position : sp.transform.position;
+        // The frame seat poses are sent in: the world itself. Every PC puts its own seat at its own post, so "relative to my post" (the old
+        // frame) drew every other seat shifted by the distance between the two posts.
+        Vector3 RunOrigin(ScenarioSpawner sp) => Vector3.zero;
 
         Role role;
         NetworkManager nm;
@@ -353,6 +355,7 @@ namespace Chaukanna.Net
             {
                 var p = roster.Find(id);
                 if (p != null) { roster.players.Remove(p); Note($"{p.name} left."); BroadcastRoster(); }
+                readyClients.Remove(id);
             }
             else if (role == Role.Client)
             {
@@ -502,6 +505,7 @@ namespace Chaukanna.Net
             VoiceChat.End();
             PlayerAvatars.End(this);
             proxies.Clear(); announced.Clear(); anomalySent.Clear(); targets.Clear(); pendingReports.Clear(); lastReportCall.Clear(); pickSentAt.Clear();
+            readyClients.Clear(); fieldReadyFor = null; pendingSwarmTrack = -1;
             SeatPoses.Clear(); SeatTracks.Clear();
             Chaukanna.Player.ReportBoard.Clear();
             inField = false;
@@ -525,6 +529,10 @@ namespace Chaukanna.Net
             lastReportCall.Clear();
             pickSentAt.Clear();
             pendingPick = -1;
+            pendingSwarmTrack = -1;
+            readyClients.Clear();
+            fieldReadyFor = null;
+            nextSwarmSend.Clear();
             hostTimeValid = false;
             warnedDrift = 0f;
             spawnerCache = null;
@@ -593,6 +601,9 @@ namespace Chaukanna.Net
             m.RegisterNamedMessageHandler(Msg.Live, (from, r) => StoreResult(from, Read<Chaukanna.Scoring.SessionResult>(r), false));
             m.RegisterNamedMessageHandler(Msg.Result, (from, r) => StoreResult(from, Read<Chaukanna.Scoring.SessionResult>(r), true));
             m.RegisterNamedMessageHandler(Msg.Spawn, (from, r) => OnSpawn(Read<SpawnMsg>(r)));
+            m.RegisterNamedMessageHandler(Msg.FieldReady, (from, r) => OnFieldReady(from));
+            m.RegisterNamedMessageHandler(Msg.Swarm, (from, r) => { r.ReadValueSafe(out int len); var bytes = new byte[len]; r.ReadBytesSafe(ref bytes, len); OnSwarmSnapshot(bytes); });
+            m.RegisterNamedMessageHandler(Msg.SwarmPick, (from, r) => OnSwarmPickMessage(from, Read<SwarmPickMsg>(r)));
             m.RegisterNamedMessageHandler(Msg.Despawn, (from, r) => { r.ReadValueSafe(out int id); r.ReadValueSafe(out string reason); OnDespawn(id, reason); });
             m.RegisterNamedMessageHandler(Msg.Anomaly, (from, r) => { r.ReadValueSafe(out int id); r.ReadValueSafe(out string cue); if (proxies.TryGetValue(id, out var c) && c != null) c.MarkAnomaly(cue); });
             m.RegisterNamedMessageHandler(Msg.Snap, (from, r) => { r.ReadValueSafe(out int len); var bytes = new byte[len]; r.ReadBytesSafe(ref bytes, len); OnSnapshot(bytes); });
@@ -919,15 +930,17 @@ namespace Chaukanna.Net
             endSent = false;
             if (roster.mode != NetMode.Team) return;
 
-            // New contacts, gone contacts, anomalies: reliable. Positions: one batched snapshot ten times a second.
+            // New contacts, gone contacts, anomalies: reliable. Positions: one batched snapshot ten times a second. All of it goes only
+            // to trainees whose field is up (FieldReady): a contact announced while a PC was still loading its terrain used to be
+            // lost for good, because the host marked it announced. A PC that becomes ready gets the whole live sky at once (OnFieldReady).
             liveIds.Clear();
             foreach (var c in ContactRegistry.Live) if (c != null) liveIds.Add(c.Id);
             foreach (var c in ContactRegistry.Live)
             {
                 if (c == null || announced.Contains(c.Id)) continue;
                 announced.Add(c.Id);
-                var m = new SpawnMsg { id = c.Id, truth = (int)c.TruthClass, look = (int)c.Data.lookClass, seed = c.Data.lookSeed, deceptive = c.Deceptive, position = c.transform.position, crowdIndex = c.Data.crowdIndex };
-                foreach (var p in roster.players) if (!p.host) SendJson(Msg.Spawn, p.clientId, m, NetworkDelivery.ReliableSequenced);
+                var m = MakeSpawn(c);
+                foreach (var p in roster.players) if (!p.host && readyClients.Contains(p.clientId)) SendJson(Msg.Spawn, p.clientId, m, NetworkDelivery.ReliableSequenced);
             }
             FindGone(announced, liveIds, goneScratch);
             foreach (int id in goneScratch)
@@ -935,16 +948,18 @@ namespace Chaukanna.Net
                 announced.Remove(id);
                 var rec = ContactRegistry.Records.Find(x => x.id == id);
                 string reason = rec != null ? rec.despawnReason ?? "Destroyed" : "Destroyed";
-                foreach (var p in roster.players) if (!p.host) Send(Msg.Despawn, p.clientId, w => { w.WriteValueSafe(id); w.WriteValueSafe(reason); }, NetworkDelivery.ReliableSequenced);
+                foreach (var p in roster.players) if (!p.host && readyClients.Contains(p.clientId)) Send(Msg.Despawn, p.clientId, w => { w.WriteValueSafe(id); w.WriteValueSafe(reason); }, NetworkDelivery.ReliableSequenced);
             }
             foreach (var c in ContactRegistry.Live)
                 if (c != null && c.AnomalyShown && anomalySent.Add(c.Id))
                 {
                     string cue = c.Data.anomalyCue ?? "left its pattern";
                     int id = c.Id;
-                    foreach (var p in roster.players) if (!p.host) Send(Msg.Anomaly, p.clientId, w => { w.WriteValueSafe(id); w.WriteValueSafe(cue); }, NetworkDelivery.ReliableSequenced);
+                    foreach (var p in roster.players) if (!p.host && readyClients.Contains(p.clientId)) Send(Msg.Anomaly, p.clientId, w => { w.WriteValueSafe(id); w.WriteValueSafe(cue); }, NetworkDelivery.ReliableSequenced);
                 }
 
+            if (readyClients.Count == 0) return;
+            SwarmTick(spawner);
             if (Time.time < nextSnap) return;
             nextSnap = Time.time + snapInterval;
             snap.Clear();
@@ -953,9 +968,111 @@ namespace Chaukanna.Net
             for (int start = 0; start < snap.Count || start == 0; start += Snapshot.MaxPerMessage)
             {
                 var bytes = Snapshot.Pack(spawner.ScenarioTime, origin, snap, start, Mathf.Min(Snapshot.MaxPerMessage, snap.Count - start));
-                foreach (var p in roster.players) if (!p.host) Send(Msg.Snap, p.clientId, w => { w.WriteValueSafe(bytes.Length); w.WriteBytesSafe(bytes, bytes.Length); }, NetworkDelivery.UnreliableSequenced);
+                foreach (var p in roster.players) if (!p.host && readyClients.Contains(p.clientId)) Send(Msg.Snap, p.clientId, w => { w.WriteValueSafe(bytes.Length); w.WriteBytesSafe(bytes, bytes.Length); }, NetworkDelivery.UnreliableSequenced);
                 if (snap.Count == 0) break;
             }
+        }
+
+        static SpawnMsg MakeSpawn(Contact c) => new SpawnMsg { id = c.Id, truth = (int)c.TruthClass, look = (int)c.Data.lookClass, seed = c.Data.lookSeed, deceptive = c.Deceptive, position = c.transform.position, crowdIndex = c.Data.crowdIndex };
+
+        // --- A trainee's field is up: it gets the sky. ---
+
+        // Host: the trainees whose scenario is running and who have been sent the live sky.
+        readonly HashSet<ulong> readyClients = new HashSet<ulong>();
+        public int ReadyClientCount => readyClients.Count;
+        ScenarioSpawner fieldReadyFor;      // trainee: the spawner FieldReady was sent for (a reloaded field is a new spawner)
+
+        void ClientFieldReadyTick()
+        {
+            var sp = Spawner;
+            if (roster.mode != NetMode.Team || sp == null || sp.Waiting || sp.Finished || sp == fieldReadyFor) return;
+            fieldReadyFor = sp;
+            Send(Msg.FieldReady, NetworkManager.ServerClientId, w => { }, NetworkDelivery.ReliableSequenced);
+            Note("Field is up: asked the host for the live sky.");
+        }
+
+        // Host: this trainee can take contacts now. Send everything that is already in the sky (it spawned while this PC was loading).
+        void OnFieldReady(ulong from)
+        {
+            if (role != Role.Host || !inField || roster.mode != NetMode.Team) return;
+            readyClients.Add(from);
+            int n = 0;
+            foreach (var c in ContactRegistry.Live)
+            {
+                if (c == null) continue;
+                SendJson(Msg.Spawn, from, MakeSpawn(c), NetworkDelivery.ReliableSequenced);
+                if (c.AnomalyShown)
+                {
+                    string cue = c.Data.anomalyCue ?? "left its pattern";
+                    int id = c.Id;
+                    Send(Msg.Anomaly, from, w => { w.WriteValueSafe(id); w.WriteValueSafe(cue); }, NetworkDelivery.ReliableSequenced);
+                }
+                n++;
+            }
+            foreach (var key in new List<int>(nextSwarmSend.Keys)) nextSwarmSend[key] = 0f;      // every swarm goes out at once
+            var who = roster.Find(from);
+            Note($"{(who != null ? who.name : "A trainee")} has its field up: sent {n} live contact(s).");
+        }
+
+        // --- Big swarms and bird flocks (SwarmSky): host-owned, streamed to the trainees. ---
+
+        readonly Dictionary<int, float> nextSwarmSend = new Dictionary<int, float>();
+
+        void SwarmTick(ScenarioSpawner spawner)
+        {
+            foreach (var sky in SwarmSky.All)
+            {
+                if (sky == null || !sky.Started || sky.Sim == null) continue;
+                int count = sky.Sim.Count;
+                nextSwarmSend.TryGetValue(sky.GroupId, out float due);
+                if (Time.time < due) continue;
+                nextSwarmSend[sky.GroupId] = Time.time + SwarmSnapshot.Interval(count);
+                Vector3 origin = spawner.defendedPoint != null ? spawner.defendedPoint.position : spawner.transform.position;
+                var pos = sky.Sim.Pos; var state = sky.Sim.State;
+                for (int start = 0; start < count; start += SwarmSnapshot.MaxPerMessage)
+                {
+                    var bytes = SwarmSnapshot.Pack(sky.GroupId, spawner.ScenarioTime, origin, count, start, Mathf.Min(SwarmSnapshot.MaxPerMessage, count - start), pos, state);
+                    foreach (var p in roster.players) if (!p.host && readyClients.Contains(p.clientId)) Send(Msg.Swarm, p.clientId, w => { w.WriteValueSafe(bytes.Length); w.WriteBytesSafe(bytes, bytes.Length); }, NetworkDelivery.UnreliableSequenced);
+                }
+            }
+        }
+
+        Vector3[] swarmPos; byte[] swarmState;
+
+        // Trainee: a chunk of the host's swarm. The copy of the swarm made on this PC (same scenario) only draws it.
+        void OnSwarmSnapshot(byte[] bytes)
+        {
+            if (role != Role.Client || !inField) return;
+            if (!SwarmSnapshot.Unpack(bytes, out int group, out float hostT, out int total, out int start, out int count, ref swarmPos, ref swarmState)) return;
+            foreach (var sky in SwarmSky.All)
+                if (sky != null && sky.GroupId == group && sky.Count == total) { sky.ApplyRemote(hostT, start, count, swarmPos, swarmState); return; }
+        }
+
+        // Trainee: ask the host to pick this drone out of a big swarm (it becomes a real contact, which then arrives as a Spawn).
+        public static void SendSwarmPick(int group, int index, int trackId)
+        {
+            var s = Instance;
+            if (s == null || s.role != Role.Client || !s.inField || s.roster.mode != NetMode.Team) return;
+            s.pendingSwarmTrack = trackId;
+            s.pendingPickAt = Time.time;
+            if (s.pickSentAt.TryGetValue(trackId, out float at) && Time.time - at < 3f) return;
+            s.pickSentAt[trackId] = Time.time;
+            s.SendJson(Msg.SwarmPick, NetworkManager.ServerClientId, new SwarmPickMsg { group = group, index = index }, NetworkDelivery.ReliableSequenced);
+        }
+
+        int pendingSwarmTrack = -1;
+
+        void OnSwarmPickMessage(ulong from, SwarmPickMsg m)
+        {
+            if (role != Role.Host || !inField) return;
+            foreach (var sky in SwarmSky.All)
+                if (sky != null && sky.GroupId == m.group && sky.Started)
+                {
+                    var c = sky.Promote(m.index);
+                    var who = roster.Find(from);
+                    if (c != null) ContactRegistry.Note($"{(who != null ? who.name : "Trainee")}: picked swarm drone {m.index}, now track #{c.Id:00}");
+                    return;
+                }
         }
 
         internal void Send(string msg, ulong to, Action<FastBufferWriter> write, NetworkDelivery delivery)
@@ -1132,6 +1249,8 @@ namespace Chaukanna.Net
         {
             TestBot();
             PingTick();
+            ClientFieldReadyTick();
+            if (pendingSwarmTrack >= 0 && Time.time - pendingPickAt > 5f) pendingSwarmTrack = -1;
             if (pendingPick >= 0 && Time.time - pendingPickAt > 5f) pendingPick = -1;      // the host never promoted it (taken, or out of its sky)
             // Interpolate proxies between the last two snapshots.
             float k = Mathf.Clamp01((Time.time - lastSnapAt) / snapInterval);
@@ -1164,7 +1283,7 @@ namespace Chaukanna.Net
             bool fromCrowd = false;
             if (m.crowdIndex >= 0 && spawner.Crowd != null && spawner.Crowd.TakeForRemote(m.crowdIndex, out agent, out Vector3 crowdPos)) { fromCrowd = true; position = crowdPos; }
             var c = spawner.SpawnSingle((ContactClass)m.truth, (ContactClass)m.look, position, position, 0f, m.seed, m.id, m.deceptive);
-            if (c == null) return;
+            if (c == null) { Note($"Could not build contact #{m.id:00} here (no definition for its class {(ContactClass)m.truth})."); return; }
             var motion = c.GetComponent<ContactMotion>();
             if (motion != null) motion.enabled = false;     // the host moves it
             proxies[m.id] = c;
@@ -1178,6 +1297,13 @@ namespace Chaukanna.Net
             }
             if (fromCrowd) Note($"crowd drone {m.crowdIndex} promoted by the host as #{m.id:00}: taken out of this PC's crowd");
             if (pendingReports.TryGetValue(m.id, out var pr)) { StampReport(c.Data, pr.msg, pr.localTime); pendingReports.Remove(m.id); }
+            if (pendingSwarmTrack >= 0 && m.id == pendingSwarmTrack)
+            {
+                var swarmCam = Camera.main;
+                var swarmSensor = swarmCam != null ? swarmCam.GetComponent<Chaukanna.Player.ContactSensor>() : null;
+                if (swarmSensor != null) swarmSensor.LockContact(c, "swarm pick");
+                pendingSwarmTrack = -1;
+            }
             if (pendingPick >= 0 && m.crowdIndex == pendingPick)
             {
                 var cam = Camera.main;

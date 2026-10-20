@@ -298,7 +298,7 @@ namespace Chaukanna.Scenario
             RunConditions.NullMission = TrainerConfig != null && TrainerConfig.nullMission;
             RunConditions.RangeDrill = TrainerConfig != null && TrainerConfig.rangeDrill;
             RunConditions.ReferencePackage = TrainerConfig != null && TrainerConfig.referencePackage;
-            RunConditions.DirectorOn = TrainerConfig != null && TrainerConfig.director && !TrainerConfig.referencePackage && !TrainerConfig.rangeDrill;
+            RunConditions.DirectorOn = TrainerConfig != null && TrainerConfig.director && !TrainerConfig.referencePackage && !TrainerConfig.rangeDrill && !RunConditions.NetTeamClient;      // a trainee in a team run gets the host's contacts, not its own director's
             RunConditions.PackageId = TrainerConfig != null ? TrainerConfig.packageId ?? "" : "";
             RunConditions.NightVisionSeconds = 0f;
             RunConditions.AllowMovement = TrainerConfig != null && TrainerConfig.allowMovement;

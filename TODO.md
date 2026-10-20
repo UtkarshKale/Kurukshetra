@@ -16,6 +16,13 @@ SCOPE SOURCE: module-1-demo.md (the agreed Module 1 demo; the user rejected the 
 First restructured 2026-10-14 against the solution doc (solution-v2-council.md: §2 PS coverage table R1a-R9, §11.1 M1 scope, §12 demo script). No item was deleted; items were moved and tagged. New items from the gap check are numbered N1 and up.
 Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo moments in §12: (1) cold open, night, own drone engaged, "your call vs the sound call"; (2) the card flip mid-mission; (3) night 24-swarm with a wrong AI cue. Shot 5b is the VR sentry.
 
+## LAN SYNC FIX 2026-10-20 (owner: drones not visible on the friend's PC)
+- [x] LAN-1. Trainee saw no drones: spawns sent while its field was loading were lost (FieldReady handshake + full resync), snapshot/pose origin was each PC's own post (now the host's origin in the snapshot header, world frame for poses), Director off on a team client. Compile only.
+- [x] LAN-2. Big swarms and bird flocks (> 64, SwarmSky) on a trainee: host streams agents (SwarmSnapshot), trainee draws; picks go to the host (SwarmPick). Compile only.
+- [ ] LAN-3. Proxy contacts do not animate (ContactMotion off): wing flap / rotor spin on a trainee's PC. Cosmetic.
+- [ ] LAN-4. Two-PC hand test of LAN-1 and LAN-2 (host + friend): contacts visible from the start, same place on both screens, swarm with more than 64 drones (Scenario > Swarm size 200) and a flock with more than 64 birds show on both.
+- [ ] LAN-5. Per-agent swarm stream is full-state; if bandwidth matters for tens of thousands, send only agents near the trainee's view or delta-code them.
+
 ## FACULTY REVIEW v3 (added 2026-10-19; design in Docs/solution-v3.md, recommended order in its section 11.5; the owner sets the real order and confirms before each big step)
 Waiting on the owner first: design questions Q1-Q6 (solution-v3 header notes; defaults = the recommendations).
 - [ ] FR-1. [R3] Two-PC LAN test (same as N-L1 / MP-2). The pitch now leads with local multiplayer, so this comes first. Needs a second PC and the owner's hands.
