@@ -2,6 +2,11 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-21 - Decision tree in the exported AAR report
+- New Scoring/DecisionTreeHtml.cs: the HTML report (SCORE > HTML report) now has a "Decision tree" section: the whole-run tree (same checkpoints and branches as the dashboard, counts and %), then one foldable entry per contact with its path and details (seen after, search/perception, call and changes, AI cue, action, call-to-action time, card in force, clock, outcome, decision vs result, decision quality, node points). Follows the Show selector (all / unit / player). Offline, no script.
+- Verified: compile only. Not verified: the report opened in a browser.
+- NEXT: owner tests, then commit and push on their word.
+
 ## 2026-10-21 - Submission copy prepared, Unity re-saves committed
 - Committed Unity re-saves (vegetation materials, Low URP asset, Windows build profile quality levels, OpenXR settings), ccff03c. Not committed: the deleted RealData areas (Area, Jammu_AFS, Kargil, ladakh, telaviv), on_map_test, and the files HANDOFF.md lists.
 - Submission copy at C:\Users\dhruv\Kurukshetra (origin = UtkarshKale/Kurukshetra), not committed: agent and planning files removed, new README, key scan clean.
