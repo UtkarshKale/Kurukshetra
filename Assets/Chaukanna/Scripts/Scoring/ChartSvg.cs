@@ -93,6 +93,7 @@ namespace Chaukanna.Scoring
             sb.Append("#v-cards:checked~.viewbody .chartsec{display:none}#v-charts:checked~.viewbody .cardsec{display:none}");
             sb.Append("#v-cards:focus-visible~.viewtabs label[for=v-cards],#v-charts:focus-visible~.viewtabs label[for=v-charts]{outline:2px solid var(--accent);outline-offset:2px}");
             sb.Append("@media print{.viewtabs{display:none}.chartsec{display:block!important}.cardsec{display:block!important}.charts{grid-template-columns:1fr 1fr;gap:8px}}");
+            sb.Append(".scopebar{display:flex;gap:8px;align-items:center;margin:12px 0 4px;font:600 13px system-ui,Segoe UI,Arial,sans-serif}.scopebar select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg)}.scope[hidden]{display:none}");
             return sb.ToString();
         }
     }

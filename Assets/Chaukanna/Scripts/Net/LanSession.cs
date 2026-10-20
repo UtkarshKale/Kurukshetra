@@ -427,6 +427,8 @@ namespace Chaukanna.Net
             RunConditions.NetTeamClient = role == Role.Client && roster.mode == NetMode.Team;
             // The seat's role applies in a team run only; Solo mode and a single PC are always Any.
             var me = roster.Find(LocalId);
+            RunConditions.SeatId = me != null ? me.clientId.ToString() : "Seat 1";
+            RunConditions.UnitId = me != null && !string.IsNullOrEmpty(me.unit) ? me.unit : "Unit 1";
             RunConditions.SeatRole = role != Role.None && roster.mode == NetMode.Team && me != null ? me.Role : SeatRole.Any;
             Note($"Entering the field as {(RunConditions.SeatRole == SeatRole.Any ? "ANY" : NetPlayer.RoleName(RunConditions.SeatRole))} ({roster.mode}).");
             // Proximity voice is for TEAM runs (one shared place); the host records it for the after-action review.

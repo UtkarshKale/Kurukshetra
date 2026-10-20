@@ -38,6 +38,8 @@ namespace Chaukanna.Scenario
         // LAN team mode: this PC's seat (Sentry / Commander). Any everywhere else, and then no role scoring or refusals apply.
         public static Chaukanna.Net.SeatRole SeatRole = Chaukanna.Net.SeatRole.Any;
         public static string PackageId = "";
+        // Who this PC is in a report: its seat and its unit. The lobby-units feature will set UnitId; until then everyone is "Unit 1".
+        public static string SeatId = "Seat 1", UnitId = "Unit 1";
         // Dense sky (DS-1): a crowd is in the run; the I key works; the shares of cooperative drones with no reply and hostiles that spoof.
         public static bool CrowdActive;
         public static bool IffAid = true;
@@ -57,6 +59,8 @@ namespace Chaukanna.Scenario
             RangeDrill = false;
             DirectorOn = ReferencePackage = false;
             PackageId = "";
+            SeatId = "Seat 1";
+            UnitId = "Unit 1";
             SeatRole = Chaukanna.Net.SeatRole.Any;
             CrowdActive = false;
             IffAid = true;

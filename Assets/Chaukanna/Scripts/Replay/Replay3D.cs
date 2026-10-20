@@ -740,6 +740,21 @@ namespace Chaukanna.Replay
             x += 8f;
             GUI.Label(new Rect(x, y + 2f, 130f, 22f), $"{Clock(t)} / {Clock(end)}", C.Label);
             if (GUI.Button(new Rect(w - pad - 100f, y, 100f, 24f), "Exit replay")) { Exit(); return; }
+            // The two voice versions, side by side and named: what was said (clean), and what the selected seat heard (degraded).
+            {
+                float vx = w - pad - 100f - 14f - 372f;
+                GUI.enabled = VoiceAvailable;
+                GUI.Label(new Rect(vx - 52f, y + 2f, 50f, 22f), VoiceAvailable ? "VOICE" : "VOICE n/a", C.Small);
+                foreach (var vm in new[] { VoiceMode.Off, VoiceMode.Clean, VoiceMode.Heard })
+                {
+                    string text = vm == VoiceMode.Off ? "Voice off" : vm == VoiceMode.Clean ? "Clean recording" : "As heard (degraded)";
+                    float bw = vm == VoiceMode.Off ? 72f : vm == VoiceMode.Clean ? 120f : 170f;
+                    var old = GUI.backgroundColor; if (voiceMode == vm) GUI.backgroundColor = C.Accent;
+                    if (GUI.Button(new Rect(vx, y, bw, 24f), text)) SetVoice(vm);
+                    GUI.backgroundColor = old; vx += bw + 5f;
+                }
+                GUI.enabled = true;
+            }
 
             // Timeline: event ticks above, talk bars below.
             float sy = y0 + 36f;
@@ -778,10 +793,6 @@ namespace Chaukanna.Replay
             }
             x += 12f;
             if (GUI.Button(new Rect(x, y, 96f, 24f), "Truth: " + (truthOverlay ? "ON" : "OFF"))) truthOverlay = !truthOverlay; x += 100f;
-            string vlabel = !VoiceAvailable ? "Voice: n/a" : "Voice: " + voiceMode.ToString().ToUpper();
-            GUI.enabled = VoiceAvailable;
-            if (GUI.Button(new Rect(x, y, 112f, 24f), vlabel)) SetVoice((VoiceMode)(((int)voiceMode + 1) % 3));
-            GUI.enabled = true;
 
             // Row 4: latest events and the honesty line.
             y = y0 + 98f;
@@ -794,7 +805,7 @@ namespace Chaukanna.Replay
                 last = $"{Clock(e.Time)} {e.text}   |   " + last; found++;
             }
             GUI.Label(new Rect(pad, y, w - pad * 2f, 18f), last.Length > 0 ? last : "No events yet.", C.Small);
-            GUI.Label(new Rect(pad, y + 16f, w - pad * 2f, 18f), "Reconstructed from the logged poses, not a screen recording.   Space play/pause   PgUp/PgDn events   , . step   1-4 cameras   Esc exit   " + (voiceMode == VoiceMode.Heard ? "HEARD = rebuilt for the selected seat (approximation)." : Note), C.Small);
+            GUI.Label(new Rect(pad, y + 16f, w - pad * 2f, 18f), "Reconstructed from the logged poses, not a screen recording.   Space play/pause   PgUp/PgDn events   , . step   1-4 cameras   Esc exit   " + (voiceMode == VoiceMode.Heard ? "AS HEARD (degraded) = rebuilt for the selected seat: " + (Data.seats.Count > 0 ? Data.seats[Mathf.Clamp(selSeat, 0, Data.seats.Count - 1)].name : "") + " (approximation).   Pick another seat to hear theirs." : voiceMode == VoiceMode.Clean ? "CLEAN recording = what each speaker said, before range, noise, dropout and muffle." : Note), C.Small);
         }
     }
 }

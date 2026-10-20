@@ -28,6 +28,11 @@ namespace Chaukanna.Trainer
         public const float TrainerHeaderHeight = 96f;
 
         int selected;
+        // Report filter: "" = the player picked in the roster; otherwise a SessionFilter key (all players, or one unit).
+        string scopeKey = "";
+        SessionResult scopeSession;
+        float scopeNext;
+        string scopeBuiltKey;
         float scroll, pageHeight, viewHeight;
         ScenarioSpawner spawner;
         TrainerScreen trainer;
@@ -178,9 +183,7 @@ namespace Chaukanna.Trainer
             if (keeper != null && GUI.Button(reportR, "HTML report"))
             {
                 // The whole AAR as one file that opens in any browser; written at the end of every run, or now as a snapshot.
-                string path = keeper.ExportReport();
-                reportNote = path != null ? "Report: " + path : "No run to report yet.";
-                if (path != null) Application.OpenURL("file:///" + path.Replace('\\', '/'));
+                ExportScoped(true);
             }
             if (GUI.Button(replayR, "3D REPLAY")) open3dReplay = true;
             if (reportNote.Length > 0) GUI.Label(noteR, reportNote, C.Small);
@@ -217,9 +220,11 @@ namespace Chaukanna.Trainer
             {
                 float y = Roster(pad, top, w);
                 y = ViewToggle(pad, y, w);
-                if (player != null && player.current != null) y = ExportBar(pad, y, w, player.current);
-                EnsureTrend(player);
-                y = cardsView.Draw(pad, y, w, player != null ? player.current : null, trend, keeper != null ? keeper.Learner : null);
+                var shown = ScopedSession(player, out var shownHistory);
+                if (shown != null) y = ExportBar(pad, y, w, shown);
+                if (scopeKey.Length == 0) EnsureTrend(player);
+                else trend = shownHistory != null ? new List<TrendPoint>(shownHistory) : new List<TrendPoint>();
+                y = cardsView.Draw(pad, y, w, shown, trend, keeper != null ? keeper.Learner : null);
                 bottom = y;
             }
             else if (w >= 900f)
@@ -295,18 +300,19 @@ namespace Chaukanna.Trainer
             float w = view.width - pad * 2f, y = pad - chartScroll;
             selected = Mathf.Clamp(selected, 0, Mathf.Max(0, Players.Count - 1));
             var player = Players.Count > 0 ? Players.Get(selected) : null;
-            if (!ReferenceEquals(chartsBuiltFor, player != null ? player.current : null) || Time.unscaledTime >= nextChartBuild)
+            var shown = ScopedSession(player, out var shownHistory);
+            if (!ReferenceEquals(chartsBuiltFor, shown) || Time.unscaledTime >= nextChartBuild)
             {
-                chartsBuiltFor = player != null ? player.current : null;
+                chartsBuiltFor = shown;
                 nextChartBuild = Time.unscaledTime + 0.5f;
-                chartModels = ChartModels.All(player != null ? player.current : null, player != null ? player.history : null);
+                chartModels = ChartModels.All(shown, shownHistory);
             }
             y = Roster(pad, y, w);
 
             int cols = w >= 1000f ? 3 : w >= 640f ? 2 : 1;
             const float gap = 10f, chartH = 290f;
             float cw = (w - gap * (cols - 1)) / cols;
-            int real = player != null ? player.history.Count : 0;
+            int real = shownHistory != null ? shownHistory.Count : 0;
             for (int section = 0; section < 2; section++)
             {
                 C.SectionTitle(new Rect(pad, y, w, 26f), section == 0 ? $"TRENDS: {real} saved session{(real == 1 ? "" : "s")}" : "THIS RUN");
@@ -330,6 +336,71 @@ namespace Chaukanna.Trainer
                 float barY = view.y + (view.height - barH) * chartScroll / (chartPageHeight - view.height);
                 C.Fill(new Rect(region.width - 5f, barY, 4f, barH), new Color(1f, 1f, 1f, 0.35f));
             }
+        }
+
+        // --- Report filter: All players / one unit / one player. ---
+
+        // Every roster player that has a session, with their seat and unit.
+        List<SessionPart> Parts()
+        {
+            var list = new List<SessionPart>();
+            if (Players == null) return list;
+            for (int i = 0; i < Players.Count; i++)
+            {
+                var p = Players.Get(i);
+                if (p == null || p.current == null) continue;
+                list.Add(new SessionPart { player = p.name, seat = p.seatId, unit = string.IsNullOrEmpty(p.unit) ? "Unit 1" : p.unit, session = p.current, history = p.history });
+            }
+            return list;
+        }
+
+        // The session the cards and charts show: the roster's selected player, or the combined view of the filter (rebuilt twice a second).
+        SessionResult ScopedSession(PlayerEntry player, out IList<TrendPoint> history)
+        {
+            history = player != null ? player.history : null;
+            if (scopeKey.Length == 0) return player != null ? player.current : null;
+            var parts = Parts();
+            if (scopeSession == null || scopeBuiltKey != scopeKey || Time.unscaledTime >= scopeNext)
+            {
+                scopeBuiltKey = scopeKey;
+                scopeNext = Time.unscaledTime + 0.5f;
+                scopeSession = SessionFilter.View(parts, scopeKey);
+            }
+            history = SessionFilter.HistoryFor(parts, scopeKey);
+            return scopeSession;
+        }
+
+        void ExportScoped(bool header)
+        {
+            string path = keeper != null ? keeper.ExportReport(Parts()) : null;
+            string note = path != null ? "Report: " + path : "No run to report yet.";
+            if (header) reportNote = note; else exportNote = note;
+            if (path != null) Application.OpenURL("file:///" + path.Replace('\\', '/'));
+        }
+
+        // Chips under the roster: the clicked player, All players, and one per unit when there is more than one.
+        float FilterBar(float x, float y, float w)
+        {
+            var parts = Parts();
+            if (parts.Count < 2) return y;
+            var units = SessionFilter.Units(parts);
+            var keys = new List<string> { "", SessionFilter.AllKey };
+            if (units.Count > 1) foreach (var u in units) keys.Add(SessionFilter.UnitKey(u));
+            float cx = x + 62f, bh = 26f;
+            GUI.Label(new Rect(x, y, 60f, bh), "SHOW:", C.Small);
+            foreach (var k in keys)
+            {
+                string label = k.Length == 0 ? "Selected player" : SessionFilter.Label(k, SessionFilter.Select(parts, k).Count);
+                float bw = Mathf.Max(90f, C.Label.CalcSize(new GUIContent(label)).x + 20f);
+                if (cx + bw > x + w) { cx = x + 62f; y += bh + 4f; }
+                var r = new Rect(cx, y, bw, bh);
+                if (k == scopeKey) C.Fill(r, C.Selected);
+                if (GUI.Button(r, label)) { scopeKey = k; scopeSession = null; }
+                cx += bw + 6f;
+            }
+            y += bh + 6f;
+            GUI.Label(new Rect(x, y, w, 20f), "Cards, charts and the HTML report follow this: all players, one unit, or the player you click above.", C.Small);
+            return y + 26f;
         }
 
         float ViewToggle(float x, float y, float w)
@@ -356,9 +427,7 @@ namespace Chaukanna.Trainer
                 if (!GUI.Button(r, names[i])) continue;
                 if (i == 0)
                 {
-                    string path = keeper != null ? keeper.ExportReport() : null;
-                    exportNote = path != null ? "Report: " + path : "No run to report yet.";
-                    if (path != null) Application.OpenURL("file:///" + path.Replace('\\', '/'));
+                    ExportScoped(false);
                 }
                 else if (i == 1) { if (!capturing) StartCoroutine(CaptureCards()); }
                 else if (i == 2)
@@ -437,7 +506,7 @@ namespace Chaukanna.Trainer
                 var row = new Rect(x, y, w, rowH);
                 bool hover = row.Contains(Event.current.mousePosition);
                 C.Fill(row, i == selected ? C.Selected : hover ? C.PanelHover : C.Panel);
-                if (GUI.Button(row, GUIContent.none, GUIStyle.none)) selected = i;
+                if (GUI.Button(row, GUIContent.none, GUIStyle.none)) { selected = i; scopeKey = ""; }
                 string score = p.current != null ? $"Score {p.current.totalPoints} / {p.current.maxPoints}" : "no score yet";
                 string role = string.IsNullOrEmpty(p.role) ? "" : $"  <color=#FFD060>{p.role}</color>";
                 GUI.Label(new Rect(x + 10f, y, w * 0.34f, 34f), "<b>" + p.name + "</b>" + role, C.Label);
@@ -447,7 +516,7 @@ namespace Chaukanna.Trainer
                 y += rowH + 4f;
             }
             GUI.Label(new Rect(x, y, w, 20f), "Click a player to see their stats. More players appear here with multiplayer.", C.Small);
-            return y + 30f;
+            return FilterBar(x, y + 30f, w);
         }
 
         // The roster's second line for a seat with a role: sentry = reports and lock-to-report, commander = report-to-decision.

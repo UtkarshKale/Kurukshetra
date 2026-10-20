@@ -25,6 +25,39 @@ namespace Chaukanna.Scoring
             h.Append("</div>");
         }
 
+        // One filterable view of the report: everything (all players), one unit, or one player.
+        public class ScopeView
+        {
+            public string key, label;
+            public SessionResult session;
+            public IList<Chaukanna.Trainer.TrendPoint> history;
+        }
+
+        // The same two views (Cards / Charts) once per scope, with a drop-down above them that shows one scope at a time. The scopes are
+        // pre-rendered; the few lines of script only toggle which one is visible, so the file still works offline and without the script
+        // (the first scope, All, is then the one shown).
+        public static void AppendScoped(StringBuilder h, IList<ScopeView> views, IList<LearnerModel.Cell> weakest)
+        {
+            h.Append("<div class=\"scopebar noprint\"><label for=\"scope-sel\">Show</label><select id=\"scope-sel\">");
+            for (int i = 0; i < views.Count; i++)
+                h.Append("<option value=\"").Append(Esc(views[i].key)).Append("\"").Append(i == 0 ? " selected" : "").Append(">").Append(Esc(views[i].label)).Append("</option>");
+            h.Append("</select></div>");
+            h.Append("<input type=\"radio\" name=\"view\" id=\"v-cards\" class=\"vt\" checked><input type=\"radio\" name=\"view\" id=\"v-charts\" class=\"vt\">");
+            h.Append("<div class=\"viewtabs noprint\"><label for=\"v-cards\">Cards</label><label for=\"v-charts\">Charts</label></div><div class=\"viewbody\">");
+            for (int i = 0; i < views.Count; i++)
+            {
+                var v = views[i];
+                var part = new StringBuilder();
+                Append(part, AarCards.Build(v.session, v.history, weakest));
+                ChartSvg.Section(part, v.session, v.history);
+                h.Append("<div class=\"scope\" data-scope=\"").Append(Esc(v.key)).Append("\"").Append(i == 0 ? "" : " hidden").Append(">")
+                    .Append(part.ToString().Replace("id=\"card-", "id=\"s" + i + "-card-").Replace("id=\"chart-", "id=\"s" + i + "-chart-")).Append("</div>");
+            }
+            h.Append("</div>");
+        }
+
+        public const string ScopeScript = "(function(){var s=document.getElementById('scope-sel');if(!s)return;function go(){var v=s.value,a=document.querySelectorAll('.scope');for(var i=0;i<a.length;i++)a[i].hidden=a[i].getAttribute('data-scope')!==v;}s.addEventListener('change',go);go();})();";
+
         public static void Append(StringBuilder h, List<AarCard> cards)
         {
             h.Append("<section class=\"cardsec\"><h2>Cards: weakest problem first</h2><div ").Append(GridMarker).Append(">");

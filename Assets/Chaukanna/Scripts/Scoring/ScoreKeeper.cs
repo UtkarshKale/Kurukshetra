@@ -141,6 +141,15 @@ namespace Chaukanna.Scoring
             return path;
         }
 
+        // The multi-player report: all the players' sessions in one file with the All / unit / player filter. One player = the usual report.
+        public string ExportReport(IList<SessionPart> parts)
+        {
+            if (parts == null || SessionFilter.Select(parts, SessionFilter.AllKey).Count < 2) return ExportReport();
+            var s = Current() ?? SessionFilter.Select(parts, SessionFilter.AllKey)[0].session;
+            if (string.IsNullOrEmpty(s.timestamp)) s.timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + (Last == null ? " (run in progress)" : "");
+            return HtmlReport.Save(s, ContactRegistry.Records, PlayerName, TrendFor(s), WeakestFor(), parts);
+        }
+
         // Writes the finished session again, e.g. after the VR comfort answers were added to it.
         public void SaveAgain()
         {
@@ -161,6 +170,9 @@ namespace Chaukanna.Scoring
             ScoreCalculator.StampPrevalence(s, RunConditions.Prevalence, RunConditions.QuietWatch, RunConditions.NullMission);
             ScoreCalculator.StampCrowd(s, ContactRegistry.Records, CrowdSky.RunTracks, CrowdSky.RunPeak);
             s.playerId = PlayerName;
+            s.seatId = RunConditions.SeatId ?? "";
+            s.unitId = string.IsNullOrEmpty(RunConditions.UnitId) ? "Unit 1" : RunConditions.UnitId;
+            foreach (var cr in s.contacts) { cr.playerId = s.playerId; cr.seatId = s.seatId; cr.unitId = s.unitId; }
             s.packageId = RunConditions.PackageId ?? "";
             s.referencePackage = RunConditions.ReferencePackage;
             s.directorOn = RunConditions.DirectorOn;

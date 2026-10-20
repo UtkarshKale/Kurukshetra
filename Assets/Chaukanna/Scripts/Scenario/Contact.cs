@@ -94,7 +94,7 @@ namespace Chaukanna.Scenario
         // that physically happened and cannot be replaced. Engage goes through Shot() so a miss can be followed up.
         public bool Act(PlayerAction action, string result, bool group = false, bool locks = false)
         {
-            if (Data.call == PlayerCall.None || action == PlayerAction.None || action == PlayerAction.Engage) return false;
+            if ((Data.call == PlayerCall.None && action != PlayerAction.Jam) || action == PlayerAction.None || action == PlayerAction.Engage) return false;
             if (action == Data.action) return false;            // the same again: nothing to do
             string was = "";
             if (Data.Decided)
@@ -123,7 +123,6 @@ namespace Chaukanna.Scenario
         // One Engage shot. The first shot is the decision (time and ROE card are taken from it); after a miss the player may fire again.
         public bool Shot(bool hit, string result, bool group = false)
         {
-            if (Data.call == PlayerCall.None) return false;
             string was = "";
             if (Data.action != PlayerAction.Engage)
             {

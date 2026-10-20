@@ -24,6 +24,7 @@ namespace Chaukanna.Net
         public Vector2 post;                 // metres east / north of the terrain centre
         public string state = "";            // in lobby / loading / RUNNING mm:ss / COMPLETE
         public int role;                     // SeatRole as an int (JsonUtility); Team mode only
+        public string unit = "Unit 1";       // unit the seat belongs to; the lobby-units feature will set it, until then everyone is Unit 1
 
         public SeatRole Role => (SeatRole)role;
         public static string RoleName(SeatRole r) => r == SeatRole.Sentry ? "SENTRY" : r == SeatRole.Commander ? "COMMANDER" : "ANY";

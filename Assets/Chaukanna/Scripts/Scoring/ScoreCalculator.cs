@@ -20,6 +20,8 @@ namespace Chaukanna.Scoring
     public class ContactResult
     {
         public int id;
+        // Whose contact this is (stamped when the session ends, and again when sessions are combined for the player / unit filter).
+        public string playerId = "", seatId = "", unitId = "";
         public string truthClass;
         public string call;
         public string action;
@@ -166,6 +168,8 @@ namespace Chaukanna.Scoring
         // Prevalence (module 5): what was asked for and what the run really had (doc V7), and Quiet-watch vigilance.
         // Who and what (module 12) and the Director (module 10): only reference packages with the Director off go on the board.
         public string playerId = "";
+        // Seat and unit of this player. The coming lobby-units feature fills unitId; until then everyone is "Unit 1".
+        public string seatId = "", unitId = "Unit 1";
         public string packageId = "";
         public bool referencePackage, directorOn;
         public int sandbagFlags;

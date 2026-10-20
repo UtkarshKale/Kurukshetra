@@ -26,7 +26,7 @@ namespace Chaukanna.Player
     }
 
     // VR simulator. Mouse = head. Hold B, or hold both mouse buttons = both hands up = binoculars. Right button alone =
-    // right hand up. Q = bring the tablet closer to read. Hold E (or the middle button) = radial menu on the right hand.
+    // right hand up. Z = bring the tablet closer to read. Hold C (or the middle button) = radial menu on the right hand.
     public class VrSimViewRig : IViewRig
     {
         public string Tier => ViewRigSwitch.TierVrSim;
@@ -99,7 +99,7 @@ namespace Chaukanna.Player
 
         void Pose(float dt)
         {
-            // Left: rest > (Q) read > face. Right: rest > face. Hidden once they are at the eyes behind the optic.
+            // Left: rest > (Z) read > face. Right: rest > face. Hidden once they are at the eyes behind the optic.
             Vector3 left = Vector3.Lerp(Vector3.Lerp(LeftRest, LeftRead, Hands.TabletCloser), LeftFace, Hands.Left);
             Quaternion leftRot = Quaternion.Slerp(Quaternion.Slerp(LeftRestRot, LeftReadRot, Hands.TabletCloser), FaceRot, Hands.Left);
             leftHand.localPosition = left + Sway(0.3f);
@@ -344,7 +344,7 @@ namespace Chaukanna.Player
             bool captured = Cursor.lockState == CursorLockMode.Locked;
 
             // Radial menu on the right hand.
-            bool menuHeld = !blocked && captured && ((kb != null && kb.eKey.isPressed) || (mouse != null && mouse.middleButton.isPressed));
+            bool menuHeld = !blocked && captured && ((kb != null && kb.cKey.isPressed) || (mouse != null && mouse.middleButton.isPressed));
             if (menuHeld && !radialOpen)
             {
                 radialOpen = true;
@@ -369,11 +369,11 @@ namespace Chaukanna.Player
             }
             LookFrozen = radialOpen;
 
-            // Hands. Both mouse buttons or B: both up (binoculars). Right button alone: right hand only. Q: tablet closer.
+            // Hands. Both mouse buttons or B: both up (binoculars). Right button alone: right hand only. Z: tablet closer. (E = engage and Q = jam are fast keys in DecisionLoop.)
             bool both = !blocked && !radialOpen && ((kb != null && kb.bKey.isPressed) || (mouse != null && mouse.leftButton.isPressed && mouse.rightButton.isPressed && captured));
             vrRig.LeftUpInput = both;
             vrRig.RightUpInput = both || (!blocked && !radialOpen && captured && mouse != null && mouse.rightButton.isPressed);
-            vrRig.TabletInput = !blocked && kb != null && kb.qKey.isPressed;
+            vrRig.TabletInput = !blocked && kb != null && kb.zKey.isPressed;
             Current.Tick(Time.deltaTime);
         }
 

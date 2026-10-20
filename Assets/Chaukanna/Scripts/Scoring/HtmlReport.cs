@@ -19,13 +19,13 @@ namespace Chaukanna.Scoring
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
         // Writes the report next to the session files and returns its path (null on failure).
-        public static string Save(SessionResult s, IList<ContactRecord> records, string player, IList<Chaukanna.Trainer.TrendPoint> trend = null, IList<LearnerModel.Cell> weakest = null)
+        public static string Save(SessionResult s, IList<ContactRecord> records, string player, IList<Chaukanna.Trainer.TrendPoint> trend = null, IList<LearnerModel.Cell> weakest = null, IList<SessionPart> parts = null)
         {
             try
             {
                 Directory.CreateDirectory(ReportsFolder);
                 string path = Path.Combine(ReportsFolder, $"aar_{DateTime.Now:yyyyMMdd_HHmmss}_seed{s.seed}.html");
-                File.WriteAllText(path, Build(s, records, player, trend, weakest), new UTF8Encoding(false));
+                File.WriteAllText(path, Build(s, records, player, trend, weakest, parts), new UTF8Encoding(false));
                 return path;
             }
             catch (Exception e)
@@ -35,8 +35,35 @@ namespace Chaukanna.Scoring
             }
         }
 
-        public static string Build(SessionResult s, IList<ContactRecord> records, string player, IList<Chaukanna.Trainer.TrendPoint> trend = null, IList<LearnerModel.Cell> weakest = null)
+        // parts = every player's session in a multi-player run: the report then opens on All players and has a drop-down that filters
+        // all cards and charts to one unit or one player (pre-rendered, a few lines of script toggle them). With one player or none it is
+        // the single-player report as before.
+        public static string Build(SessionResult s, IList<ContactRecord> records, string player, IList<Chaukanna.Trainer.TrendPoint> trend = null, IList<LearnerModel.Cell> weakest = null, IList<SessionPart> parts = null)
         {
+            List<AarCardsHtml.ScopeView> scopes = null;
+            if (parts != null && SessionFilter.Select(parts, SessionFilter.AllKey).Count > 1)
+            {
+                var all = SessionFilter.Select(parts, SessionFilter.AllKey);
+                SessionFilter.Tag(all);
+                s = SessionFilter.View(parts, SessionFilter.AllKey);
+                records = null;                       // tracks are only on the PC that played; the combined report has no per-contact replay
+                player = s.playerId;
+                trend = null;
+                scopes = new List<AarCardsHtml.ScopeView> { new AarCardsHtml.ScopeView { key = SessionFilter.AllKey, label = s.playerId, session = s } };
+                var units = SessionFilter.Units(parts);
+                if (units.Count > 1)
+                    foreach (var u in units)
+                    {
+                        string k = SessionFilter.UnitKey(u);
+                        var sel = SessionFilter.Select(parts, k);
+                        scopes.Add(new AarCardsHtml.ScopeView { key = k, label = "Unit: " + SessionFilter.Label(k, sel.Count), session = SessionFilter.View(parts, k), history = SessionFilter.HistoryFor(parts, k) });
+                    }
+                foreach (var p in all)
+                {
+                    string k = SessionFilter.PlayerKey(p.player);
+                    scopes.Add(new AarCardsHtml.ScopeView { key = k, label = "Player: " + p.player + (units.Count > 1 ? " (" + p.unit + ")" : ""), session = p.session, history = p.history });
+                }
+            }
             var h = new StringBuilder(64 * 1024);
             h.Append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
             h.Append("<title>Kurukshetra AAR ").Append(Esc(s.timestamp)).Append("</title><style>").Append(Css).Append(AarCardsHtml.Css).Append("</style></head><body>");
@@ -59,7 +86,8 @@ namespace Chaukanna.Scoring
             h.Append("</section>");
 
             h.Append("<div class=\"actions noprint\"><button type=\"button\" onclick=\"window.print()\">Print / Save as PDF</button><button type=\"button\" id=\"dl-json\">Download data (JSON)</button></div>");
-            AarCardsHtml.Append(h, AarCards.Build(s, trend, weakest), s, trend);
+            if (scopes != null) AarCardsHtml.AppendScoped(h, scopes, weakest);
+            else AarCardsHtml.Append(h, AarCards.Build(s, trend, weakest), s, trend);
 
             Debrief(h, s);
 
@@ -101,7 +129,9 @@ namespace Chaukanna.Scoring
                 .Append("\"In view\" means on the player's screen and passing the detection test, never \"saw\". The sound call is an annotated replay of the logged run, not a re-simulation. Asset and data credits: see CREDITS.txt next to the game.</footer>");
             h.Append("<script id=\"session-data\" type=\"application/json\">").Append(JsonUtility.ToJson(s).Replace("</", "<\\/")).Append("</script>");
             h.Append("<script>").Append(DownloadScript).Append("</script>");
-            h.Append("<script>").Append(ReplayScript).Append("</script></body></html>");
+            h.Append("<script>").Append(ReplayScript).Append("</script>");
+            if (scopes != null) h.Append("<script>").Append(AarCardsHtml.ScopeScript).Append("</script>");
+            h.Append("</body></html>");
             return h.ToString();
         }
 

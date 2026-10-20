@@ -73,6 +73,9 @@ namespace Chaukanna.Player
             if (kb.rKey.wasPressedThisFrame) Act(PlayerAction.Report);
             if (kb.jKey.wasPressedThisFrame) Act(PlayerAction.Jam);
             if (kb.fKey.wasPressedThisFrame) Act(PlayerAction.Engage);
+            // Fast reaction keys: E engages and Q jams everything selected (or the locked contact), classified or not.
+            if (kb.eKey.wasPressedThisFrame) Act(PlayerAction.Engage);
+            if (kb.qKey.wasPressedThisFrame) Act(PlayerAction.Jam);
             if (kb.iKey.wasPressedThisFrame) Challenge();
         }
 
@@ -210,7 +213,8 @@ namespace Chaukanna.Player
 
         bool ActOn(Contact c, PlayerAction action, bool group)
         {
-            if (c.Call == PlayerCall.None) return false;
+            // Hold and Report need a call; the fast keys (Q jam, E engage) do not.
+            if (c.Call == PlayerCall.None && action != PlayerAction.Jam && action != PlayerAction.Engage) return false;
             // LAN team mode on a trainee's PC: jams and shots go to the host, which owns the sky; the answer comes back.
             if (Chaukanna.Net.LanSession.TeamClient && (action == PlayerAction.Jam || action == PlayerAction.Engage))
             {
@@ -299,7 +303,7 @@ namespace Chaukanna.Player
             bool many = targets.Count > 1;
             bool canClassify = targets.Count > 0;
             bool canAct = many || (c != null && c.Call != PlayerCall.None && c.CanChangeAction);
-            bool canFire = many || (c != null && c.Call != PlayerCall.None && (c.CanChangeAction || c.CanFireAgain));
+            bool canFire = many || (c != null && (c.CanChangeAction || c.CanFireAgain));
             float ui = PlayerView.Height / 720f;
             if (style == null) style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft, wordWrap = false, richText = true };
             style.fontSize = Mathf.RoundToInt(fontSize * ui);
@@ -319,11 +323,11 @@ namespace Chaukanna.Player
             else if (many) text += $"\n\nGROUP of {targets.Count}\nK call the group";
             else if (c != null && c.Resolved) text += $"\n\n#{c.Id:00} resolved\n" + (c.CanChangeAction ? "any key changes it" : "1-5 changes the call");
             else if (c != null && c.OnHold) text += $"\n\n#{c.Id:00} held: R / J / F";
-            text += "\n\n<color=#FFFFFFAA>I check IFF / Remote ID\nHold Tab + drag: lasso\nCtrl+click add to group\nG all in view   X clear</color>";
+            text += "\n\n<color=#FFFFFFAA>E engage all selected, Q jam all selected (no call needed)\nI check IFF / Remote ID\nHold Tab + drag: lasso\nCtrl+click add to group\nG all in view   X clear</color>";
             if (seat == Chaukanna.Net.SeatRole.Commander) text += "\n<color=#FFD060>T slew to the newest report\nShift+T the next one</color>";
             if (seat != Chaukanna.Net.SeatRole.Any) text = $"<b>ROLE: {Chaukanna.Net.NetPlayer.RoleName(seat)}</b>\n" + text;
             if (ViewRigSwitch.HeadsetActive) text = "<b>HEADSET</b>  (F7 desktop)\nRight trigger: lock\nLeft trigger: binoculars\nStick click / A: call menu\nX: read tablet   Menu: pause\n\n" + text;
-            else if (ViewRigSwitch.VrActive) text = "<b>VR MODE</b>  (F7 desktop)\nB or both buttons: binoculars\nQ: read the tablet\nHold E: call / action menu\nLeft click: lock\n\n" + text;
+            else if (ViewRigSwitch.VrActive) text = "<b>VR MODE</b>  (F7 desktop)\nB or both buttons: binoculars\nZ: read the tablet\nHold C: call / action menu\nE engage selected, Q jam selected\nLeft click: lock\n\n" + text;
 
             var content = new GUIContent(text);
             Vector2 size = style.CalcSize(content);

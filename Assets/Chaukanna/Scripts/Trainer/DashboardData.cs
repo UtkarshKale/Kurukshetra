@@ -25,6 +25,8 @@ namespace Chaukanna.Trainer
         public string name;
         public string state;            // "RUNNING 01:23", "COMPLETE", "IDLE"
         public string role = "";        // LAN team run: "SENTRY" / "COMMANDER" / "ANY"; empty otherwise
+        public string seatId = "";      // the seat (LAN client id); empty = this PC
+        public string unit = "Unit 1";  // the unit the seat belongs to (report filter)
         public SessionResult current;   // may be null
         public List<TrendPoint> history = new List<TrendPoint>();   // oldest first, real sessions only
     }
@@ -215,7 +217,7 @@ namespace Chaukanna.Trainer
     {
         readonly ScoreKeeper keeper;
         readonly ScenarioSpawner spawner;
-        readonly PlayerEntry entry = new PlayerEntry { name = "Player 1" };
+        readonly PlayerEntry entry = new PlayerEntry { name = "Player 1", seatId = RunConditions.SeatId, unit = RunConditions.UnitId };
         int loadedFor = -1;
 
         public LocalPlayerSource(ScoreKeeper keeper, ScenarioSpawner spawner)
@@ -229,6 +231,8 @@ namespace Chaukanna.Trainer
         public PlayerEntry Get(int index)
         {
             entry.current = keeper != null ? keeper.Current() : null;
+            entry.seatId = RunConditions.SeatId;
+            entry.unit = RunConditions.UnitId;
             if (spawner == null) entry.state = "IDLE";
             else if (spawner.Finished) entry.state = "COMPLETE";
             else

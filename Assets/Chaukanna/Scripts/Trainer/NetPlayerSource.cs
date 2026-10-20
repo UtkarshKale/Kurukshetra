@@ -40,7 +40,7 @@ namespace Chaukanna.Trainer
             {
                 if (p.host) continue;
                 lan.Results.TryGetValue(p.clientId, out var s);
-                entries.Add(new PlayerEntry { name = p.name, state = string.IsNullOrEmpty(p.state) ? "waiting" : p.state, current = s, role = team ? NetPlayer.RoleName(p.Role) : "" });
+                entries.Add(new PlayerEntry { name = p.name, state = string.IsNullOrEmpty(p.state) ? "waiting" : p.state, current = s, role = team ? NetPlayer.RoleName(p.Role) : "", seatId = p.clientId.ToString(), unit = string.IsNullOrEmpty(p.unit) ? "Unit 1" : p.unit });
             }
             return entries.Count;
         }

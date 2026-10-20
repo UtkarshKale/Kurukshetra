@@ -333,7 +333,7 @@ namespace Chaukanna.Player
             if (Selected.Count > 0)
             {
                 GUI.Label(new Rect(cx - 300f * ui, cy + 40f * ui, 600f * ui, 30f * ui),
-                    $"GROUP: {Selected.Count} selected.  1-5 and H R J F apply to all.  X clears.", new GUIStyle(labelStyle) { alignment = TextAnchor.MiddleCenter });
+                    $"GROUP: {Selected.Count} selected.  1-5, H R J F, Q (jam) and E (engage) apply to all.  X clears.", new GUIStyle(labelStyle) { alignment = TextAnchor.MiddleCenter });
                 return;
             }
 
@@ -350,7 +350,7 @@ namespace Chaukanna.Player
             if (c.Call != PlayerCall.None) label += "  CALL: " + c.Call.Label();
             if (c.CanFireAgain) label += "  MISSED - F TO FIRE AGAIN";
             else if (c.OnHold) label += "  HELD - R / J / F to act";
-            else if (c.Actioned) label += "  " + ActionTag(c.Action) + (c.CanChangeAction ? "  (1-5 / H R J F to change)" : "  (1-5 to change the call)");
+            else if (c.Actioned) label += "  " + ActionTag(c.Action) + (c.CanChangeAction ? "  (1-5 / H R J F / Q E to change)" : "  (1-5 to change the call)");
             // What a sensor would flag: the track has left the pattern it was flying. Not the truth class.
             if (c.AnomalyShown) label += "\n! TRACK LEFT ITS PATROL PATTERN";
             // Dense sky: the filed-route line (what an air picture shows) and the IFF / Remote ID answer.
