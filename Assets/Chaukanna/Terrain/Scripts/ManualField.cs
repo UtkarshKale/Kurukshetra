@@ -264,8 +264,14 @@ namespace Chaukanna.TerrainGen
             if (mat == null || mat.enableInstancing) return mat;
             if (!instanced.TryGetValue(mat, out var copy) || copy == null)
             {
-                copy = new Material(mat) { name = mat.name + " (instanced)" };
-                copy.enableInstancing = true;
+                // Not a copy of the model's own material: turning instancing on at run time needs that shader's instancing variant, which a
+                // built game does not contain unless some built material has instancing on, so every hand-placed tree, bush and building
+                // drew nothing (or pink) in a build. The built-in Resources Lit material has it; take the colour and texture from the model's.
+                copy = CrowdRenderer.MakeMaterial(mat);
+                copy.name = mat.name + " (instanced)";
+                if (mat.HasProperty("_Cull") && copy.HasProperty("_Cull")) copy.SetFloat("_Cull", mat.GetFloat("_Cull"));
+                if (mat.HasProperty("_Smoothness") && copy.HasProperty("_Smoothness")) copy.SetFloat("_Smoothness", mat.GetFloat("_Smoothness"));
+                if (mat.HasProperty("_Metallic") && copy.HasProperty("_Metallic")) copy.SetFloat("_Metallic", mat.GetFloat("_Metallic"));
                 instanced[mat] = copy;
             }
             return copy;
@@ -326,7 +332,14 @@ namespace Chaukanna.TerrainGen
                 drawn += m.count;
             }
             Drawn = drawn;
+            if (!warnedEmpty && drawn == 0 && Objects.Count > 0 && !dirty)
+            {
+                warnedEmpty = true;
+                Debug.LogWarning($"[ManualField] {Objects.Count} hand-placed objects but nothing to draw: {models.Count} model(s) resolved from kit '{(kit != null ? kit.name : "none")}'. The kit has no prefab for their kind / group, or the prefabs have no mesh.");
+            }
         }
+
+        bool warnedEmpty;
 
         // --- Colliders (a run only) ---
 

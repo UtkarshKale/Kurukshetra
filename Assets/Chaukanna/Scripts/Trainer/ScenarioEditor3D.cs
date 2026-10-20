@@ -36,7 +36,14 @@ namespace Chaukanna.Trainer
         {
             if (Current != null) Destroy(Current.gameObject);
             var go = new GameObject("ScenarioEditor3D");
-            go.AddComponent<ScenarioEditor3D>().Begin(spawner);
+            try { go.AddComponent<ScenarioEditor3D>().Begin(spawner); }
+            catch (Exception e)
+            {
+                // A failure half way through Begin would leave the player's camera blind (culling mask 0) and the controls off.
+                // Destroying the object runs OnDestroy, which gives both back; the cause goes to the log (Player.log in a build).
+                Debug.LogError("[3D editor] Could not open: " + e);
+                Destroy(go);
+            }
         }
 
         // --- State ---
@@ -154,6 +161,7 @@ namespace Chaukanna.Trainer
             palKind = 0; palGroup = 0; palVariant = 0;
             RefreshPalette();
             ResetUndoTracking();
+            Debug.Log($"[3D editor] Open: kit '{kit.name}' ({ManualKit.Entries(kit, 0).Count} trees, {ManualKit.Entries(kit, 1).Count} bushes, {ManualKit.Entries(kit, 2).Count} buildings, {ManualKit.Entries(kit, 3).Count} rocks in the palette), {field.Objects.Count} hand-placed objects, {cfg.paths.Count} paths, {cfg.placedGroups.Count} placed groups, terrain {(terrainCfg != null ? terrainCfg.sizeMetres : 0f):F0} m.");
             SetStatus("3D editor open. Hold the right mouse button and use W A S D to fly.");
         }
 
