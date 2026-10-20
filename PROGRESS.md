@@ -2,6 +2,10 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-21 - Report decision tree drawn like the in-game tree
+- DecisionTreeHtml redrawn as the SCORE dashboard's flowchart: slate panel, % RESOLVED / N CONTACTS, ALL CONTACTS or CONTACT #nn, ALL / < / >, blue checkpoint bars with connectors (click folds), branch rows with tone edge, count, % chip and share strip; one contact lit with DETAILS and DECISION HISTORY. Data from DecisionTreeData; small inline script; one tree per Show scope.
+- Verified: compile; rendered from a saved session (296 contacts) in headless Chrome, all-contacts and one-contact views. Not verified: inside the full exported report in the game.
+
 ## 2026-10-21 - Decision tree in the exported AAR report
 - New Scoring/DecisionTreeHtml.cs: the HTML report (SCORE > HTML report) now has a "Decision tree" section: the whole-run tree (same checkpoints and branches as the dashboard, counts and %), then one foldable entry per contact with its path and details (seen after, search/perception, call and changes, AI cue, action, call-to-action time, card in force, clock, outcome, decision vs result, decision quality, node points). Follows the Show selector (all / unit / player). Offline, no script.
 - Verified: compile only. Not verified: the report opened in a browser.

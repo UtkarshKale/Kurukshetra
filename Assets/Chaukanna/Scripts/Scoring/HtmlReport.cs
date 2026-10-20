@@ -133,6 +133,7 @@ namespace Chaukanna.Scoring
             h.Append("<script id=\"session-data\" type=\"application/json\">").Append(JsonUtility.ToJson(s).Replace("</", "<\\/")).Append("</script>");
             h.Append("<script>").Append(DownloadScript).Append("</script>");
             h.Append("<script>").Append(ReplayScript).Append("</script>");
+            h.Append("<script>").Append(DecisionTreeHtml.Script).Append("</script>");
             if (scopes != null) h.Append("<script>").Append(AarCardsHtml.ScopeScript).Append("</script>");
             h.Append("</body></html>");
             return h.ToString();
