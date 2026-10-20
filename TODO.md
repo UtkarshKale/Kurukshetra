@@ -334,3 +334,6 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [x] LOB-1. Lobby units (add / rename / delete) and multi-select assign of unit + role incl. OBSERVER, synced over LAN. 2026-10-20, compile only.
 - [ ] LOB-1a. Hand-test LOB-1 (see PROGRESS 2026-10-20 lobby units).
 - [ ] LOB-1b. Deferred (nothing deleted): observer gets a free-look view without a sensor lock; observer HUD text greyed like the sentry's; self-test for the unit edit rules (NetRoster.AddUnit / RenameUnit / DeleteUnit).
+- [x] VOI-1. F10 voice settings (mic mode, PTT key, device, level meter, output volume), saved in PlayerPrefs. 2026-10-20, compile only.
+- [ ] VOI-1a. Hand-test VOI-1 (see PROGRESS 2026-10-20 F10).
+- [ ] VOI-1b. Deferred (nothing deleted): a mic input gain slider; a separate radio key binding; noise suppression; a VAD threshold slider; show the chosen PTT key in the lobby text (it still says V).

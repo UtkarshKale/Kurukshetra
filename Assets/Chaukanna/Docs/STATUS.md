@@ -62,6 +62,7 @@ Status words:
 | LAN: host / join by IP, SOLO and TEAM, back to lobby, area transfer, lost-host banner | F1 | Built | Run on **one PC** only (Editor host + built client). **Two-PC test not done** (TODO N-L1, MP-2). The pitch headline depends on it (risk K29) |
 | Sentry / commander roles, report relay, ReportBoard, chain scoring | F1 | Built (2026-10-17) | Team self-test 27/27, Net 11/11. Hand test MP-2 open |
 | Lobby units + roles: add / rename / delete units, multi-select assign unit and role (SENTRY, COMMANDER, ANY, OBSERVER), synced | F1, F17 | Built (2026-10-20, compile only) | Observer takes no action. Not run yet |
+| Voice settings (F10): mic mode, PTT key, device, level meter, output volume | F1 | Built (2026-10-20, compile only) | Saved in PlayerPrefs; no on-screen hint. Not run yet |
 | Simulated VR (F7: mouse = head, hands, wrist tablet, radial menu, binoculars by both hands) | F6, F7 | Built | Hand test D16 open |
 | Real-headset VR (OpenXR 1.18.0 + XRI 3.6.1) | F6, F33 | **Partial** | Packages installed (owner approved), scripts compile; no XrSelfTest, no build probe, never run on a headset (TODO VR-1) |
 | Stereoscopic fallback, IPD | F16, F33 | Planned | Waits on owner Q6 |

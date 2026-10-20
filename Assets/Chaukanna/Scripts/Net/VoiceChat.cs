@@ -34,6 +34,9 @@ namespace Chaukanna.Net
         readonly Dictionary<int, Speaker> speakers = new Dictionary<int, Speaker>();
         System.Random dropRng = new System.Random(1);
         AudioClip micClip;
+        string micDevice;                  // the device micClip was started on (null = system default)
+        float openGateUntil;               // open-mic mode: a voice was heard until this time (hangover so word ends are not cut)
+        public bool MicOpen => micClip != null;
         int micPos;
         bool micTried;
         readonly List<float> pending = new List<float>();
@@ -122,22 +125,24 @@ namespace Chaukanna.Net
             if (Microphone.devices.Length == 0) { MicStatus = "No microphone found on this PC."; lan.NoteExternal(MicStatus); return; }
             try
             {
-                micClip = Microphone.Start(null, true, 1, VoiceCodec.Rate);
-                MicStatus = "Microphone: " + Microphone.devices[0];
+                micDevice = VoiceSettings.DeviceName;
+                micClip = Microphone.Start(micDevice, true, 1, VoiceCodec.Rate);
+                MicStatus = "Microphone: " + (micDevice ?? Microphone.devices[0]);
             }
             catch (Exception e) { MicStatus = "Microphone could not start: " + e.Message; lan.NoteExternal(MicStatus); }
         }
 
         void StopMic()
         {
-            if (micClip != null) { try { Microphone.End(null); } catch { } micClip = null; }
+            if (micClip != null) { try { Microphone.End(micDevice); } catch { } micClip = null; }
+            micPos = 0; resamplePos = 0; resampleSource.Clear();
         }
 
         // New microphone samples since last time, resampled to 16 kHz when the device ran at another rate.
         void ReadMic(List<float> into)
         {
             if (micClip == null) return;
-            int pos = Microphone.GetPosition(null);
+            int pos = Microphone.GetPosition(micDevice);
             if (pos <= 0 && micPos == 0) return;
             int len = micClip.samples;
             if (pos == micPos) return;
@@ -189,11 +194,14 @@ namespace Chaukanna.Net
         {
             if (TestToneAuto) return Mathf.FloorToInt(Time.realtimeSinceStartup) % 2 == 0 ? 0 : -1;
             if (ContactRegistry.InputBlocked) return -1;
+            var mode = VoiceSettings.Mode;
+            if (mode == MicMode.Muted) return -1;
             var kb = Keyboard.current;
             if (kb == null) return -1;
             if (kb.yKey.isPressed) return 1;
-            if (kb.vKey.isPressed) return 0;
-            return -1;
+            if (mode == MicMode.Open) return Time.unscaledTime < openGateUntil ? 0 : -1;
+            var key = kb[VoiceSettings.PttKey];
+            return key != null && key.isPressed ? 0 : -1;
         }
 
         void Update()
@@ -203,10 +211,29 @@ namespace Chaukanna.Net
             Transmitting = want >= 0;
             TxChannel = Mathf.Max(0, want);
 
-            if (!TestTone) { if (want >= 0 || micClip != null) StartMic(); }
+            if (!TestTone)
+            {
+                var mode = VoiceSettings.Mode;
+                // A changed device in the settings screen restarts the microphone on the new one.
+                if (micClip != null && micDevice != VoiceSettings.DeviceName) { StopMic(); micTried = false; }
+                bool need = want >= 0 || VoiceSettings.Open || mode == MicMode.Open || (micClip != null && mode != MicMode.Muted);
+                if (need) StartMic();
+                else if (micClip != null) { StopMic(); micTried = false; }          // Muted: let go of the microphone
+            }
             pending.Clear();
             if (TestTone) { if (want >= 0) MakeTone(pending, Time.deltaTime); else toneDebt = 0f; }
-            else ReadMic(pending);
+            else
+            {
+                ReadMic(pending);
+                if (pending.Count > 0)
+                {
+                    float sum = 0f;
+                    for (int i = 0; i < pending.Count; i++) sum += pending[i] * pending[i];
+                    float rms = Mathf.Sqrt(sum / pending.Count);
+                    VoiceSettings.ReportLevel(rms);
+                    if (rms > 0.02f) openGateUntil = Time.unscaledTime + 0.4f;      // open mic: a level gate, so silence is not sent or recorded
+                }
+            }
 
             if (want >= 0)
             {
@@ -397,7 +424,7 @@ namespace Chaukanna.Net
 
             public void Apply(VoiceDegrade d, float distance)
             {
-                src.volume = d.GainFor(distance, radio);
+                src.volume = d.GainFor(distance, radio) * VoiceSettings.OutputVolume;
                 low.cutoffFrequency = d.EffectiveCutoff(radio);
                 playout.noiseLevel = d.noise;
             }
@@ -435,7 +462,7 @@ namespace Chaukanna.Net
                 GUI.color = old;
                 hudStyle.normal.textColor = Color.white;
                 bool blink = Mathf.FloorToInt(Time.unscaledTime * 2f) % 2 == 0;
-                GUI.Label(new Rect(box.x + 8f * ui, box.y, box.width, box.height), $"{(blink ? "REC" : "rec")}  MIC  {(TxChannel == 1 ? "RADIO (Y)" : "VOICE (V)")}", hudStyle);
+                GUI.Label(new Rect(box.x + 8f * ui, box.y, box.width, box.height), $"{(blink ? "REC" : "rec")}  MIC  {(TxChannel == 1 ? "RADIO (Y)" : VoiceSettings.Mode == MicMode.Open ? "VOICE (open)" : "VOICE (" + VoiceSettings.PttKey + ")")}", hudStyle);
                 y -= 26f * ui;
             }
             if (heardList.Count > 0)
