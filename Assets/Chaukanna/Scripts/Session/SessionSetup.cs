@@ -25,6 +25,7 @@ namespace Chaukanna.Session
     {
         public static bool Ready;                           // START was pressed in the trainer menu
         public static bool fromEditor;                      // this session was opened in the 3D editor: the trainer menu takes the edited set-up back
+        public static bool demo;                            // the DEMO button started this run: the presenter checklist shows and the end screen has an AAR button
         public static bool editorMode;                      // "3D editor" was pressed: build the field, then open the 3D scenario editor instead of starting the run
         public static TerrainGenConfig terrain;             // runtime copy, never an asset
         public static ElevationGrid dem;                    // loaded source elevation, if the mode uses one
@@ -51,6 +52,7 @@ namespace Chaukanna.Session
         {
             Ready = false;
             editorMode = false;
+            demo = false;
             fromEditor = false;
             terrain = null;
             dem = null;
@@ -191,7 +193,11 @@ namespace Chaukanna.Session
                     try
                     {
                         if (SessionSetup.editorMode) Chaukanna.Trainer.ScenarioEditor3D.Open(spawner);
-                        else FieldBootstrap.StartRun(spawner);
+                        else
+                        {
+                            FieldBootstrap.StartRun(spawner);
+                            if (SessionSetup.demo) Chaukanna.Trainer.DemoChecklist.Show();
+                        }
                     }
                     catch (Exception e) { problem = e; }
                     yield return null;

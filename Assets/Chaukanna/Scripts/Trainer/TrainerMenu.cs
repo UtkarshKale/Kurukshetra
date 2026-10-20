@@ -365,6 +365,37 @@ namespace Chaukanna.Trainer
             return problems;
         }
 
+        // DEMO: the best real terrain already on this PC (else a procedural plain), the curated demo scenario (a hostile quad group, a swarm of 200,
+        // a bird flock, own ISR, civilians, an ROE card change, two paths), one player at the post, sound on, then START. Nothing is downloaded.
+        public bool StartDemo()
+        {
+            if (Downloading) { Message = "DEMO: wait for the download to finish."; return false; }
+            if (Chaukanna.Net.LanSession.Current != Chaukanna.Net.LanSession.Role.None) { Message = "DEMO: leave the LAN lobby first (the demo is a one-PC run)."; return false; }
+            string note;
+            string raw = DemoScenario.PickArea(out string why);
+            bool real = false;
+            try { real = raw != null && UseArea(ElevationDownloader.ProjectRelative(raw)); }
+            catch (Exception e) { Debug.LogWarning("[Demo] Could not use area: " + e.Message); }
+            if (real) note = "real terrain " + why;
+            else
+            {
+                Dem = null; demLoadedFrom = "";
+                SetTerrainMode(TerrainMode.PureProcedural);
+                SetTerrainPreset(ProceduralPreset.PlainsWithPeaks);
+                note = raw == null ? "procedural terrain (Plains with peaks): no real area on this PC" : "procedural terrain (Plains with peaks): the real area could not be loaded";
+            }
+            Scenario = DemoScenario.Build(real);
+            Players.Clear();
+            Players.Add(new PlayerSlot { name = "Player 1", isLocal = true, post = Vector2.zero });
+            SpawnPoints.Clear();
+            Chaukanna.Audio.SoundEngine.Enabled = true;
+            if (Chaukanna.Audio.SoundEngine.Volume < 50) Chaukanna.Audio.SoundEngine.Volume = 70;
+            if (!StartSession()) return false;
+            SessionSetup.demo = true;
+            Message = "DEMO starting: " + note + ".";
+            return true;
+        }
+
         // Hands the session to the field scene and loads it.
         public bool StartSession()
         {
@@ -440,7 +471,7 @@ namespace Chaukanna.Trainer
             float titleW = Mathf.Min(300f, Mathf.Ceil(title.CalcSize(new GUIContent(titleText)).x) + 6f);
             GUI.Label(new Rect(pad, 8f, titleW, 38f), titleText, title);
             float tabsX = pad + titleW + 12f;
-            float tabsW = Mathf.Min(900f, w - 180f - 14f - tabsX);       // START begins at w - 180
+            float tabsW = Mathf.Min(900f, w - 290f - 14f - tabsX);       // DEMO and START begin at w - 290
             if (tabStyle == null) tabStyle = new GUIStyle(button);
             tabStyle.fontSize = tabsW < 700f ? Mathf.Max(10, fontSize - 3) : fontSize;
             tab = (Tab)GUI.Toolbar(new Rect(tabsX, 10f, Mathf.Max(200f, tabsW), 34f), (int)tab, TabNames, tabStyle);
@@ -448,6 +479,8 @@ namespace Chaukanna.Trainer
             var old = GUI.backgroundColor;
             GUI.backgroundColor = problems.Count == 0 ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.6f, 0.6f, 0.6f);
             if (GUI.Button(new Rect(w - 180f, 8f, 166f, 38f), "<b>START</b>", new GUIStyle(button) { fontSize = fontSize + 6 })) StartSession();
+            GUI.backgroundColor = new Color(0.95f, 0.75f, 0.25f);
+            if (GUI.Button(new Rect(w - 290f, 8f, 104f, 38f), new GUIContent("<b>DEMO</b>", "One click: the best terrain on this PC, a curated 3.5-minute scenario (hostile quads, a swarm of 200, a bird flock, own ISR, a civilian, an ROE card change, two paths), sound on, and START. The presenter checklist shows in the run (F8 hides it)."), new GUIStyle(button) { fontSize = fontSize + 4 })) StartDemo();
             GUI.backgroundColor = old;
 
             // Message strip along the bottom.

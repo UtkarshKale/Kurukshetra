@@ -200,6 +200,15 @@ namespace Chaukanna.Scoring
         //   LAN trainer: Back to lobby (everyone) and Restart scenario (everyone; a new seed if ticked)
         GUIStyle endButton;
 
+        // The demo's end screen: the after-action dashboard in one click (cards, charts, player / unit select; 3D REPLAY and the report are on it).
+        void OpenAarDashboard()
+        {
+            var dash = FindAnyObjectByType<Chaukanna.Trainer.ScoreDashboard>();
+            if (dash == null) { Debug.LogWarning("[Demo] No dashboard in this scene."); return; }
+            dash.Open();
+            dash.SetExpanded(true);
+        }
+
         void OnGUI()
         {
             if (spawner == null || !spawner.Finished || PlayerView.HideOverlays) return;
@@ -221,7 +230,8 @@ namespace Chaukanna.Scoring
             var content = new GUIContent("RUN COMPLETE");
             Vector2 size = titleStyle.CalcSize(content);
             float pad = 16f * ui, bw = 190f * ui, bh = 40f * ui;
-            float boxW = Mathf.Max(size.x + pad * 2f, bw * 2f + pad * 3f), boxH = size.y + pad * 3f + 26f * ui + (ready ? bh + pad : 0f) + (ready && role == Chaukanna.Net.LanSession.Role.Host ? 30f * ui : 0f);
+            bool demo = Chaukanna.Session.SessionSetup.demo && role == Chaukanna.Net.LanSession.Role.None;     // the DEMO run: one click to the AAR dashboard
+            float boxW = Mathf.Max(size.x + pad * 2f, bw * 2f + pad * 3f), boxH = size.y + pad * 3f + 26f * ui + (ready ? bh + pad : 0f) + (ready && demo ? bh + pad : 0f) + (ready && role == Chaukanna.Net.LanSession.Role.Host ? 30f * ui : 0f);
             var box = new Rect((PlayerView.Width - boxW) * 0.5f, (PlayerView.Height - boxH) * 0.5f, boxW, boxH);
             var old = GUI.color;
             if (Event.current.type == EventType.Repaint)
@@ -249,6 +259,11 @@ namespace Chaukanna.Scoring
                 }
                 else
                 {
+                    if (demo)
+                    {
+                        if (GUI.Button(new Rect(box.x + (boxW - bw) * 0.5f, y, bw, bh), "AAR dashboard", endButton)) OpenAarDashboard();
+                        y += bh + pad;
+                    }
                     if (GUI.Button(new Rect(box.x + (boxW - bw) * 0.5f, y, bw, bh), "Restart", endButton))
                     {
                         if (role == Chaukanna.Net.LanSession.Role.Client) lan.ReturnToLobbyWaiting();
