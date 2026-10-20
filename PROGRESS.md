@@ -2,6 +2,12 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Map features: backup OpenStreetMap servers
+- OsmFetcher tries overpass-api.de, then overpass.private.coffee, then maps.mail.ru (one try each, 60 s, 2 s between servers); the status line names the server; if all fail the area is kept without map features ("fetch them later"). Owner approved the mirrors.
+- Pink ground (earlier today): Windows build profile quality override lists only "PC"; the level is named PC again (aca9a20).
+- Verified: code review only; the Editor was in Play, so the compile runs when Play stops. Not verified: a live fetch through a mirror.
+- NEXT: owner retest.
+
 ## 2026-10-20 - Critical: area download stuck at 76 % and pink terrain (compile check only)
 - Download, cause: 76 % is the OpenStreetMap step. TrainerMenu.DownloadAll maps "Map features (OpenStreetMap)" to 0.75 + 0.25 * f, and OsmFetcher.Fetch reports f = 0.02 while it waits for the first (play area) Overpass answer: 0.755, shown as 76 %. That wait had no feedback and was long: 2 tries, each up to 120 s (request.timeout / curl -m 130), 30 s apart, then a second query with the same budget (OsmLayers.cs Query / Curl, old lines 459 to 520), and the Overpass server timeout in the query was 100 s. Unity's TLS also failed with "Cert verify failed" (Editor.log: Curl error 35, UnityTls 7), which did not match the old "SSL" test, so the curl.exe fallback was not taken. Smaller freeze found on the way: the satellite picture fit (up to 4096 x 4096 map-projection samples) ran on the main thread (Editor.log: "Surround picture: ok in 9.3 s").
 - Download, fix: OsmFetcher: 3 tries, 60 s per try (curl -m 60, --connect-timeout 20, killed after +10 s), 10 s between tries, a 200 s budget for the whole fetch, query timeout 60 s, TLS-type errors (SSL / TLS / Cert / handshake) switch to curl.exe. New DownloadControl (Skip this step, Cancel download) and WebFetch.GetBytes (tiles: 3 tries x 30 s, status text) in WebTiles.cs. Status text is shown with the percent and the stage, e.g. "Map features (OpenStreetMap): play area query: waiting for server, try 2/3, 35 s (this step 41 s, all 120 s)". A failed or skipped OSM step no longer blocks anything: the area completes, the note says "fetch later", the layers section shows the "Fetch map features" button (with a Cancel button while it runs). Each stage logs "[Download] <stage>: started" and "<stage>: ok / no ... in N s". The satellite picture fit now runs on a worker thread.
