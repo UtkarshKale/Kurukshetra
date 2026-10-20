@@ -14,9 +14,6 @@ HTML report.
 
 It runs fully offline, on a single PC or an air-gapped LAN, on mid-range hardware.
 
-> **Test it on Windows:** download the ready-to-run executable from
-> **[utkarshkale.itch.io/kurukshetra](https://utkarshkale.itch.io/kurukshetra)**. No Unity install needed.
-
 ![Binocular view: a swarm under jamming, sensor panel and classification menu](docs/images/binoculars-swarm.jpg)
 
 ---
@@ -236,14 +233,6 @@ Graphics presets (Low / Medium / High / Ultra), render scale and view distance c
 
 ## Getting started
 
-### Quickest: download the Windows build
-
-1. Download Kurukshetra from **[utkarshkale.itch.io/kurukshetra](https://utkarshkale.itch.io/kurukshetra)**.
-2. Unzip it into a folder of its own and keep the whole folder together.
-3. Run the executable and press **DEMO** in the trainer menu for a ready-made mission.
-
-To work on the source instead, follow the steps below.
-
 ### 1. Install Git LFS and clone
 
 ```bash
@@ -395,6 +384,8 @@ flowchart TD
   F --> G["Outcome<br/>(stopped, leaked, wrong engagement)"]
   G --> H["Process × outcome<br/>sound / lucky / bad luck / unsound"]
 ```
+
+![Decision tree in the score dashboard: detected, classified, action and outcome checkpoints with path shares](docs/images/decision-tree.jpg)
 
 - **Detection time:** seconds from entering view to lock.
 - **Classification accuracy** with a full confusion matrix.

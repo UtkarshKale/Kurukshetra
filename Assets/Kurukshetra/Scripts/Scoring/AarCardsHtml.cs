@@ -23,6 +23,7 @@ namespace Kurukshetra.Scoring
             Append(h, cards);
             ChartSvg.Section(h, s, history);
             h.Append("</div>");
+            DecisionTreeHtml.Append(h, s);
         }
 
         // One filterable view of the report: everything (all players), one unit, or one player.
@@ -50,6 +51,7 @@ namespace Kurukshetra.Scoring
                 var part = new StringBuilder();
                 Append(part, AarCards.Build(v.session, v.history, weakest));
                 ChartSvg.Section(part, v.session, v.history);
+                DecisionTreeHtml.Append(part, v.session);       // the decision tree follows the Show selector too
                 h.Append("<div class=\"scope\" data-scope=\"").Append(Esc(v.key)).Append("\"").Append(i == 0 ? "" : " hidden").Append(">")
                     .Append(part.ToString().Replace("id=\"card-", "id=\"s" + i + "-card-").Replace("id=\"chart-", "id=\"s" + i + "-chart-")).Append("</div>");
             }
@@ -289,7 +291,7 @@ namespace Kurukshetra.Scoring
         }
 
         // Card CSS. The report page puts these tokens on :root (see HtmlReport.Css).
-        public static string Css => ChartSvg.Css() + CardsCss;
+        public static string Css => ChartSvg.Css() + CardsCss + DecisionTreeHtml.Css;
 
         const string CardsCss = @"
 .cardsec{margin-top:8px}
