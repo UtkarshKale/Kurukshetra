@@ -83,6 +83,47 @@ namespace Chaukanna.Scoring
             }
         }
 
+        // One line of the unit comparison: a unit (isUnit) or one player in it. -1 = n/a.
+        public class CompareRow
+        {
+            public string key, label;
+            public bool isUnit;
+            public int players, contacts, qualityN;
+            public float detection = -1f, quality = -1f, goodOutcome = -1f, avgScore = -1f;
+        }
+
+        public const string SoloNote = "Unit views need a LAN run: with one player there is only one unit to look at.";
+
+        // Per unit: players, contacts, detection, decision quality, outcome and average score, each followed by its players.
+        public static List<CompareRow> Compare(IList<SessionPart> parts)
+        {
+            var rows = new List<CompareRow>();
+            foreach (var u in Units(parts))
+            {
+                string k = UnitKey(u);
+                var sel = Select(parts, k);
+                rows.Add(Row(k, u, true, sel.Count, View(parts, k)));
+                foreach (var p in sel) rows.Add(Row(PlayerKey(p.player), p.player, false, 1, p.session));
+            }
+            return rows;
+        }
+
+        static CompareRow Row(string key, string label, bool unit, int players, SessionResult s)
+        {
+            var r = new CompareRow { key = key, label = label, isUnit = unit, players = players };
+            if (s == null) return r;
+            int grid = s.gridSoundSuccessful + s.gridSoundUnlucky + s.gridLucky + s.gridUnsound;
+            r.contacts = s.scoredContacts;
+            r.detection = s.scoredContacts > 0 ? 100f * s.detected / s.scoredContacts : -1f;
+            r.quality = s.processScore;
+            r.qualityN = s.processScore < 0f ? 0 : s.processCount > 0 ? s.processCount : grid;
+            r.goodOutcome = grid > 0 ? 100f * (s.gridSoundSuccessful + s.gridLucky) / grid : -1f;
+            r.avgScore = s.maxPoints > 0 ? s.ScorePercent : -1f;
+            return r;
+        }
+
+        public static string Pct(float v) => v < 0f ? "n/a" : v.ToString("F0") + " %";
+
         static bool IsRight(ContactResult c) => c.classBranch == "Right" || c.classBranch == "Caught deception" || c.classBranch == "Second guess";
 
         // Counts add up; the means are recomputed from the contacts. Swarm, group-call and card-change results add their counts.

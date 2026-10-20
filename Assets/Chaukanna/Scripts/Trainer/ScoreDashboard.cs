@@ -382,7 +382,11 @@ namespace Chaukanna.Trainer
         float FilterBar(float x, float y, float w)
         {
             var parts = Parts();
-            if (parts.Count < 2) return y;
+            if (parts.Count < 2)
+            {
+                GUI.Label(new Rect(x, y, w, 20f), SessionFilter.SoloNote, C.Small);
+                return y + 26f;
+            }
             var units = SessionFilter.Units(parts);
             var keys = new List<string> { "", SessionFilter.AllKey };
             if (units.Count > 1) foreach (var u in units) keys.Add(SessionFilter.UnitKey(u));
@@ -400,7 +404,27 @@ namespace Chaukanna.Trainer
             }
             y += bh + 6f;
             GUI.Label(new Rect(x, y, w, 20f), "Cards, charts and the HTML report follow this: all players, one unit, or the player you click above.", C.Small);
-            return y + 26f;
+            y += 26f;
+
+            // Unit comparison: a row is a unit or one of its players; click a row to show it.
+            float[] col = { 0.26f, 0.08f, 0.1f, 0.12f, 0.18f, 0.14f, 0.12f };
+            string[] head = { "UNIT / PLAYER", "PLAYERS", "CONTACTS", "DETECTION", "DECISION QUALITY", "GOOD RESULT", "AVG SCORE" };
+            float hx = x + 6f;
+            for (int i = 0; i < head.Length; i++) { GUI.Label(new Rect(hx, y, w * col[i], 20f), head[i], C.Small); hx += w * col[i]; }
+            y += 22f;
+            foreach (var r in SessionFilter.Compare(parts))
+            {
+                var rr = new Rect(x, y, w, 24f);
+                bool on = r.key == scopeKey;
+                C.Fill(rr, on ? C.Selected : rr.Contains(Event.current.mousePosition) ? C.PanelHover : C.Panel);
+                if (GUI.Button(rr, GUIContent.none, GUIStyle.none)) { scopeKey = r.key; scopeSession = null; }
+                string[] cells = { (r.isUnit ? "<b>" + r.label + "</b>" : "   " + r.label), r.players.ToString(), r.contacts.ToString(), SessionFilter.Pct(r.detection),
+                    r.quality < 0f ? "n/a" : r.quality.ToString("F0") + " (n " + r.qualityN + ")", SessionFilter.Pct(r.goodOutcome), SessionFilter.Pct(r.avgScore) };
+                hx = x + 6f;
+                for (int i = 0; i < cells.Length; i++) { GUI.Label(new Rect(hx, y, w * col[i], 24f), cells[i], C.Label); hx += w * col[i]; }
+                y += 26f;
+            }
+            return y + 6f;
         }
 
         float ViewToggle(float x, float y, float w)

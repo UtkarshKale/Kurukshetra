@@ -85,6 +85,9 @@ namespace Chaukanna.Scoring
             Tile(h, s.DecisionQualityValue, s.DecisionQualityCaption, s.processScore < 0f ? "" : Grade(s.processScore));
             h.Append("</section>");
 
+            if (scopes != null) UnitTable(h, parts);
+            else h.Append("<p class=\"small\">").Append(Esc(SessionFilter.SoloNote)).Append("</p>");
+
             h.Append("<div class=\"actions noprint\"><button type=\"button\" onclick=\"window.print()\">Print / Save as PDF</button><button type=\"button\" id=\"dl-json\">Download data (JSON)</button></div>");
             if (scopes != null) AarCardsHtml.AppendScoped(h, scopes, weakest);
             else AarCardsHtml.Append(h, AarCards.Build(s, trend, weakest), s, trend);
@@ -304,6 +307,20 @@ namespace Chaukanna.Scoring
                 h.Append("</tr>");
             }
             h.Append("</table></section>");
+        }
+
+        // Unit comparison: one line per unit, then its players.
+        static void UnitTable(StringBuilder h, IList<SessionPart> parts)
+        {
+            h.Append("<section><h2>Units and players</h2><table class=\"list\"><tr><th>Unit / player</th><th>Players</th><th>Contacts</th><th>Detection</th><th>Decision quality</th><th>Outcome (good result)</th><th>Average score</th></tr>");
+            foreach (var r in SessionFilter.Compare(parts))
+            {
+                h.Append(r.isUnit ? "<tr class=\"unitrow\"><td><b>" : "<tr><td>&nbsp;&nbsp;").Append(Esc(r.label)).Append(r.isUnit ? "</b>" : "").Append("</td><td>").Append(r.players)
+                    .Append("</td><td>").Append(r.contacts).Append("</td><td>").Append(SessionFilter.Pct(r.detection))
+                    .Append("</td><td>").Append(r.quality < 0f ? "n/a" : F0(r.quality) + " (n " + r.qualityN + ")")
+                    .Append("</td><td>").Append(SessionFilter.Pct(r.goodOutcome)).Append("</td><td>").Append(SessionFilter.Pct(r.avgScore)).Append("</td></tr>");
+            }
+            h.Append("</table><p class=\"small\">Detection = contacts brought into view. Decision quality = by the book for what was seen (100 = perfect). Outcome = decisions with a good result. Average score = points won of points possible.</p></section>");
         }
 
         static void Tile(StringBuilder h, string value, string caption, string grade)

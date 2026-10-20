@@ -16,7 +16,7 @@ SCOPE SOURCE: module-1-demo.md (the agreed Module 1 demo; the user rejected the 
 First restructured 2026-10-14 against the solution doc (solution-v2-council.md: §2 PS coverage table R1a-R9, §11.1 M1 scope, §12 demo script). No item was deleted; items were moved and tagged. New items from the gap check are numbered N1 and up.
 Tags: [R1a]...[R9] = the PS line it serves. [demo] = one of the 3 key demo moments in §12: (1) cold open, night, own drone engaged, "your call vs the sound call"; (2) the card flip mid-mission; (3) night 24-swarm with a wrong AI cue. Shot 5b is the VR sentry.
 
-## OWNER ROUND 2026-10-20 (items 1 to 4)\n- [x] DQ-1. Process score renamed Decision quality, no-action hostiles count as 0, n shown, n/a when empty.\n- [ ] UNIT-1. Individual and unit scores in dashboard and HTML report.\n- [ ] OSM-PB-1. Progress on the OpenStreetMap fetch button.\n- [ ] SPAWN-1. Player posts and drone spawn points in 2D and 3D, saved, sent over LAN.
+## OWNER ROUND 2026-10-20 (items 1 to 4)\n- [x] DQ-1. Process score renamed Decision quality, no-action hostiles count as 0, n shown, n/a when empty.\n- [x] UNIT-1 (compile only; needs a LAN hand test). Individual and unit scores in dashboard and HTML report.\n- [ ] OSM-PB-1. Progress on the OpenStreetMap fetch button.\n- [ ] SPAWN-1. Player posts and drone spawn points in 2D and 3D, saved, sent over LAN.
 
 ## LAN SYNC FIX 2026-10-20 (owner: drones not visible on the friend's PC)
 - [x] LAN-1. Trainee saw no drones: spawns sent while its field was loading were lost (FieldReady handshake + full resync), snapshot/pose origin was each PC's own post (now the host's origin in the snapshot header, world frame for poses), Director off on a team client. Compile only.

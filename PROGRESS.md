@@ -2,6 +2,12 @@
 
 Newest entry at the top. Each entry: what changed, what was verified, what is next. Keep entries short.
 
+## 2026-10-20 - Owner round, item 2: individual and unit scores in dashboard and HTML report (compile check only)
+- Existing and kept: SessionFilter (All / unit / player), the dashboard SHOW chips (roster click = one player), the HTML Show drop-down. Verified in code that unit comes from the lobby (LanSession -> RunConditions.UnitId -> session.unitId / PlayerEntry.unit).
+- Added: SessionFilter.Compare (per unit: players, contacts, detection = seen / scored, decision quality with n, good-result share from the grid, average score = points won / possible; each unit followed by its players). Dashboard: the table under the SHOW chips, a row click selects that unit or player. HTML: "Units and players" table under the tiles. Solo: one line "Unit views need a LAN run".
+- Verified: compile only. Not verified: on screen, with two PCs.
+- NEXT: item 3 (OSM fetch button progress).
+
 ## 2026-10-20 - Owner round, item 1: process score renamed Decision quality, maths fixed (compile check only)
 - Cause: the tile read "Process score (on belief)" (jargon). It was the mean of each decided contact's process score (100 minus penalty for the player's own call vs the card). Contacts with no decision (hostile seen, run ended before its deadline) had score -1 and were left out, so doing nothing could read high.
 - Changed: now called Decision quality (subtitle "Did you follow the drill for what you could see? 100 = by the book") in the dashboard tile, AAR card, HTML tile and section, proficiency board header, debrief text. A hostile that came into view and was never acted on counts as 0 (Critical). Unscored contacts stay excluded. Shows n (new SessionResult.processCount; processScore name kept) and n/a with no decisions.
