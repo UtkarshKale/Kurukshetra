@@ -7,15 +7,16 @@ Defence / DSSC).
 
 <p align="center">
   <a href="https://utkarshkale.itch.io/kurukshetra">
-    <img src="https://img.shields.io/badge/%E2%96%B6%20PLAY%20IT%20NOW-Download%20for%20Windows%20on%20itch.io-FA5C5C?style=for-the-badge&logo=itchdotio&logoColor=white" alt="Download the Windows build on itch.io">
+    <img src="https://img.shields.io/badge/Windows%20build-Download%20the%20simulation%20engine-1F6FEB?style=for-the-badge&logo=windows&logoColor=white" alt="Download the Windows build of the simulation engine">
   </a>
 </p>
 
-> [!TIP]
-> ## 🎮 Try Kurukshetra yourself
+> [!IMPORTANT]
+> ## Evaluate the simulation engine on Windows
 > **You can test this project yourself by downloading the Windows executable build from itch.io:**
-> ### 👉 [utkarshkale.itch.io/kurukshetra](https://utkarshkale.itch.io/kurukshetra)
-> No Unity install needed: download, unzip, run, and press **DEMO**.
+> ### [utkarshkale.itch.io/kurukshetra](https://utkarshkale.itch.io/kurukshetra)
+> No Unity install needed: download, unzip, run the executable, and start the built-in demonstration scenario with
+> **DEMO** in the trainer console.
 
 Kurukshetra puts a soldier at an observation post, on real downloaded terrain or seeded procedural ground, and fills the
 sky with hostile quadcopters and fixed-wings, the unit's own patrol drones, civilian drones, birds and swarms of
