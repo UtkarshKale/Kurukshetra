@@ -357,7 +357,7 @@ namespace Chaukanna.TerrainGen
 
         // --- 8, 9, 10. Kit, toggles, honesty about the data ---
 
-        static LayerContext SmallWorld(List<UnityEngine.Object> cleanup, TerrainLayerKit kit, bool realTerrain)
+        internal static LayerContext SmallWorld(List<UnityEngine.Object> cleanup, TerrainLayerKit kit, bool realTerrain)
         {
             var cfg = ScriptableObject.CreateInstance<TerrainGenConfig>();
             cleanup.Add(cfg);

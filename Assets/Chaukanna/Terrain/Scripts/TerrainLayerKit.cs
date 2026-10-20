@@ -5,7 +5,8 @@ using UnityEngine;
 namespace Chaukanna.TerrainGen
 {
     public enum LayerMode { Off, Realistic, Procedural }
-    public enum LayerKind { Trees, Grass, Buildings }
+    public enum LayerKind { Trees, Grass, Buildings, Bushes }   // Bushes last: the others keep their numbers
+    public enum TreeClass { Broadleaf, Pine, Snow, Dead }
     public enum BuildingType { House, Apartments, Commercial, Industrial, Religious, Shed, Generic }
 
     // The trainer's choices for trees, grass and buildings. Part of the terrain config, so it travels in the LAN start
@@ -14,7 +15,7 @@ namespace Chaukanna.TerrainGen
     [Serializable]
     public class TerrainLayerSettings
     {
-        public LayerMode trees = LayerMode.Realistic, grass = LayerMode.Procedural, buildings = LayerMode.Realistic;
+        public LayerMode trees = LayerMode.Realistic, grass = LayerMode.Procedural, buildings = LayerMode.Realistic, bushes = LayerMode.Procedural;
         [Tooltip("Trees per hectare inside forest and wood (and in procedural woods). Single mapped trees are always kept.")]
         public float treeDensity = 60f;
         [Tooltip("The most terrain trees drawn at once (0 = no limit). Every tree costs a little time each frame (about 0.1 ms per 1000 on the development PC), so a dense forest is thinned beyond the fall-off distance and the remaining far trees are made bigger.")]
@@ -25,6 +26,12 @@ namespace Chaukanna.TerrainGen
         [Range(0f, 1f)] public float grassDensity = 0.7f;
         [Tooltip("Procedural mode: villages per square kilometre.")]
         public float buildingDensity = 1.5f;
+        [Tooltip("Bushes: 1 = a ring of 2 to 5 bushes (3 to 8 m out) round about a third of the trees, plus a light scatter along wood edges and in the open. 0.5 = half as many, 3 = three times as many. No upper limit.")]
+        public float bushDensity = 1f;
+        [Tooltip("The most bushes in the world (0 = no limit). Bushes nearest the post are kept first. Drawing is instanced and limited by the draw distance below, so this mostly bounds memory and build time.")]
+        public int bushBudget = 40000;
+        [Tooltip("Bushes are drawn this far round the camera, metres (fewer of them the farther out). Costs frame time when raised.")]
+        public float bushDrawMetres = 200f;
         [Tooltip("Trees stop the line of sight like hills and buildings do.")]
         public bool treesBlockSight = true;
         [Tooltip("Full density inside this distance from the post (km); beyond it trees thin out as distance grows.")]
@@ -32,11 +39,11 @@ namespace Chaukanna.TerrainGen
         [Tooltip("Realistic buildings: also add procedural buildings in 500 m cells the map left empty. Labelled as filled procedurally.")]
         public bool fillGapsProcedurally;
 
-        public LayerMode Get(LayerKind kind) => kind == LayerKind.Trees ? trees : kind == LayerKind.Grass ? grass : buildings;
+        public LayerMode Get(LayerKind kind) => kind == LayerKind.Trees ? trees : kind == LayerKind.Grass ? grass : kind == LayerKind.Bushes ? bushes : buildings;
 
         public void Set(LayerKind kind, LayerMode mode)
         {
-            if (kind == LayerKind.Trees) trees = mode; else if (kind == LayerKind.Grass) grass = mode; else buildings = mode;
+            if (kind == LayerKind.Trees) trees = mode; else if (kind == LayerKind.Grass) grass = mode; else if (kind == LayerKind.Bushes) bushes = mode; else buildings = mode;
         }
 
         // Realistic needs a real place; on a procedural terrain it means Procedural.
@@ -53,6 +60,9 @@ namespace Chaukanna.TerrainGen
             if (treeLodBias < 0.01f || float.IsNaN(treeLodBias)) treeLodBias = 0.01f;
             grassDensity = Mathf.Clamp01(float.IsNaN(grassDensity) ? 0f : grassDensity);   // a share: 0 to 1 is physical
             if (buildingDensity < 0f || float.IsNaN(buildingDensity)) buildingDensity = 0f;
+            if (bushDensity < 0f || float.IsNaN(bushDensity)) bushDensity = 0f;
+            if (bushBudget < 0) bushBudget = 0;
+            if (bushDrawMetres < 10f || float.IsNaN(bushDrawMetres)) bushDrawMetres = 10f;
             if (falloffStartKm < 0.05f || float.IsNaN(falloffStartKm)) falloffStartKm = 0.05f;
         }
 
@@ -91,6 +101,25 @@ namespace Chaukanna.TerrainGen
         public List<GameObject> treePrefabs = new List<GameObject>();
         [Tooltip("Tree height range, metres. Each tree is scaled to a height in this range.")]
         public Vector2 treeHeight = new Vector2(8f, 17f);
+
+        [Header("Tree species (filled by Chaukanna > Terrain > Wire real art into kit; when any list here is filled it is used instead of the list above)")]
+        [Tooltip("Lowlands and plains. Also the fallback for a missing group.")]
+        public List<GameObject> broadleafTrees = new List<GameObject>();
+        [Tooltip("High ground and steep slopes.")]
+        public List<GameObject> pineTrees = new List<GameObject>();
+        [Tooltip("High up, where snow lies: snow-covered trees.")]
+        public List<GameObject> snowTrees = new List<GameObject>();
+        [Tooltip("Bare dead trees: close to the tree line and in dry country.")]
+        public List<GameObject> deadTrees = new List<GameObject>();
+
+        [Header("Bushes and rocks (drawn instanced; no colliders; a MeshFilter + MeshRenderer on the prefab, materials with GPU instancing on)")]
+        public List<GameObject> bushPrefabs = new List<GameObject>();
+        [Tooltip("Bushes used high up, where snow lies.")]
+        public List<GameObject> bushSnowPrefabs = new List<GameObject>();
+        [Tooltip("Not drawn yet (reserved).")]
+        public List<GameObject> rockPrefabs = new List<GameObject>();
+        [Tooltip("Scale range of one bush (1 = the model's own size).")]
+        public Vector2 bushScale = new Vector2(0.8f, 1.7f);
 
         [Header("Grass")]
         [Tooltip("Small meshes (a clump, crossed quads) drawn instanced as terrain details. Material must have GPU instancing on.")]
@@ -157,6 +186,43 @@ namespace Chaukanna.TerrainGen
             return usable.Count == 0 ? null : usable[(hash & 0x7FFFFFFF) % usable.Count];
         }
 
+        public bool HasSpeciesGroups => AnyIn(broadleafTrees) || AnyIn(pineTrees) || AnyIn(snowTrees) || AnyIn(deadTrees);
+
+        static bool AnyIn(List<GameObject> l) { if (l != null) foreach (var g in l) if (g != null) return true; return false; }
+
+        // The trees as a table: prefab list (what the terrain gets as prototypes) and which entries belong to which class.
+        public class TreeTable
+        {
+            public readonly List<GameObject> prefabs = new List<GameObject>();
+            public readonly List<int>[] byClass = { new List<int>(), new List<int>(), new List<int>(), new List<int>() };
+            public bool classed;
+
+            // The prototype index for a class and a hash; a class with no trees falls back to broadleaf, then pine, then anything.
+            public int Pick(TreeClass c, int hash)
+            {
+                var l = byClass[(int)c];
+                if (l.Count == 0) l = byClass[(int)TreeClass.Broadleaf];
+                if (l.Count == 0) l = byClass[(int)TreeClass.Pine];
+                if (l.Count == 0) return (int)((uint)hash % (uint)prefabs.Count);
+                return l[(int)((uint)hash % (uint)l.Count)];
+            }
+        }
+
+        public TreeTable BuildTreeTable()
+        {
+            var t = new TreeTable();
+            if (!HasSpeciesGroups)
+            {
+                t.prefabs.AddRange(TreePrefabsOrPlaceholders());
+                for (int c = 0; c < 4; c++) for (int i = 0; i < t.prefabs.Count; i++) t.byClass[c].Add(i);
+                return t;
+            }
+            t.classed = true;
+            void Add(List<GameObject> src, TreeClass c) { if (src != null) foreach (var g in src) if (g != null) { t.byClass[(int)c].Add(t.prefabs.Count); t.prefabs.Add(g); } }
+            Add(broadleafTrees, TreeClass.Broadleaf); Add(pineTrees, TreeClass.Pine); Add(snowTrees, TreeClass.Snow); Add(deadTrees, TreeClass.Dead);
+            return t;
+        }
+
         // The kit's tree prefabs, with a plain shape (trunk and crown) in place of any that is missing.
         public List<GameObject> TreePrefabsOrPlaceholders()
         {
@@ -166,8 +232,11 @@ namespace Chaukanna.TerrainGen
             return list;
         }
 
-        public Material WallMaterial() => buildingMaterial != null ? buildingMaterial : Tinted(new Color(0.72f, 0.68f, 0.6f), "Layer wall (runtime)");
-        public Material RoofMaterial() => roofMaterial != null ? roofMaterial : Tinted(new Color(0.5f, 0.28f, 0.22f), "Layer roof (runtime)");
+        // With no material of its own the kit paints extruded buildings from a palette (BuildingPalette): each building
+        // picks its wall and roof colour from its hash. With a material, that material is used as it is.
+        public bool UsesPalette => buildingMaterial == null && roofMaterial == null;
+        public Material WallMaterial() => buildingMaterial != null ? buildingMaterial : (roofMaterial == null ? BuildingPalette.SharedMaterial() : Tinted(new Color(0.72f, 0.68f, 0.6f), "Layer wall (runtime)"));
+        public Material RoofMaterial() => roofMaterial != null ? roofMaterial : (buildingMaterial == null ? BuildingPalette.SharedMaterial() : Tinted(new Color(0.5f, 0.28f, 0.22f), "Layer roof (runtime)"));
 
         static Material Tinted(Color c, string name)
         {
@@ -208,6 +277,23 @@ namespace Chaukanna.TerrainGen
             root.SetActive(true);
             placeholderTree = root;
             return root;
+        }
+
+        static GameObject placeholderBush;
+
+        // A sphere, off-screen. Only used when the kit has no bush.
+        public static GameObject PlaceholderBush()
+        {
+            if (placeholderBush != null) return placeholderBush;
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "Placeholder bush (runtime)";
+            go.hideFlags = HideFlags.HideAndDontSave;
+            go.transform.position = new Vector3(0f, -20000f, 0f);
+            var c = go.GetComponent<Collider>();
+            if (c != null) DestroyImmediate(c);
+            go.GetComponent<Renderer>().sharedMaterial = Tinted(new Color(0.18f, 0.32f, 0.12f), "Placeholder bush");
+            placeholderBush = go;
+            return go;
         }
 
         static GameObject placeholderGrass;

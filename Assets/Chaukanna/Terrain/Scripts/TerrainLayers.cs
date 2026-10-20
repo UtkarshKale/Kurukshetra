@@ -66,11 +66,11 @@ namespace Chaukanna.TerrainGen
         public LayerContext Context { get; private set; }
         public bool Busy { get; private set; }
         public string BusyText { get; private set; } = "";
-        public readonly Report[] Reports = { new Report(), new Report(), new Report() };
+        public readonly Report[] Reports = { new Report(), new Report(), new Report(), new Report() };
         public Report ReportOf(LayerKind k) => Reports[(int)k];
 
         Transform root;
-        readonly Transform[] layerRoots = new Transform[3];
+        readonly Transform[] layerRoots = new Transform[4];
         int seenClearance = -1;
         bool built;
         readonly Queue<LayerKind> queue = new Queue<LayerKind>();
@@ -101,7 +101,7 @@ namespace Chaukanna.TerrainGen
         public IEnumerator BuildAll(Action<float, string> progress = null)
         {
             Busy = true;
-            var kinds = new[] { LayerKind.Buildings, LayerKind.Trees, LayerKind.Grass };
+            var kinds = new[] { LayerKind.Buildings, LayerKind.Trees, LayerKind.Grass, LayerKind.Bushes };
             for (int i = 0; i < kinds.Length; i++)
             {
                 var kind = kinds[i];
@@ -118,6 +118,8 @@ namespace Chaukanna.TerrainGen
         public void Rebuild(LayerKind kind)
         {
             if (!queue.Contains(kind)) queue.Enqueue(kind);
+            // The bushes stand round the trees: new trees, new bushes.
+            if (kind == LayerKind.Trees && !queue.Contains(LayerKind.Bushes)) queue.Enqueue(LayerKind.Bushes);
         }
 
         // Rebuilds one layer right now (tests, tools).
@@ -125,6 +127,7 @@ namespace Chaukanna.TerrainGen
         {
             var it = BuildLayer(kind, null);
             while (it.MoveNext()) { }
+            if (kind == LayerKind.Trees) RebuildNow(LayerKind.Bushes);
         }
 
         public void BuildAllNow()
@@ -184,6 +187,7 @@ namespace Chaukanna.TerrainGen
             {
                 case LayerKind.Trees: it = BuildTrees(fresh, progress); break;
                 case LayerKind.Grass: it = BuildGrass(fresh, progress); break;
+                case LayerKind.Bushes: it = BuildBushes(fresh, progress); break;
                 default: it = BuildBuildings(fresh, progress); break;
             }
             var slice = Stopwatch.StartNew();
@@ -240,9 +244,12 @@ namespace Chaukanna.TerrainGen
 
         // ================= Trees =================
 
+        List<TreeSpot> lastTreeSpots;                       // the trees as placed (after the budget), for the bushes round them
+
         IEnumerator BuildTrees(Report rep, Action<float, string> progress)
         {
             ClearTrees();
+            lastTreeSpots = null;
             ClearRoot(LayerKind.Trees);
             var s = Context.Settings;
             if (rep.mode == LayerMode.Off) { rep.source = "off"; yield break; }
@@ -314,6 +321,7 @@ namespace Chaukanna.TerrainGen
 
             string thinned = ApplyBudget(spots, s.treeBudget, centre, start, seed);
             if (thinned.Length > 0) rep.detail = (rep.detail.Length > 0 ? rep.detail + "; " : "") + thinned;
+            lastTreeSpots = spots;
             progress?.Invoke(0.7f, "Trees: placing " + spots.Count);
             var place = PlaceTrees(spots, rep);
             while (place.MoveNext()) yield return place.Current;
@@ -395,7 +403,8 @@ namespace Chaukanna.TerrainGen
 
         IEnumerator PlaceTrees(List<TreeSpot> spots, Report rep)
         {
-            var protoPrefabs = Context.kit.TreePrefabsOrPlaceholders();
+            var table = Context.kit.BuildTreeTable();
+            var protoPrefabs = table.prefabs;
             var protos = new TreePrototype[protoPrefabs.Count];
             var baseHeights = new float[protoPrefabs.Count];
             for (int i = 0; i < protos.Length; i++)
@@ -411,6 +420,7 @@ namespace Chaukanna.TerrainGen
             var perTile = new Dictionary<Terrain, List<TreeInstance>>();
             foreach (var t in tiles) if (t != null) perTile[t] = new List<TreeInstance>();
             float playHalf = Context.play.Half;
+            var treeClassCounts = new int[4];
 
             var timer = new Timer(true);
             for (int i = 0; i < spots.Count; i++)
@@ -421,7 +431,17 @@ namespace Chaukanna.TerrainGen
                 if (tile == null) continue;
                 var size = tile.terrainData.size;
                 var pos = tile.transform.position;
-                int proto = (int)(LayerScatter.Hash(i, 3, Context.Seed) % (uint)protos.Length);
+                int treeHash = (int)LayerScatter.Hash(i, 3, Context.Seed);
+                int proto;
+                if (table.classed)
+                {
+                    // Species by place: pine high up and on steep ground, snow-covered and dead trees near the tree line, broadleaf low.
+                    var g = inPlay || Context.surround == null ? Context.play : Context.surround;
+                    var cls = Vegetation.TreeClassAt(g.Elevation(sp.x, sp.z), g.SlopeDegrees(sp.x, sp.z), Context.biome, treeHash);
+                    proto = table.Pick(cls, treeHash >> 3);
+                    treeClassCounts[(int)cls]++;
+                }
+                else proto = (int)((uint)treeHash % (uint)protos.Length);
                 float hs = Mathf.Max(0.05f, sp.height / baseHeights[proto]);
                 perTile[tile].Add(new TreeInstance
                 {
@@ -432,6 +452,7 @@ namespace Chaukanna.TerrainGen
                 if (timer.Due) { yield return null; timer.Restart(); }
             }
 
+            if (table.classed) rep.detail += (rep.detail.Length > 0 ? "; " : "") + $"species: {treeClassCounts[0]} broadleaf, {treeClassCounts[1]} pine, {treeClassCounts[2]} snow, {treeClassCounts[3]} dead";
             foreach (var kv in perTile)
             {
                 var t = kv.Key; var td = t.terrainData;
@@ -612,6 +633,101 @@ namespace Chaukanna.TerrainGen
 
         // Grass is a component under its own root, which ClearRoot removes: nothing is stored in the terrain data.
         void ClearGrass() { }
+
+        // ================= Bushes =================
+
+        // Instanced drawing needs GPU instancing on the material; a copy is made for any that lack it (the kit's own are left alone).
+        static BushModel WithInstancing(BushModel m)
+        {
+            if (m == null) return null;
+            for (int i = 0; i < m.materials.Length; i++)
+                if (m.materials[i] != null && !m.materials[i].enableInstancing)
+                    m.materials[i] = new Material(m.materials[i]) { name = m.materials[i].name + " (instanced)", enableInstancing = true };
+            return m;
+        }
+
+        // Realistic bushes are an estimate: they stand along wood edges and on grassland the map or the picture shows, never in crops.
+        static float CoverBushFactor(CoverGrid g, LayerGround ground, float x, float z)
+        {
+            if (ground.SlopeDegrees(x, z) > LayerScatter.TreeSlopeLimit || ground.Elevation(x, z) > LayerScatter.TreeLineMetres) return 0f;
+            byte c = g.At(x, z);
+            float d = Mathf.Max(g.cell, 24f);
+            int wood = 0;
+            if (IsWood(g.At(x + d, z))) wood++;
+            if (IsWood(g.At(x - d, z))) wood++;
+            if (IsWood(g.At(x, z + d))) wood++;
+            if (IsWood(g.At(x, z - d))) wood++;
+            if (IsWood(c)) return wood < 4 ? 1f : 0.08f;
+            float f = c == CoverGrid.SatGrass ? 0.35f : c == CoverGrid.OsmGrass ? 0.2f : c == CoverGrid.OsmOrchard ? 0.1f : 0f;
+            if (wood > 0 && c != CoverGrid.OsmFarm) f = Mathf.Max(f, 0.8f);
+            return f;
+        }
+
+        static bool IsWood(byte c) => c == CoverGrid.OsmForest || c == CoverGrid.SatTree;
+
+        IEnumerator BuildBushes(Report rep, Action<float, string> progress)
+        {
+            ClearRoot(LayerKind.Bushes);
+            var s = Context.Settings;
+            if (rep.mode == LayerMode.Off) { rep.source = "off"; yield break; }
+
+            var kit = Context.kit;
+            var normal = new List<BushModel>(); var snow = new List<BushModel>();
+            foreach (var g in kit.bushPrefabs) { var m = WithInstancing(BushModel.From(g)); if (m != null) normal.Add(m); }
+            foreach (var g in kit.bushSnowPrefabs) { var m = WithInstancing(BushModel.From(g)); if (m != null) snow.Add(m); }
+            if (normal.Count == 0 && snow.Count == 0) { var m = WithInstancing(BushModel.From(TerrainLayerKit.PlaceholderBush())); if (m != null) normal.Add(m); }
+
+            var ground = Context.play;
+            var centre = Context.FalloffCentre;
+            float start = s.falloffStartKm * 1000f;
+            int treeSeed = Context.Seed ^ 0x7EE5, seed = Context.Seed ^ 0xB05E;
+            Func<float, float, bool> blocked = (x, z) => !ground.Contains(x, z) || NearPost(x, z) || SiteClearance.Blocked(x, z, true);
+            bool realistic = rep.mode == LayerMode.Realistic;
+            var spots = new List<BushSpot>();
+            var timer = new Timer(true);
+
+            // Round the trees as they were placed (so the rings follow the tree budget), then a scatter along wood edges and in the open.
+            int ring = 0;
+            if (lastTreeSpots != null && lastTreeSpots.Count > 0)
+            {
+                var near = new List<TreeSpot>();
+                foreach (var t in lastTreeSpots) if (ground.Contains(t.x, t.z)) near.Add(t);
+                Vegetation.RoundTrees(near, s.bushDensity, seed, blocked, spots);
+                ring = spots.Count;
+            }
+            yield return null;
+
+            Func<float, float, float> factor = null;
+            CoverGrid cover = null;
+            if (realistic)
+            {
+                var build = EnsureCover(0, progress);
+                while (build.MoveNext()) yield return build.Current;
+                cover = Context.coverPlay;
+                var c = cover;
+                factor = c == null ? (Func<float, float, float>)((x, z) => 0f) : (x, z) => CoverBushFactor(c, ground, x, z);
+            }
+            int rows = Vegetation.ScatterRows(ground);
+            for (int row = 0; row < rows; row++)
+            {
+                Vegetation.ScatterRow(ground, row, s.bushDensity, treeSeed, seed, Context.biome, centre, start, blocked, spots, factor);
+                if (timer.Due) { progress?.Invoke(0.1f + 0.7f * row / rows, "Bushes: scatter"); yield return null; timer.Restart(); }
+            }
+            int scattered = spots.Count - ring;
+
+            string thinned = Vegetation.ApplyBudget(spots, s.bushBudget, centre);
+            rep.source = realistic ? (spots.Count == 0 ? "none" : cover != null ? "round trees + cover estimate" : "round trees") : "procedural";
+            rep.count = spots.Count; rep.count2 = ring; rep.count3 = scattered;
+            rep.detail = $"{ring} round trees, {scattered} along wood edges and in the open";
+            if (realistic && spots.Count == 0) rep.detail = "no trees and no map or picture to estimate from: no bushes";
+            if (thinned.Length > 0) rep.detail += "; " + thinned;
+            yield return null;
+
+            if (spots.Count == 0) yield break;
+            var bf = LayerRoot(LayerKind.Bushes).gameObject.AddComponent<BushField>();
+            bf.Setup(ground, spots, normal.ToArray(), snow.ToArray(), kit.bushScale, s.bushDrawMetres);
+            yield return null;
+        }
 
 
         // ================= Buildings =================
@@ -796,9 +912,11 @@ namespace Chaukanna.TerrainGen
                     float bottom = it.minHeight > 0f ? mid + it.minHeight : low - 0.6f, top = Mathf.Max(bottom + 1f, mid + it.height);
                     var holes = new List<float[]>();
                     if (it.holes != null) foreach (var h in it.holes) if (h != null && h.p != null) holes.Add(h.p);
-                    full.AddPrism(it.p, holes, bottom, top, ox, oz);
+                    Vector2? wallUv = null, roofUv = null;
+                    if (kit.UsesPalette) { wallUv = BuildingPalette.WallUv(BuildingPalette.WallIndex(it.hash, it.type)); roofUv = BuildingPalette.RoofUv(BuildingPalette.RoofIndex(it.hash, it.type)); }
+                    full.AddPrism(it.p, holes, bottom, top, ox, oz, wallUv, roofUv);
                     LayerGeometry.OrientedBox(it.p, out var c, out var axis, out float hl, out float hs);
-                    boxes.AddPrism(LayerGeometry.BoxRing(c, axis, Mathf.Max(0.5f, hl), Mathf.Max(0.5f, hs)), null, bottom, top, ox, oz);
+                    boxes.AddPrism(LayerGeometry.BoxRing(c, axis, Mathf.Max(0.5f, hl), Mathf.Max(0.5f, hs)), null, bottom, top, ox, oz, wallUv, roofUv);
                 }
                 var mesh0 = full.ToMesh("Buildings " + go.name);
                 var mesh1 = boxes.ToMesh("Building boxes " + go.name);
@@ -859,11 +977,16 @@ namespace Chaukanna.TerrainGen
             LayerGeometry.OrientedBox(it.p, out var c, out var axis, out float hl, out float hs);
             float yaw = Mathf.Atan2(axis.x, axis.y) * Mathf.Rad2Deg;          // prefab +Z along the long axis
             float width = Mathf.Max(1f, hs * 2f), length = Mathf.Max(1f, hl * 2f);
+            // A model longer in X than in Z is turned a quarter so its long side lies along the footprint's long side (less stretching).
+            float sx, sz;
+            if (size.x > size.z * 1.05f) { yaw -= 90f; sx = length / Mathf.Max(0.01f, size.x); sz = width / Mathf.Max(0.01f, size.z); }
+            else { sx = width / Mathf.Max(0.01f, size.x); sz = length / Mathf.Max(0.01f, size.z); }
             GroundSpan(ground, it, out float low, out float mid);
             var go = UnityEngine.Object.Instantiate(prefab, parent);
             go.name = prefab.name;
             go.transform.SetPositionAndRotation(new Vector3(c.x, low - 0.3f, c.y), Quaternion.Euler(0f, yaw, 0f));
-            go.transform.localScale = new Vector3(width / Mathf.Max(0.01f, size.x), (it.height + 0.3f) / Mathf.Max(0.01f, size.y), length / Mathf.Max(0.01f, size.z));
+            go.transform.localScale = new Vector3(sx, (it.height + 0.3f) / Mathf.Max(0.01f, size.y), sz);
+            BuildingPalette.TintPrefab(go, it.hash, it.type);                  // wall tint from the building's hash, through a property block
         }
 
         IEnumerator BuildFar(Transform parent, List<LayerFarBuilding> far, Material wall, Material roof, Action<float, string> progress)
@@ -889,7 +1012,9 @@ namespace Chaukanna.TerrainGen
                     float yaw = LayerScatter.Rand(Mathf.RoundToInt(f.x), Mathf.RoundToInt(f.z), 0x4A) * Mathf.PI;
                     var axis = new Vector2(Mathf.Cos(yaw), Mathf.Sin(yaw));
                     float gy = Context.surround.Height(f.x, f.z);
-                    pm.AddPrism(LayerGeometry.BoxRing(new Vector2(f.x, f.z), axis, len * 0.5f, wid * 0.5f), null, gy - 0.5f, gy + Mathf.Max(2.5f, f.height), ox, oz);
+                    Vector2? wallUv = null, roofUv = null;
+                    if (Context.kit.UsesPalette) { int fh = (int)LayerScatter.Hash(Mathf.RoundToInt(f.x), Mathf.RoundToInt(f.z), 0x4B); var ft = TerrainLayerKit.TypeOf(f.type); wallUv = BuildingPalette.WallUv(BuildingPalette.WallIndex(fh, ft)); roofUv = BuildingPalette.RoofUv(BuildingPalette.RoofIndex(fh, ft)); }
+                    pm.AddPrism(LayerGeometry.BoxRing(new Vector2(f.x, f.z), axis, len * 0.5f, wid * 0.5f), null, gy - 0.5f, gy + Mathf.Max(2.5f, f.height), ox, oz, wallUv, roofUv);
                 }
                 var go = new GameObject($"Far {list.Count}");
                 go.transform.SetParent(farRoot, false);

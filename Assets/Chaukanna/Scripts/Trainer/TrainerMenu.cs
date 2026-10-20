@@ -529,14 +529,14 @@ namespace Chaukanna.Trainer
         bool fetchingFeatures;
         static readonly string[] LayerModeNames = { "OFF", "REALISTIC", "PROCEDURAL" };
 
-        // Three layers, each Off / Realistic / Procedural, and the numbers behind them. Realistic = the real place
+        // Four layers, each Off / Realistic / Procedural, and the numbers behind them. Realistic = the real place
         // (OpenStreetMap, with a satellite-colour estimate for trees and grass where the map has nothing).
         void LayersBlock(float row)
         {
             var L = Terrain.terrainLayers;
             bool real = Terrain.UsesDem;
             GUILayout.Space(8f);
-            GUILayout.Label("<b>Trees, grass and buildings</b>  (near = detailed, far = less)", label);
+            GUILayout.Label("<b>Trees, bushes, grass and buildings</b>  (near = detailed, far = less)", label);
             foreach (LayerKind kind in Enum.GetValues(typeof(LayerKind)))
             {
                 GUILayout.BeginHorizontal();
@@ -562,6 +562,16 @@ namespace Chaukanna.Trainer
             GUILayout.BeginHorizontal();
             L.treeBudget = (int)Math.Min(int.MaxValue, Math.Max(0.0, NumberEntry.FieldDouble("menu.treeBudget", L.treeBudget, 0, field, GUILayout.Width(80f), GUILayout.Height(row))));
             GUILayout.Label(" most trees at once (0 = no limit; each costs frame time)", label, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            L.bushDensity = (float)Math.Max(0.0, NumberEntry.FieldDouble("menu.bushDensity", L.bushDensity, 2, field, GUILayout.Width(60f), GUILayout.Height(row)));
+            GUILayout.Label(" bush density (1 = 2 to 5 bushes round a third of the trees, plus a scatter along wood edges)", label, GUILayout.Height(row));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            L.bushBudget = (int)Math.Min(int.MaxValue, Math.Max(0.0, NumberEntry.FieldDouble("menu.bushBudget", L.bushBudget, 0, field, GUILayout.Width(80f), GUILayout.Height(row))));
+            GUILayout.Label(" most bushes in the world (0 = no limit)", label, GUILayout.Height(row));
+            L.bushDrawMetres = (float)Math.Max(10.0, NumberEntry.FieldDouble("menu.bushDraw", L.bushDrawMetres, 0, field, GUILayout.Width(60f), GUILayout.Height(row)));
+            GUILayout.Label(" m bush draw distance", label, GUILayout.Height(row));
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             L.treeLodBias = (float)Math.Max(0.01, NumberEntry.FieldDouble("menu.treeLodBias", L.treeLodBias, 2, field, GUILayout.Width(60f), GUILayout.Height(row)));

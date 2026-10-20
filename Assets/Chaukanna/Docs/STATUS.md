@@ -27,7 +27,10 @@ Status words:
 | Swarms + bird flocks (boids) | F9, F13 | Built | Flock count typeable; density parameter Planned |
 | Urban / rural site (watchtower, cantonment) | §1.17d | Built | Hand test U1 open. Coastal site (F12) Planned |
 | Terrain: generator, real-terrain download, map picker, satellite drape | §1.17d | Hand-tested | |
-| Terrain layers: trees, grass, buildings (OSM or procedural) | §1.17d | Built (2026-10-17) | Hand test TL-2 open; Kargil OSM fetch failed (504) |
+| Terrain layers: trees, bushes, grass, buildings (OSM or procedural) | §1.17d | Built (2026-10-17; bushes + real art 2026-10-20) | Hand test TL-2 open; Kargil OSM fetch failed (504). Four layers, each Off / Realistic / Procedural |
+| Trees by species and height (Quaternius: broadleaf low, pine above 1500 m or on slopes over 20 deg, snow trees above 2600 m, dead trees near the tree line and in dry country) | R14 | Built (prototype, 2026-10-20) | VegetationSelfTest 35/35. Low-poly look: judge on screen. Chaukanna > Terrain > Wire real art into kit fills the kit (already run) |
+| Bushes (Quaternius; 2 to 5 round a third of the trees at 3 to 8 m, plus a scatter along wood edges; GPU-instanced, no colliders) | R14 | Built (prototype, 2026-10-20) | Typeable density, budget (default 40 000) and draw distance (default 200 m). Realistic mode is an estimate from trees and cover, labelled so. Rocks are in the kit but not drawn yet |
+| Building variety (wall + roof palette per building hash; Kenney houses and blocks in procedural villages) | R14 | Built (prototype, 2026-10-20) | Extruded: one shared material + palette texture. Prefab houses: wall tint by property block (the roof is the model's own colour). Real OSM footprints stay extruded |
 | Blend-in hostiles (fly a patrol, then break off) | §1.17c, F15 | Built | Formation shadow and glider Planned |
 | Dense sky: thousands of cooperative drones, "Crowded Sky" and "Extreme" presets | §1.17b | Built (2026-10-16) | Hand test DS-3 open; Crowd self-test 26/27 (timing, see TODO H-10) |
 | Soldier walking (trainer toggle) | — | Built | |

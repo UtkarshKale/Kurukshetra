@@ -435,7 +435,7 @@ namespace Chaukanna.Trainer
             GUI.matrix = saved;
         }
 
-        // Trees, grass and buildings of a real-terrain or procedural-terrain run. Each button steps Off > Realistic > Procedural
+        // Trees, bushes, grass and buildings of a real-terrain or procedural-terrain run. Each button steps Off > Realistic > Procedural
         // and rebuilds that layer over the next frames, the others stay as they are.
         void LayersPanel(float row)
         {
@@ -460,9 +460,15 @@ namespace Chaukanna.Trainer
             GUILayout.Label("trees/ha", label, GUILayout.Width(60f), GUILayout.Height(row));
             double villages = NumberEntry.FieldDouble("field.villageDensity", L.buildingDensity, 1, field, GUILayout.Width(64f), GUILayout.Height(row));
             GUILayout.Label("villages/km²", label, GUILayout.Width(86f), GUILayout.Height(row));
+            double bushes = NumberEntry.FieldDouble("field.bushDensity", L.bushDensity, 2, field, GUILayout.Width(56f), GUILayout.Height(row));
+            GUILayout.Label("bush dens.", label, GUILayout.Width(70f), GUILayout.Height(row));
+            double bushBudget = NumberEntry.FieldDouble("field.bushBudget", L.bushBudget, 0, field, GUILayout.Width(70f), GUILayout.Height(row));
+            GUILayout.Label("max bushes", label, GUILayout.Width(80f), GUILayout.Height(row));
             GUILayout.Label(manager.Busy ? "<color=#FFB040>" + manager.BusyText + "...</color>" : manager.ShortSummary(), small, GUILayout.Height(row));
             GUILayout.EndHorizontal();
             if (System.Math.Abs(trees - L.treeDensity) > 1e-6) { L.treeDensity = (float)System.Math.Max(0.0, trees); manager.Rebuild(Chaukanna.TerrainGen.LayerKind.Trees); }
+            if (System.Math.Abs(bushes - L.bushDensity) > 1e-6) { L.bushDensity = (float)System.Math.Max(0.0, bushes); manager.Rebuild(Chaukanna.TerrainGen.LayerKind.Bushes); }
+            if (System.Math.Abs(bushBudget - L.bushBudget) > 0.5) { L.bushBudget = (int)System.Math.Min(int.MaxValue, System.Math.Max(0.0, bushBudget)); manager.Rebuild(Chaukanna.TerrainGen.LayerKind.Bushes); }
             if (System.Math.Abs(villages - L.buildingDensity) > 1e-6) { L.buildingDensity = (float)System.Math.Max(0.0, villages); manager.Rebuild(Chaukanna.TerrainGen.LayerKind.Buildings); }
             if (manager.Credit.Length > 0) GUILayout.Label(manager.Credit, small, GUILayout.Height(row * 0.8f));
         }

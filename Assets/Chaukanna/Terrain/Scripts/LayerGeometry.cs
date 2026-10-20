@@ -300,23 +300,25 @@ namespace Chaukanna.TerrainGen
         public int Triangles => (walls.Count + roofs.Count) / 3;
 
         // One footprint from yBottom to yTop. Positions are written relative to `origin` (x, z), y as given.
-        public bool AddPrism(float[] outer, IList<float[]> holes, float yBottom, float yTop, float originX, float originZ)
+        // `wallUv` / `roofUv`: when given, every wall (roof) vertex of this prism gets that one texture coordinate, so a palette
+        // texture can colour each building from one shared material (BuildingPalette). Otherwise the UVs tile the surface.
+        public bool AddPrism(float[] outer, IList<float[]> holes, float yBottom, float yTop, float originX, float originZ, Vector2? wallUv = null, Vector2? roofUv = null)
         {
             if (!LayerGeometry.Triangulate(outer, holes, out var tv, out var tt)) return false;
             outer = LayerGeometry.Ccw(outer);
 
             // Roof.
             int baseIndex = vertices.Count;
-            foreach (var v in tv) { vertices.Add(new Vector3(v.x - originX, yTop, v.y - originZ)); normals.Add(Vector3.up); uvs.Add(new Vector2(v.x * 0.1f, v.y * 0.1f)); }
+            foreach (var v in tv) { vertices.Add(new Vector3(v.x - originX, yTop, v.y - originZ)); normals.Add(Vector3.up); uvs.Add(roofUv ?? new Vector2(v.x * 0.1f, v.y * 0.1f)); }
             for (int i = 0; i < tt.Count; i += 3) { roofs.Add(baseIndex + tt[i]); roofs.Add(baseIndex + tt[i + 2]); roofs.Add(baseIndex + tt[i + 1]); }
 
             // Walls: outer ring counter-clockwise, hole rings clockwise; the outward normal is the right of the direction of travel.
-            AddWalls(outer, yBottom, yTop, originX, originZ);
-            if (holes != null) foreach (var h in holes) if (h != null && h.Length >= 6) AddWalls(LayerGeometry.Cw(h), yBottom, yTop, originX, originZ);
+            AddWalls(outer, yBottom, yTop, originX, originZ, wallUv);
+            if (holes != null) foreach (var h in holes) if (h != null && h.Length >= 6) AddWalls(LayerGeometry.Cw(h), yBottom, yTop, originX, originZ, wallUv);
             return true;
         }
 
-        void AddWalls(float[] ring, float yBottom, float yTop, float originX, float originZ)
+        void AddWalls(float[] ring, float yBottom, float yTop, float originX, float originZ, Vector2? wallUv)
         {
             int n = ring.Length / 2;
             float run = 0f;
@@ -331,7 +333,8 @@ namespace Chaukanna.TerrainGen
                 vertices.Add(new Vector3(bx - originX, yTop, bz - originZ)); vertices.Add(new Vector3(bx - originX, yBottom, bz - originZ));
                 for (int k = 0; k < 4; k++) normals.Add(nrm);
                 float h = (yTop - yBottom) * 0.25f;
-                uvs.Add(new Vector2(run * 0.25f, 0f)); uvs.Add(new Vector2(run * 0.25f, h)); uvs.Add(new Vector2((run + len) * 0.25f, h)); uvs.Add(new Vector2((run + len) * 0.25f, 0f));
+                if (wallUv.HasValue) { for (int k = 0; k < 4; k++) uvs.Add(wallUv.Value); }
+                else { uvs.Add(new Vector2(run * 0.25f, 0f)); uvs.Add(new Vector2(run * 0.25f, h)); uvs.Add(new Vector2((run + len) * 0.25f, h)); uvs.Add(new Vector2((run + len) * 0.25f, 0f)); }
                 walls.Add(b); walls.Add(b + 1); walls.Add(b + 2); walls.Add(b); walls.Add(b + 2); walls.Add(b + 3);
                 run += len;
             }
