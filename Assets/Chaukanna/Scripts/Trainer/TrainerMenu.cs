@@ -86,6 +86,7 @@ namespace Chaukanna.Trainer
         void OnDestroy()
         {
             if (preview != null) Destroy(preview);
+            tPrev.Release();
             if (Terrain != null) Destroy(Terrain);
             Map?.Destroy();
         }
@@ -510,16 +511,73 @@ namespace Chaukanna.Trainer
             float size = Mathf.Min(body.height - 36f, body.width - leftW - 20f);
             float rx = body.x + leftW + 20f;
             if (GUI.Toggle(new Rect(rx, body.y, 150f, 30f), showMap, "Map: pick a place", button)) showMap = true;
-            if (GUI.Toggle(new Rect(rx + 156f, body.y, 150f, 30f), !showMap, "Height preview", button)) showMap = false;
+            if (GUI.Toggle(new Rect(rx + 156f, body.y, 150f, 30f), !showMap, "Preview terrain", button) && showMap)
+            {
+                showMap = false;
+                if (tPrev.Texture == null && !tPrev.Busy) StartTerrainPreview();      // first visit builds it; later visits keep what is shown
+            }
             var map = new Rect(rx, body.y + 36f, size, size);
             if (showMap)
             {
                 Map.Draw(map, small);
                 return;
             }
+            TerrainPreviewPanel(new Rect(rx, body.y + 36f, Mathf.Min(body.width - leftW - 20f, body.height - 36f), body.height - 36f));
+        }
+
+        // --- Preview terrain: a real top-down picture (relief, satellite drape, layer overlays) built a little each frame. ---
+
+        readonly TerrainPreview tPrev = new TerrainPreview();
+        Coroutine tPrevRoutine;
+
+        string TerrainPreviewSignature()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(Terrain.seed).Append('|').Append(Terrain.sizeMetres).Append('|').Append((int)Terrain.biome).Append('|').Append((int)Terrain.mode).Append('|').Append(Terrain.demPath).Append('|').Append(imageryPath)
+              .Append('|').Append(Terrain.imageryBlend).Append('|').Append(JsonUtility.ToJson(Terrain.terrainLayers));
+            foreach (var p in Players) sb.Append('|').Append(p.post.x).Append(',').Append(p.post.y);
+            return sb.ToString();
+        }
+
+        void StartTerrainPreview()
+        {
+            if (!GeneratePreview()) return;      // validates the settings and builds the preview heightfield (Message says what is wrong)
+            if (tPrevRoutine != null) StopCoroutine(tPrevRoutine);
+            var posts = new List<Vector2>();
+            foreach (var p in Players) posts.Add(p.post);
+            tPrevRoutine = StartCoroutine(tPrev.Build(new TerrainPreview.Input { cfg = Terrain, field = PreviewField, dem = Dem, picture = Picture, posts = posts, signature = TerrainPreviewSignature() }));
+        }
+
+        void TerrainPreviewPanel(Rect r)
+        {
+            const float row = 28f;
+            bool changed = false;
+            float x = r.x;
+            string[] names = { "Height", "Trees", "Bushes", "Grass", "Buildings" };
+            for (int i = 0; i < names.Length; i++)
+            {
+                bool cur = i == 0 ? tPrev.ShowHeight : i == 1 ? tPrev.ShowTrees : i == 2 ? tPrev.ShowBushes : i == 3 ? tPrev.ShowGrass : tPrev.ShowBuildings;
+                float w = i == 4 ? 92f : 74f;
+                bool now = GUI.Toggle(new Rect(x, r.y, w, row), cur, names[i], button);
+                x += w + 4f;
+                if (now == cur) continue;
+                changed = true;
+                if (i == 0) tPrev.ShowHeight = now; else if (i == 1) tPrev.ShowTrees = now; else if (i == 2) tPrev.ShowBushes = now; else if (i == 3) tPrev.ShowGrass = now; else tPrev.ShowBuildings = now;
+            }
+            if (changed && !tPrev.Busy) tPrev.Compose();
+            if (GUI.Button(new Rect(x + 6f, r.y, 110f, row), tPrev.Busy ? "Working..." : "Regenerate", button) && !tPrev.Busy) StartTerrainPreview();
+
+            float size = Mathf.Min(r.width, r.height - row - 40f);
+            var map = new Rect(r.x, r.y + row + 6f, size, size);
             Fill(map, new Color(0.1f, 0.12f, 0.15f));
-            if (preview != null) GUI.DrawTexture(map, preview);
-            GUI.Label(new Rect(map.x + 8f, map.y + 4f, map.width - 16f, 40f), preview == null ? "No preview yet. Press Generate preview." : previewStale ? "<color=#FFB040>Settings changed since this preview.</color>" : "North is up.", small);
+            if (tPrev.Texture != null) GUI.DrawTexture(map, tPrev.Texture);
+            string status;
+            if (tPrev.Texture == null) status = tPrev.Busy ? "Building the preview ..." : "No preview yet. Press Regenerate.";
+            else if (tPrev.Busy) status = $"Refining ... {Mathf.RoundToInt(tPrev.Progress * 100f)}%";
+            else if (tPrev.Signature != TerrainPreviewSignature()) status = "<color=#FFB040>Settings changed since this preview. Press Regenerate.</color>";
+            else status = "North is up. White squares are the player posts. Trees, bushes, grass and buildings are where the real layers will put them (a schematic, not each plant).";
+            if (tPrev.Note.Length > 0) status += "\n<color=#FFB040>" + tPrev.Note + "</color>";
+            GUI.Label(new Rect(r.x, map.yMax + 4f, Mathf.Max(200f, size), 56f), status, small);
         }
 
         // --- Trees, grass and buildings ---

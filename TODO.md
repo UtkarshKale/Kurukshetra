@@ -340,3 +340,6 @@ Moved here from Demo-critical on 2026-10-14 (not in the module-1-demo.md scope; 
 - [x] AVA-1. Player beans at synced seat poses with name / unit tag and binocular state (flag bit 2), behind IPlayerAvatar. 2026-10-20, compile only.
 - [ ] AVA-1a. Hand-test AVA-1 (two PCs, or host + client build).
 - [ ] AVA-1b. Deferred (nothing deleted): animated 3D avatar models through PlayerAvatars.Factory: walk, run, hold-binoculars, binoculars-up animations (drive from the smoothed speed and the binocular flag); true interpolation with a render delay instead of the exponential follow; feet snapped to the terrain height; observer / trainer avatars styled differently.
+- [x] TP-1. Preview terrain (relief + satellite drape + layer overlays, layer toggles, Regenerate, coarse then 384 px). 2026-10-20, compile only.
+- [ ] TP-1a. Hand-test TP-1 (see PROGRESS 2026-10-20 Preview terrain).
+- [ ] TP-1b. Deferred (nothing deleted): oblique 3D view of the preview; satellite-estimated trees for realistic mode when the area has a picture but no map file; real tree / bush counts in the status line; surround ring in the picture; an auto-refresh when settings change.

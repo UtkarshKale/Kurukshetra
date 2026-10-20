@@ -64,6 +64,7 @@ Status words:
 | Lobby units + roles: add / rename / delete units, multi-select assign unit and role (SENTRY, COMMANDER, ANY, OBSERVER), synced | F1, F17 | Built (2026-10-20, compile only) | Observer takes no action. Not run yet |
 | Voice settings (F10): mic mode, PTT key, device, level meter, output volume | F1 | Built (2026-10-20, compile only) | Saved in PlayerPrefs; no on-screen hint. Not run yet |
 | Other seats drawn as capsule beans (name / unit tag, binocular state), swappable via IPlayerAvatar | F1 | Built (2026-10-20, compile only) | Animated models Planned (TODO AVA-1b). Not run yet |
+| Preview terrain (trainer menu): top-down relief + satellite + layer overlays, toggles, Regenerate | F2 | Built (2026-10-20, compile only) | CPU composite, schematic placement, 384 px cap. Not run yet |
 | Simulated VR (F7: mouse = head, hands, wrist tablet, radial menu, binoculars by both hands) | F6, F7 | Built | Hand test D16 open |
 | Real-headset VR (OpenXR 1.18.0 + XRI 3.6.1) | F6, F33 | **Partial** | Packages installed (owner approved), scripts compile; no XrSelfTest, no build probe, never run on a headset (TODO VR-1) |
 | Stereoscopic fallback, IPD | F16, F33 | Planned | Waits on owner Q6 |
